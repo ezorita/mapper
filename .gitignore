@@ -1,0 +1,8 @@
+\#*\#
+.\#*
+*.fasta*
+*.fmi
+*.index
+bwmapper
+tmp/*
+genomes/*
