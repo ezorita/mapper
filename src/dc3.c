@@ -71,6 +71,7 @@ suffixArray
  long   K
 )
 {
+   fprintf(stdout, "[SA] length: %ld\t\trankmax: %ld\n", n, K);
    // Initialize values and alloc buffers.
    long n0=(n+2)/3, n1=(n+1)/3, n2=n/3, n02=n0+n2;
    long* R = malloc(sizeof(long)*(n02 + 3));
