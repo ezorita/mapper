@@ -6,3 +6,4 @@
 bwmapper
 tmp/*
 genomes/*
+*.o
