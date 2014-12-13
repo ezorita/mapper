@@ -8,7 +8,7 @@ SOURCES= $(addprefix $(SRC_DIR)/,$(SOURCE_FILES))
 INCLUDES= $(addprefix -I, $(INC_DIR))
 
 CFLAGS= -std=c99 -g -Wall
-LDLIBS= 
+LDLIBS= -lpthread
 CC= gcc
 
 all: bwmapper
