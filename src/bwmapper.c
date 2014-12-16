@@ -22,7 +22,7 @@ int main(int argc, char * argv[]) {
    int opt_nthreads = 12;
    int opt_reverse  = 1;
    int opt_verbose  = 1;
-   int tau = 3;
+   int tau = 2;
 
    // Backtrace handler
    signal(SIGSEGV, SIGSEGV_handler); 
@@ -44,9 +44,36 @@ int main(int argc, char * argv[]) {
          exit(EXIT_FAILURE);
       }
 
+      // Parse query filename.
+      FILE * queryfile = fopen(argv[2], "r");
+      if (queryfile == NULL) {
+         fprintf(stderr, "error: could not open file.\n");
+         return EXIT_FAILURE;
+      }
+
+      // Read file.
+      fprintf(stderr, "reading query file...\n");
+      seqstack_t * seqs = read_file(queryfile, opt_reverse, opt_verbose); // TODO: set reverse and verbose options.
+      if (seqs == NULL) {
+         return EXIT_FAILURE;
+      }
+
+      // Sort sequences.
+      fprintf(stderr, "sorting input sequences...\n");
+      if(seqsort(&(seqs->seq[0]), seqs->pos, opt_nthreads)) {
+         return EXIT_FAILURE;
+      }
+
+      int mflags = MAP_PRIVATE;
+      if (seqs->pos < 1000) {
+         fprintf(stderr, "reading index (fly mode)...\n");
+      } else {
+         fprintf(stderr, "pre-loading index (populate)...\n");
+         mflags |= MAP_POPULATE;
+      }
       long idxsize = lseek(fd, 0, SEEK_END);
       lseek(fd, 0, SEEK_SET);
-      long * indexp = mmap(NULL, idxsize, PROT_READ, MAP_PRIVATE, fd, 0);
+      long * indexp = mmap(NULL, idxsize, PROT_READ, mflags, fd, 0);
       if (indexp == NULL) {
          fprintf(stderr, "error opening index file: %s.\n", strerror(errno));
          return EXIT_FAILURE;
@@ -62,24 +89,7 @@ int main(int argc, char * argv[]) {
       chr_t * chr = read_CHRindex(filename);
       if (chr == NULL)
          return EXIT_FAILURE;
-      
-      // Parse query filename.
-      FILE * queryfile = fopen(argv[2], "r");
-      if (queryfile == NULL) {
-         fprintf(stderr, "error: could not open file.\n");
-         return EXIT_FAILURE;
-      }
 
-      // Read file.
-      seqstack_t * seqs = read_file(queryfile, opt_reverse, opt_verbose); // TODO: set reverse and verbose options.
-      if (seqs == NULL) {
-         return EXIT_FAILURE;
-      }
-
-      // Sort sequences.
-      if(seqsort(&(seqs->seq[0]), seqs->pos, opt_nthreads)) {
-         return EXIT_FAILURE;
-      }
 
       // Print sorted sequences.
       /*
@@ -93,9 +103,9 @@ int main(int argc, char * argv[]) {
       trie_t * trie = trie_new(TRIE_SIZE);
 
       // Initialize pebble and hit stacks.
-      pstack_t ** pebbles = malloc(MAX_TRAIL*sizeof(pstack_t *));
+      pstack_t ** pebbles = malloc((MAX_TRAIL+1)*sizeof(pstack_t *));
       pstack_t ** hits    = malloc((tau+1) * sizeof(pstack_t *));
-      for (int i = 0 ; i < MAX_TRAIL ; i++) {
+      for (int i = 0 ; i <= MAX_TRAIL ; i++) {
          pebbles[i] = new_pstack(PBSTACK_SIZE);
       }
       for (int i = 0 ; i < tau+1 ; i++) {
@@ -111,6 +121,7 @@ int main(int argc, char * argv[]) {
       ppush(pebbles, root);
 
       for (int i = 0 ; i < seqs->pos; i++) {
+         if (i%500 == 0) fprintf(stderr, "mapping... (%6d/%ld)\r",i,seqs->pos);
          // Query.
          seq_t query = seqs->seq[i];
          int    qlen = strlen(query.seq);
@@ -138,8 +149,8 @@ int main(int argc, char * argv[]) {
 
          // Translate the query string. The first 'char' is kept to store
          // the length of the query, which shifts the array by 1 position.
-         int translated[qlen+2];
-         translated[qlen] = EOS;
+         char translated[qlen+2];
+         translated[qlen+1] = EOS;
          for (int j = 0 ; j < qlen ; j++) {
             translated[j+1] = translate[(int) query.seq[j]];
          }
@@ -162,7 +173,7 @@ int main(int argc, char * argv[]) {
          char path[qlen+tau+1];
 
          // DEBUG.
-         fprintf(stdout, "seq: %s\n", query.seq);
+         fprintf(stdout, "seq: %s", query.seq);
          visited = 0;
          for (int p = 0 ; p < pebbles[start]->pos ; p++) {
             // Next pebble.
@@ -177,12 +188,12 @@ int main(int argc, char * argv[]) {
             }
             poucet(pebble.sp, pebble.ep, wingsz, nwrow, start + 1, path, &arg);
          }
-         fprintf(stdout, "visited nodes: %d\n", visited);
+         fprintf(stdout, " (visited nodes: %d)\n", visited);
          for (int a = 0; a <= tau; a++) {
             for (int h = 0; h < hits[a]->pos; h++) {
                pebble_t hit = hits[a]->pebble[h];
                for (long k = hit.sp; k <= hit.ep; k++) {
-                     long locus = index.pos[k];
+                     long locus = index.gsize - index.pos[k];
                      int chrnum = bisect_search(0, chr->nchr-1, chr->start, locus+1)-1;
                      fprintf(stdout, "%s\t%s:%ld\t%d\n", query.tag, chr->name[chrnum], locus-chr->start[chrnum]+1, a);
                }
@@ -317,7 +328,8 @@ poucet
       fprintf(stdout, "%c\t%d\n", revert[nt], score);
       */
       // Stop searching if 'tau' is exceeded.
-      if (score > arg->tau) continue;
+      if (score > arg->tau)
+         continue;
 
       // Reached height of the trie: it's a hit!
       if (depth == arg->qlen) {
@@ -352,13 +364,17 @@ poucet
          ppush(arg->pebbles + depth, pebble);
       }
 
-      if (depth > arg->trail && score == arg->tau) {
-         dash(newsp, newep, depth+1, arg);
-         continue;
-      }
-
       // Update path.
       path[depth] = nt;
+
+      // Dash path if mismatches exhausted.
+      if (depth > arg->trail && score == arg->tau) {
+         for (int i = -wingsz; i <= wingsz; i++) {
+            if (row[i] == score)
+               dash(newsp, newep, depth+1, i, path, arg);
+         }
+         continue;
+      }
 
       // Recursive call.
       poucet(newsp, newep, wsz, row, depth+1, path, arg);
@@ -373,8 +389,10 @@ dash
 (
  long    sp,
  long    ep,
- int     depth,
- arg_t * arg
+ const int     depth,
+ const int     align,
+ const char  * path,
+ const arg_t * arg
 )
 // TODO:
 //  - update.
@@ -392,10 +410,19 @@ dash
 // SIDE EFFECTS:                                                          
 //   Updates 'arg.hits' if the suffix is found.                           
 {
-   long   * c    = arg->index->c;
-   list_t * occs = arg->index->occ;
+   long   * c      = arg->index->c;
+   list_t * occs   = arg->index->occ;
    int i = depth;
    int nt;
+
+   if (align > 0) {
+      for (int k = align ; k > 0 ; k--){
+         if (arg->query[i] == EOS) break;
+         if (path[depth - k] != arg->query[i++]) return;
+      }
+   } else {
+      i += align;
+   }
    
    while ((nt = arg->query[i++]) != EOS) {
       long occsp = bisect_search(0, occs[nt].max-1, occs[nt].val, sp-1);

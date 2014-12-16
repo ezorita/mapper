@@ -27,6 +27,7 @@
 #define SEQSTACK_SIZE 1024
 #define PBSTACK_SIZE  1024
 #define HITSTACK_SIZE 16
+#define DSTACK_SIZE   16
 #define TRIE_SIZE     1024
 
 
@@ -36,7 +37,7 @@
 #define MINIMUM_STREAK 10
 
 // Search algorithm parameters
-#define MAX_TRAIL      20
+#define MAX_TRAIL      30
 #define EOS            -1
 #define TRIE_CHILDREN  3
 
@@ -147,7 +148,7 @@ struct pstack_t {
 // Parameter structs.
 
 struct arg_t {
-   int              * query;
+   char             * query;
    int                tau;
    int                trail;
    int                qlen;
@@ -168,7 +169,7 @@ struct sortargs_t {
 
 // Query functions.
 int           poucet           (const long sp, const long ep, const int wingsz, const uint* prow, const int depth, char* path, arg_t * arg);
-void          dash             (long sp, long ep, int depth, arg_t* arg);
+void          dash             (long sp, long ep, const int depth, const int align, const char* path, const arg_t* arg);
 int           query_index      (char* query, long gsize, long* c, long* ptr, list_t* occs);
 int         * translate_query  (char* query);
 long          bisect_search    (long start, long end, long* set, long value);
