@@ -90,152 +90,139 @@ int main(int argc, char * argv[]) {
       if (chr == NULL)
          return EXIT_FAILURE;
 
-
-      // Print sorted sequences.
-      /*
-      fprintf(stdout, "sorted:\n");
-      for (int i = 0; i < seqs->pos; i++) {
-         fprintf(stdout, ">%s\n%s\n", seqs->seq[i].tag, seqs->seq[i].seq);
-      }
-      */
       // Map sequences.
-      int start = 0;
       trie_t * trie = trie_new(TRIE_SIZE);
 
-      // Initialize pebble and hit stacks.
-      pstack_t ** pebbles = malloc((MAX_TRAIL+1)*sizeof(pstack_t *));
-      pstack_t ** hits    = malloc((tau+1) * sizeof(pstack_t *));
-      for (int i = 0 ; i <= MAX_TRAIL ; i++) {
-         pebbles[i] = new_pstack(PBSTACK_SIZE);
-      }
-      for (int i = 0 ; i < tau+1 ; i++) {
-         hits[i]    = new_pstack(HITSTACK_SIZE);
-      }
-
-      // Push root node.
+      // Define root node.
       pebble_t root = {
          .sp = 0,
          .ep = index.gsize-1,
          .rowid = 0
       };
-      ppush(pebbles, root);
+
+      // Initialize pebble and hit stacks.
+      pstack_t ** pebbles;
+      pebbles = malloc(tau*(MAX_TRAIL+1)*sizeof(pstack_t *));
+      for (int i = 0; i < tau; i++) {
+         for (int j = 0 ; j <= MAX_TRAIL ; j++) {
+            pebbles[i*(MAX_TRAIL+1)+j] = new_pstack(PBSTACK_SIZE);
+         }
+         ppush(pebbles+i*(MAX_TRAIL+1), root);
+      }
+
+      pstack_t ** hits    = malloc((tau+1) * sizeof(pstack_t *));
+      for (int i = 0 ; i < tau+1 ; i++) {
+         hits[i]    = new_pstack(HITSTACK_SIZE);
+      }
+      
+      seq_t * lastseq = calloc(tau+1, sizeof(seq_t));
 
       for (int i = 0 ; i < seqs->pos; i++) {
          if (i%500 == 0) fprintf(stderr, "mapping... (%6d/%ld)\r",i,seqs->pos);
          // Query.
          seq_t query = seqs->seq[i];
-         int    qlen = strlen(query.seq);
+         // DEBUG.
+         fprintf(stdout, "[seq: %s]\n", query.seq);
 
-         // Compute trail depth.
-         int trail = 0;
-         // TODO:
-         // - If the sequences are equal, do not trail, just keep a counter and repeat the output for the different tags.
-         // - Then compute trail wrt the next different sequence.
-         if (i < seqs->pos -1) {
-            seq_t next = seqs->seq[i+1];
-            while (query.seq[trail] == next.seq[trail] && query.seq[trail] != 0 && next.seq[trail] != 0) trail++;
+         if (lastseq[0].seq != NULL && strcmp(lastseq[0].seq, query.seq) == 0) {
+            // DEBUG.
+            fprintf(stdout, "[repeated seq]\n");
+            print_hits(tau, &query, chr, &index, hits);
+            continue;
          }
-         trail = min(MAX_TRAIL, trail);
-
+         // Update last seq.
+         lastseq[0] = query;
          // Reset hits.
          for (int j = 0; j <= tau; j++) {
             hits[j]->pos = 0;
          }
-
-         // Reset the pebbles that will be overwritten.
-         for (int j = start+1 ; j <= trail ; j++) {
-            pebbles[j]->pos = 0;
-         }
-
          // Translate the query string. The first 'char' is kept to store
          // the length of the query, which shifts the array by 1 position.
+         int  qlen = strlen(query.seq);
          char translated[qlen+2];
          translated[qlen+1] = EOS;
          for (int j = 0 ; j < qlen ; j++) {
             translated[j+1] = translate[(int) query.seq[j]];
          }
-
          // Set the search options.
          struct arg_t arg = {
             .query    = translated,
-            .tau      = tau,
-            .trail    = trail,
+            .tau      = 0,
+            .trail    = 0,
             .qlen     = qlen,
             .index    = &index,
             .triep    = &trie,
-            .pebbles  = pebbles,
+            .pebbles  = NULL,
             .hits     = hits
          };
 
-         // Run recursive search from cached pebbles.
-         uint row[2*MAXTAU+1];
-         uint * nwrow = row + MAXTAU;
-         char path[qlen+tau+1];
-
-         // DEBUG.
-         fprintf(stdout, "seq: %s", query.seq);
-         visited = 0;
-         for (int p = 0 ; p < pebbles[start]->pos ; p++) {
-            // Next pebble.
-            pebble_t pebble = pebbles[start]->pebble[p];
-            // Compute current alignment from alignment trie.
-            int wingsz;
-            trie_getrow(trie, pebble.rowid >> SCORE_BITS, pebble.rowid & SCORE_MASK, &wingsz, nwrow);
-            // Recover the current path.
-            long gpos = index.pos[pebble.sp];
-            for (int j = 0; j < start; j++) {
-               path[start-j] = translate[(int)index.genome[gpos+j]];
-            }
-            poucet(pebble.sp, pebble.ep, wingsz, nwrow, start + 1, path, &arg);
-         }
-         fprintf(stdout, " (visited nodes: %d)\n", visited);
          for (int a = 0; a <= tau; a++) {
-            for (int h = 0; h < hits[a]->pos; h++) {
-               pebble_t hit = hits[a]->pebble[h];
-               for (long k = hit.sp; k <= hit.ep; k++) {
-                     long locus = index.gsize - index.pos[k];
-                     int chrnum = bisect_search(0, chr->nchr-1, chr->start, locus+1)-1;
-                     fprintf(stdout, "%s\t%s:%ld\t%d\n", query.tag, chr->name[chrnum], locus-chr->start[chrnum]+1, a);
-               }
-            }
-            if (hits[a]->pos) break;
-         }
-         start = trail;
-      }
+            // DEBUG.
+            fprintf(stdout, "[dpoucet tau = %d]", a);
 
-      /*
-      while ((rlen = getline(&data, &bsize, queryfile)) > 0) {
-         if (data[rlen-1] == '\n') data[--rlen] = 0;
-         if (data[0] == '@') {
-            // Copy header
-            if (rlen > MAXHEADER_SIZE) strncpy(header, data, MAXHEADER_SIZE);
-            else strcpy(header, data);
-            header[0] = '>';
-
-            // Get sequence
-            if ((rlen = getline(&data, &bsize, queryfile)) > 0) {
-               if (data[rlen-1] == '\n') data[--rlen] = 0;
-               long ptr[2];
-               int streak = query_index(data, gsize, c, ptr, occ);
-               if (streak >= MINIMUM_STREAK) {
-                  // Print header and barcode
-                  data[rlen-streak] = 0;
-                  fprintf(stdout, "%s\t(%dnt:%ldloci)\n%s\t", header, streak, ptr[1]-ptr[0]+1, data);
-
-                  // Print positions spaced by commas
-                  for (long i = ptr[0]; i <= ptr[1]; i++) {
-                     long locus = pos[i];
-                     int chrnum = bisect_search(0, chr.nchr-1, chr.start, locus+1)-1;
-                     fprintf(stdout, "%s:%ld, ", chr.name[chrnum], locus-chr.start[chrnum]+1);
+            if (a == 0) {
+               arg.tau   = 0;
+               arg.trail = 0;
+               dash(0, index.gsize-1, 1, 0, (void *)NULL, &arg);
+            } else {
+               // Compute trail depth.
+               int trail = 0, start = 0;
+               if (i < seqs->pos - 1) {
+                  // Compute trail wrt the next different sequence.
+                  int k = 1;
+                  while (i+k < seqs->pos && strcmp(query.seq, seqs->seq[i+k].seq) == 0) k++;
+                  if (i+k < seqs->pos) {
+                     seq_t next = seqs->seq[i+k];
+                     while (query.seq[trail] == next.seq[trail]) trail++;
                   }
-                  fprintf(stdout, "\n");
                }
+               trail = min(MAX_TRAIL, trail);            
+
+               // Compute start based on the last cached seq.
+               if (lastseq[a].seq != NULL) {
+                  while (query.seq[start] == lastseq[a].seq[start]) start++;
+               }
+               start = min(MAX_TRAIL, start);
+               // Update last cached sequence.
+               lastseq[a] = query;
+
+               // Reset the pebbles that will be overwritten.
+               pstack_t ** pb = pebbles + (a-1)*(MAX_TRAIL+1);
+               for (int j = start+1 ; j <= trail ; j++) {
+                  pb[j]->pos = 0;
+               }
+
+               // Update args.
+               arg.tau     = a;
+               arg.trail   = trail;
+               arg.pebbles = pb;
+               // Run recursive search from cached pebbles.
+               uint row[2*MAXTAU+1];
+               uint * nwrow = row + MAXTAU;
+               char path[qlen+tau+1];
+
+               visited = 0;
+               for (int p = 0 ; p < pb[start]->pos ; p++) {
+                  // Next pebble.
+                  pebble_t pebble = pb[start]->pebble[p];
+                  // Compute current alignment from alignment trie.
+                  int wingsz;
+                  trie_getrow(trie, pebble.rowid >> SCORE_BITS, pebble.rowid & SCORE_MASK, &wingsz, nwrow);
+                  // Recover the current path.
+                  long gpos = index.pos[pebble.sp];
+                  for (int j = 0; j < start; j++) {
+                     path[start-j] = translate[(int)index.genome[gpos+j]];
+                  }
+                  poucet(pebble.sp, pebble.ep, wingsz, nwrow, start + 1, path, &arg);
+               }
+               // DEBUG.
+               fprintf(stdout, " (visited nodes: %d)", visited);
             }
-            getline(&data, &bsize, queryfile);
-            getline(&data, &bsize, queryfile);
+            // DEBUG.
+            fprintf(stdout, "\n");
+            if (print_hits(a, &query, chr, &index, hits)) break;
          }
       }
-      */
    }
    else if (strcmp(argv[1],"index") == 0) {
       write_index(argv[2]);
@@ -250,6 +237,30 @@ int main(int argc, char * argv[]) {
 /*********************/
 /** query functions **/
 /*********************/
+
+int
+print_hits
+(
+ int         tau,
+ seq_t     * query,
+ chr_t     * chr,
+ index_t   * index,
+ pstack_t ** hits
+)
+{
+   for (int a = 0; a <= tau; a++) {
+      for (int h = 0; h < hits[a]->pos; h++) {
+         pebble_t hit = hits[a]->pebble[h];
+         for (long k = hit.sp; k <= hit.ep; k++) {
+            long locus = index->gsize - index->pos[k];
+            int chrnum = bisect_search(0, chr->nchr-1, chr->start, locus+1)-1;
+            fprintf(stdout, "%s\t%s:%ld\t%d\n", query->tag, chr->name[chrnum], locus-chr->start[chrnum]+1, a);
+         }
+      }
+      if (hits[a]->pos) return 1;
+   }
+   return 0;
+}
 
 int
 poucet
@@ -369,7 +380,7 @@ poucet
 
       // Dash path if mismatches exhausted.
       if (depth > arg->trail && score == arg->tau) {
-         for (int i = -wingsz; i <= wingsz; i++) {
+         for (int i = -wsz; i <= wsz; i++) {
             if (row[i] == score)
                dash(newsp, newep, depth+1, i, path, arg);
          }

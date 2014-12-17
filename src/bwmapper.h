@@ -195,6 +195,7 @@ uint          trie_insert      (trie_t ** triep, char * path, int pathlen);
 void          trie_reset       (trie_t * trie);
 
 // Misc functions.
+int           print_hits       (int tau, seq_t* query, chr_t* chr, index_t* index, pstack_t** hits);
 seqstack_t  * read_file        (FILE * inputf, const int reverse, const int verbose);
 seqstack_t  * new_seqstack     (int size);
 int           seqsort          (seq_t * data, int numels, int thrmax);
