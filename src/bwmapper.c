@@ -1,4 +1,5 @@
 #include "bwmapper.h"
+#include <time.h>
 
 int visited = 0;
 
@@ -19,7 +20,6 @@ void SIGSEGV_handler(int sig) {
 int main(int argc, char * argv[]) {
 
    // TODO: parametrize
-   int opt_nthreads = 12;
    int opt_reverse  = 1;
    int opt_verbose  = 1;
    int tau = 2;
@@ -59,18 +59,22 @@ int main(int argc, char * argv[]) {
       }
 
       // Sort sequences.
+      /*
       fprintf(stderr, "sorting input sequences...\n");
       if(seqsort(&(seqs->seq[0]), seqs->pos, opt_nthreads)) {
          return EXIT_FAILURE;
       }
+      */
 
       int mflags = MAP_PRIVATE;
+      /*
       if (seqs->pos < 1000) {
          fprintf(stderr, "reading index (fly mode)...\n");
       } else {
          fprintf(stderr, "pre-loading index (populate)...\n");
          mflags |= MAP_POPULATE;
       }
+      */
       long idxsize = lseek(fd, 0, SEEK_END);
       lseek(fd, 0, SEEK_SET);
       long * indexp = mmap(NULL, idxsize, PROT_READ, mflags, fd, 0);
@@ -90,16 +94,9 @@ int main(int argc, char * argv[]) {
       if (chr == NULL)
          return EXIT_FAILURE;
 
-
-      // Print sorted sequences.
-      /*
-      fprintf(stdout, "sorted:\n");
-      for (int i = 0; i < seqs->pos; i++) {
-         fprintf(stdout, ">%s\n%s\n", seqs->seq[i].tag, seqs->seq[i].seq);
-      }
-      */
-      // Map sequences.
-      int start = 0;
+      // Map vars / structs.
+      long   sortbuf_size = SORTBUF_SIZE;
+      long * sortbuf      = malloc(sortbuf_size * sizeof(long));
       trie_t * trie = trie_new(TRIE_SIZE);
 
       // Initialize pebble and hit stacks.
@@ -120,122 +117,164 @@ int main(int argc, char * argv[]) {
       };
       ppush(pebbles, root);
 
-      for (int i = 0 ; i < seqs->pos; i++) {
-         if (i%500 == 0) fprintf(stderr, "mapping... (%6d/%ld)\r",i,seqs->pos);
-         // Query.
-         seq_t query = seqs->seq[i];
-         int    qlen = strlen(query.seq);
+      // Define number of seqs that will be mixed in each poucet search.
+      int seq_block = 100;
+      // Allocate hitmaps.
+      vstack_t ** hitmaps = malloc(seq_block * sizeof(vstack_t *));
+      for (int i = 0 ; i < seq_block ; i++) {
+         hitmaps[i] = new_stack(HITMAP_SIZE);
+         if (hitmaps[i] == NULL) return -1;
+      }
+      // Allocate loci stack.
+      int max_loci = 25;
+      loci_t * loci = malloc(sizeof(loci_t) + max_loci * sizeof(pebble_t));
+      if (loci == NULL) return -1;
+      loci->size = max_loci;
+      loci->pos  = 0;
 
-         // Compute trail depth.
-         int trail = 0;
-         // TODO:
-         // - If the sequences are equal, do not trail, just keep a counter and repeat the output for the different tags.
-         // - Then compute trail wrt the next different sequence.
-         if (i < seqs->pos -1) {
-            seq_t next = seqs->seq[i+1];
-            while (query.seq[trail] == next.seq[trail] && query.seq[trail] != 0 && next.seq[trail] != 0) trail++;
+      for (int s = 0 ; s < seqs->pos; s += seq_block) {
+         // Pre-process sequence block: chunk in subsequences and sort.
+         int         numseqs = (seq_block < seqs->pos - s ? seq_block : seqs->pos - s);
+         sublist_t * subseqs = process_subseq(seqs->seq+s, numseqs, KMER_SIZE, hitmaps);
+
+         // Clear hitmaps.
+         for (int i = 0 ; i < numseqs ; i++) {
+            hitmaps[i]->pos = 0;
          }
-         trail = min(MAX_TRAIL, trail);
-
-         // Reset hits.
-         for (int j = 0; j <= tau; j++) {
-            hits[j]->pos = 0;
-         }
-
-         // Reset the pebbles that will be overwritten.
-         for (int j = start+1 ; j <= trail ; j++) {
-            pebbles[j]->pos = 0;
-         }
-
-         // Translate the query string. The first 'char' is kept to store
-         // the length of the query, which shifts the array by 1 position.
-         char translated[qlen+2];
-         translated[qlen+1] = EOS;
-         for (int j = 0 ; j < qlen ; j++) {
-            translated[j+1] = translate[(int) query.seq[j]];
-         }
-
-         // Set the search options.
-         struct arg_t arg = {
-            .query    = translated,
-            .tau      = tau,
-            .trail    = trail,
-            .qlen     = qlen,
-            .index    = &index,
-            .triep    = &trie,
-            .pebbles  = pebbles,
-            .hits     = hits
-         };
-
-         // Run recursive search from cached pebbles.
-         uint row[2*MAXTAU+1];
-         uint * nwrow = row + MAXTAU;
-         char path[qlen+tau+1];
+         
+         // Poucet variables.
+         int start = 0;
+         char * lastseq = NULL;
 
          // DEBUG.
-         fprintf(stdout, "seq: %s", query.seq);
-         visited = 0;
-         for (int p = 0 ; p < pebbles[start]->pos ; p++) {
-            // Next pebble.
-            pebble_t pebble = pebbles[start]->pebble[p];
-            // Compute current alignment from alignment trie.
-            int wingsz;
-            trie_getrow(trie, pebble.rowid >> SCORE_BITS, pebble.rowid & SCORE_MASK, &wingsz, nwrow);
-            // Recover the current path.
-            long gpos = index.pos[pebble.sp];
-            for (int j = 0; j < start; j++) {
-               path[start-j] = translate[(int)index.genome[gpos+j]];
+         clock_t istart = clock();
+
+         // Poucet algorithm over the k-mers.
+         for (int i = 0; i < subseqs->size; i++) {
+            // DEBUG.
+            clock_t tstart = clock();
+            // Extract subseq.
+            sub_t query = subseqs->sub[i];
+            int    qlen = KMER_SIZE;
+
+            // Copy hits for repeated sequences.
+            if (lastseq != NULL && strcmp(lastseq, query.seq) == 0) {
+               // DEBUG.
+               fprintf(stdout, "[repeated seq]\n");
+               map_hits(hits, query.hitmap, &index, tau, i);
+               continue;
             }
-            poucet(pebble.sp, pebble.ep, wingsz, nwrow, start + 1, path, &arg);
-         }
-         fprintf(stdout, " (visited nodes: %d)\n", visited);
-         for (int a = 0; a <= tau; a++) {
-            for (int h = 0; h < hits[a]->pos; h++) {
-               pebble_t hit = hits[a]->pebble[h];
-               for (long k = hit.sp; k <= hit.ep; k++) {
-                     long locus = index.gsize - index.pos[k];
-                     int chrnum = bisect_search(0, chr->nchr-1, chr->start, locus+1)-1;
-                     fprintf(stdout, "%s\t%s:%ld\t%d\n", query.tag, chr->name[chrnum], locus-chr->start[chrnum]+1, a);
+
+            // Compute trail depth.
+            int trail = 0;
+            if (i < subseqs->size - 1) {
+               // Compute trail wrt the next different sequence.
+               int k = 1;
+               while (i+k < subseqs->size && strcmp(query.seq, subseqs->sub[i+k].seq) == 0) k++;
+               if (i+k < subseqs->size) {
+                  sub_t next = subseqs->sub[i+k];
+                  while (query.seq[trail] == next.seq[trail]) trail++;
                }
             }
-            if (hits[a]->pos) break;
-         }
-         start = trail;
-      }
+            trail = min(MAX_TRAIL, trail);
 
-      /*
-      while ((rlen = getline(&data, &bsize, queryfile)) > 0) {
-         if (data[rlen-1] == '\n') data[--rlen] = 0;
-         if (data[0] == '@') {
-            // Copy header
-            if (rlen > MAXHEADER_SIZE) strncpy(header, data, MAXHEADER_SIZE);
-            else strcpy(header, data);
-            header[0] = '>';
-
-            // Get sequence
-            if ((rlen = getline(&data, &bsize, queryfile)) > 0) {
-               if (data[rlen-1] == '\n') data[--rlen] = 0;
-               long ptr[2];
-               int streak = query_index(data, gsize, c, ptr, occ);
-               if (streak >= MINIMUM_STREAK) {
-                  // Print header and barcode
-                  data[rlen-streak] = 0;
-                  fprintf(stdout, "%s\t(%dnt:%ldloci)\n%s\t", header, streak, ptr[1]-ptr[0]+1, data);
-
-                  // Print positions spaced by commas
-                  for (long i = ptr[0]; i <= ptr[1]; i++) {
-                     long locus = pos[i];
-                     int chrnum = bisect_search(0, chr.nchr-1, chr.start, locus+1)-1;
-                     fprintf(stdout, "%s:%ld, ", chr.name[chrnum], locus-chr.start[chrnum]+1);
-                  }
-                  fprintf(stdout, "\n");
-               }
+            // Reset hits.
+            for (int j = 0; j <= tau; j++) {
+               hits[j]->pos = 0;
             }
-            getline(&data, &bsize, queryfile);
-            getline(&data, &bsize, queryfile);
+
+            // Reset the pebbles that will be overwritten.
+            for (int j = start+1 ; j <= trail ; j++) {
+               pebbles[j]->pos = 0;
+            }
+
+            // Translate the query string. The first 'char' is kept to store
+            // the length of the query, which shifts the array by 1 position.
+            char translated[qlen+2];
+            translated[qlen+1] = EOS;
+            for (int j = 0 ; j < qlen ; j++) {
+               translated[j+1] = translate[(int) query.seq[j]];
+            }
+
+            // Set the search options.
+            struct arg_t arg = {
+               .query    = translated,
+               .tau      = tau,
+               .trail    = trail,
+               .qlen     = qlen,
+               .index    = &index,
+               .triep    = &trie,
+               .pebbles  = pebbles,
+               .hits     = hits
+            };
+
+            // Run recursive search from cached pebbles.
+            uint row[2*MAXTAU+1];
+            uint * nwrow = row + MAXTAU;
+            char path[qlen+tau+1];
+
+            // DEBUG.
+            //fprintf(stdout, "seq: %s", query.seq);
+            visited = 0;
+            for (int p = 0 ; p < pebbles[start]->pos ; p++) {
+               // Next pebble.
+               pebble_t pebble = pebbles[start]->pebble[p];
+               // Compute current alignment from alignment trie.
+               int wingsz;
+               trie_getrow(trie, pebble.rowid >> SCORE_BITS, pebble.rowid & SCORE_MASK, &wingsz, nwrow);
+               // Recover the current path.
+               long gpos = index.pos[pebble.sp];
+               for (int j = 0; j < start; j++) {
+                  path[start-j] = translate[(int)index.genome[gpos+j]];
+               }
+               poucet(pebble.sp, pebble.ep, wingsz, nwrow, start + 1, path, &arg);
+            }
+            //            fprintf(stdout, " (visited nodes: %d)\n", visited);
+
+            // Map hits.
+            map_hits(hits, query.hitmap, &index, tau, i);
+
+            // Sort hitmap.
+            start = trail;
+            // DEBUG.
+            fprintf(stdout, "query time: %luus\n",((clock()-tstart)*1000000)/CLOCKS_PER_SEC);
+         }
+         // DEBUG.
+         fprintf(stdout, "TOTAL query time: %luus\n",((clock()-istart)*1000000)/CLOCKS_PER_SEC);
+
+         // Sort all hitmaps
+         for (int i = 0 ; i < numseqs ; i++) {
+            // Realloc sort buffer if necessary.
+            if (sortbuf_size < hitmaps[i]->pos) {
+               sortbuf = realloc(sortbuf, hitmaps[i]->pos * sizeof(long));
+               if (sortbuf == NULL) return -1;
+            }
+            // Merge-sort loci.
+            memcpy(sortbuf, hitmaps[i]->val, hitmaps[i]->pos * sizeof(long));
+            mergesort_long(hitmaps[i]->val, sortbuf, hitmaps[i]->pos, 0);
+            //radix_sort(hitmaps[i]->val, sortbuf, hitmaps[i]->pos, index.gsize);
+            for (int n = 0; n < hitmaps[i]->pos-1; n++) {
+               if (hitmaps[i]->val[n] > hitmaps[i]->val[n+1])
+                  fprintf(stdout, "sorting error index %d\n", n);
+            }
+            // Find matching loci in hitmaps.
+            hitmap_analysis(hitmaps[i], loci, KMER_SIZE - tau, WINDOW_SIZE);
+            // Print results.
+            for (int k = 0; k < loci->pos; k++) {
+               pebble_t locus = loci->loci[k];
+               long start = index.gsize - locus.ep;
+               long end   = index.gsize - locus.sp;
+               int chrnum = bisect_search(0, chr->nchr-1, chr->start, start+1)-1;
+               fprintf(stdout, "%ld\t%s\t%s:%ld-%ld (%ld)\n",
+                       locus.rowid,
+                       seqs->seq[s+i].tag,
+                       chr->name[chrnum],
+                       start - chr->start[chrnum]+1,
+                       end - chr->start[chrnum]+1,
+                       locus.ep - locus.sp + 1);
+            }
          }
       }
-      */
    }
    else if (strcmp(argv[1],"index") == 0) {
       write_index(argv[2]);
@@ -250,6 +289,143 @@ int main(int argc, char * argv[]) {
 /*********************/
 /** query functions **/
 /*********************/
+
+int
+hitmap_analysis
+(
+ vstack_t * hitmap,
+ loci_t   * loci,
+ int        mindist,
+ int        maxdist
+)
+{
+   if (loci->size < 1) return -1;
+   long minv = 0;
+   int  min  = 0;
+   
+   // Initialize loci list.
+   loci->pos = 0;
+   
+   // Find clusters in hitmap.
+   int   streak = 0;
+   pebble_t hit;
+   for (int i = 0; i < hitmap->pos - 1; i++) {
+      long diff = hitmap->val[i+1] - hitmap->val[i];
+      if (diff < maxdist) {
+         if (diff > mindist) {
+            if (!streak) {
+               hit.sp = hitmap->val[i];
+               streak = 2;
+            } else streak++;
+         }
+      } else {
+         if (streak) {
+            hit.ep = hitmap->val[i];
+            hit.rowid = streak;
+            // Check significance.
+            if (streak > minv) {
+               loci->loci[min] = hit;
+               // Extend loci list if not yet full.
+               if (loci->pos == min && loci->pos < loci->size) min = ++loci->pos;
+               // Find minimum.
+               else {
+                  min = 0;
+                  minv = loci->loci[0].rowid;
+                  for (int j = 1 ; j < loci->pos; j++) {
+                     if (minv > loci->loci[j].rowid) {
+                        min  = j;
+                        minv = loci->loci[j].rowid;
+                     }
+                  }
+               }
+               // End find minimum.
+            }
+            streak = 0;
+         }
+      }
+   }
+   // Sort mapped regions by significance.
+   // mergesort_score(...);
+   return 0;
+}
+
+int
+map_hits
+(
+ pstack_t ** hits,
+ vstack_t ** hitmap,
+ index_t   * index,
+ int         tau,
+ int         id
+ )
+{
+   // Push hits to hitmap.
+   for (int a = 0 ; a < tau ; a++) {
+      for (int h = 0; h < hits[a]->pos; h++) {
+         pebble_t hit = hits[a]->pebble[h];
+         // Filter out too abundant sequences. (To speed up the sorting).
+         if (hit.ep - hit.sp + 1 < HIT_MAX_LOCI) {
+            if(pushvec(hitmap, index->pos + hit.sp, hit.ep - hit.sp + 1)) return -1;
+         }
+      }
+   }
+   return 0;
+}
+
+sublist_t *
+process_subseq
+(
+ seq_t     * seqs,
+ int         numseqs,
+ int         k,
+ vstack_t ** hitmaps
+)
+{
+   if (numseqs < 1) return NULL;
+   int    rev   = (seqs[0].rseq != NULL);
+   char * seq   = seqs[0].seq;
+   int    lsize = (strlen(seq)/k+1)*(1+rev)*numseqs;
+   int    lpos  = 0;
+   sublist_t * list = malloc(sizeof(sublist_t) + lsize * sizeof(sub_t));
+   if (list == NULL) return NULL;
+   
+   for (int i = 0; i < numseqs; i++) {
+      seq_t s  = seqs[i];
+      int slen = strlen(s.seq);
+      int last = (slen%k > LAST_THRESHOLD);
+      int subs = slen/k + last;
+      int    p = 0;
+
+      for (int j = 0; j < subs; j++) {
+         // Copy the last sub if the remaining nucleotides > LAST_THRESHOLD.
+         if (j == subs-1 && last) p = slen - k;
+         // Realloc full list.
+         if (lpos + rev >= lsize) {
+            lsize *=2;
+            list = realloc(list, sizeof(sublist_t) + lsize * sizeof(sub_t));
+            if (list == NULL) return NULL;
+         }
+         // Generate subseq and save to list.
+         sub_t subseq = { .seq = s.seq + p, .hitmap = hitmaps + i};
+         list->sub[lpos++] = subseq;
+         // Insert the reverse complement as well.
+         if (rev) {
+            subseq.seq = s.rseq + p;
+            list->sub[lpos++] = subseq;
+         }
+         // Jump k nucleotides.
+         p += k;
+      }
+   }
+   // Realloc list.
+   list->size = lpos;
+   list = realloc(list, sizeof(sublist_t) + lpos * sizeof(sub_t));
+
+   seqsort(list->sub, list->size, k, 1);
+
+   return list;
+}
+
 
 int
 poucet
@@ -432,12 +608,12 @@ dash
       if (ep < sp) return;
    }
 
+
    pebble_t hit = {
       .sp = sp,
       .ep = ep,
       .rowid = 0
    };
-
    ppush(arg->hits + arg->tau, hit);
 }
 
@@ -863,21 +1039,19 @@ seq_push
    
    // Copy tag
    seqt->tag = strdup(tag);
+   seqt->seq = strdup(seq);
 
    // Copy sequence (or reverse-complement)
-   char * s;
    if (reverse) {
       int len = strlen(seq);
-      s = malloc(len+1);
+      char * rseq = malloc(len+1);
       for (int i = 0; i <= len; i++)
-         s[len-1-i] = rcode[(int)seq[i]];
-      s[len] = 0;
+         rseq[len-1-i] = rcode[(int)seq[i]];
+      rseq[len] = 0;
+      seqt->rseq = rseq;
    } else {
-      s = strdup(seq);
+      seqt->rseq = NULL;
    }
-
-   seqt->seq = s;
-   
    return 0;
 }
 
@@ -921,7 +1095,7 @@ new_stack
 }
 
 
-void
+int
 push
 (
  vstack_t ** stackp,
@@ -934,13 +1108,39 @@ push
       *stackp = stack = realloc(stack, sizeof(vstack_t) + newsize * sizeof(long));
       if (stack == NULL) {
          fprintf(stderr, "error in 'push' (realloc): %s\n", strerror(errno));
-         exit(EXIT_FAILURE);
+         return -1;
       }
       stack->size = newsize;
    }
 
    stack->val[stack->pos++] = value;
+   return 0;
 }
+
+int
+pushvec
+(
+ vstack_t ** stackp,
+ long      * vector,
+ int         vecsize
+)
+{
+   vstack_t * stack = *stackp;
+   if (stack->pos + vecsize >= stack->size) {
+      long newsize = stack->size * 2;
+      while(newsize <= stack->pos + vecsize) newsize *= 2;
+      *stackp = stack = realloc(stack, sizeof(vstack_t) + newsize * sizeof(long));
+      if (stack == NULL) {
+         fprintf(stderr, "error in 'push' (realloc): %s\n", strerror(errno));
+         return -1;
+      }
+      stack->size = newsize;
+   }
+   memcpy(stack->val + stack->pos, vector, vecsize * sizeof(long));
+   stack->pos += vecsize;
+   return 0;
+}
+
 
 
 pstack_t *
@@ -1293,19 +1493,8 @@ read_file
          continue;
       }
       
-      int ret = seq_push(&seqstack, tag, seq, 0);
-      if (ret) {
-         if (ret == 1) continue;
-         else if (ret == -1) return NULL;
-      }
-
-      if (reverse) {
-         ret = seq_push(&seqstack, tag, seq, 1);
-         if (ret) {
-            if (ret == 1) continue;
-            else if (ret == -1) return NULL;
-         }
-      }
+      
+      if (seq_push(&seqstack, tag, seq, reverse)) return NULL;
    }
 
    free(line);
@@ -1318,8 +1507,9 @@ read_file
 int
 seqsort
 (
- seq_t * data,
+ sub_t * data,
  int     numels,
+ int     slen,
  int     thrmax
 )
 // SYNOPSIS:                                                              
@@ -1338,8 +1528,8 @@ seqsort
 //   Pointers to repeated elements are set to NULL.
 {
    // Copy to buffer.
-   seq_t *buffer = malloc(numels * sizeof(seq_t));
-   memcpy(buffer, data, numels * sizeof(seq_t));
+   sub_t *buffer = malloc(numels * sizeof(sub_t));
+   memcpy(buffer, data, numels * sizeof(sub_t));
 
    // Prepare args struct.
    sortargs_t args;
@@ -1353,6 +1543,7 @@ seqsort
    // sorted elements end in 'data' and not in 'buffer'.
    args.b      = 0;
    args.thread = 0;
+   args.slen   = slen;
 
    // Allocate a number of threads that is a power of 2.
    while ((thrmax >> (args.thread + 1)) > 0) args.thread++;
@@ -1412,9 +1603,9 @@ nukesort
    }
 
    // Separate data and buffer (b specifies which is buffer).
-   seq_t * l = (sortargs->b ? arg1.buf0 : arg1.buf1);
-   seq_t * r = (sortargs->b ? arg2.buf0 : arg2.buf1);
-   seq_t * buf = (sortargs->b ? arg1.buf1 : arg1.buf0);
+   sub_t * l = (sortargs->b ? arg1.buf0 : arg1.buf1);
+   sub_t * r = (sortargs->b ? arg2.buf0 : arg2.buf1);
+   sub_t * buf = (sortargs->b ? arg1.buf1 : arg1.buf0);
 
    int i = 0;
    int j = 0;
@@ -1425,18 +1616,18 @@ nukesort
    while (idx < sortargs->size) {
       // Right buffer is exhausted. Copy left buffer...
       if (j == arg2.size) {
-         memcpy(buf+idx, l+i, (arg1.size-i) * sizeof(seq_t));
+         memcpy(buf+idx, l+i, (arg1.size-i) * sizeof(sub_t));
          break;
       }
       // ... or vice versa.
       if (i == arg1.size) {
-         memcpy(buf+idx, r+j, (arg2.size-j) * sizeof(seq_t));
+         memcpy(buf+idx, r+j, (arg2.size-j) * sizeof(sub_t));
          break;
       }
       // Do the comparison.
-      seq_t ul = l[i];
-      seq_t ur = r[j];
-      cmp = strcmp(ul.seq, ur.seq);
+      sub_t ul = l[i];
+      sub_t ur = r[j];
+      cmp = strncmp(ul.seq, ur.seq, sortargs->slen);
       if (cmp < 0) buf[idx++] = l[i++];
       else         buf[idx++] = r[j++];
    }
@@ -1444,3 +1635,103 @@ nukesort
    return NULL;
 }
 
+void
+mergesort_long
+(
+ long * data,
+ long * aux,
+ int    size,
+ int    b
+ )
+// SYNOPSIS:
+//   Recursive part of 'seqsort'.
+//
+// ARGUMENTS:
+//   args: a sortargs_t struct.
+//
+// RETURN:
+//   
+//
+// SIDE EFFECTS:
+//   Sorts the array of 'seq_t' specified in 'args'.
+{
+   if (size < 2) return;
+
+   // Next level params.
+   int newsize = size/2;
+   int newsize2 = newsize + size%2;
+   long * data2 = data + newsize;
+   long * aux2 = aux + newsize;
+   mergesort_long(data, aux, newsize, (b+1)%2);
+   mergesort_long(data2, aux2, newsize2, (b+1)%2);
+
+
+   // Separate data and buffer (b specifies which is buffer).
+   long * l = (b ? data : aux);
+   long * r = (b ? data2 : aux2);
+   long * buf = (b ? aux : data);
+
+   int i = 0;
+   int j = 0;
+   int idx = 0;
+
+   // Merge sets
+   while (idx < size) {
+      // Right buffer is exhausted. Copy left buffer...
+      if (j == newsize2) {
+         memcpy(buf+idx, l+i, (newsize-i) * sizeof(long));
+         break;
+      }
+      // ... or vice versa.
+      if (i == newsize) {
+         memcpy(buf+idx, r+j, (newsize2-j) * sizeof(long));
+         break;
+      }
+      // Do the comparison.
+      if (l[i] < r[j]) buf[idx++] = l[i++];
+      else             buf[idx++] = r[j++];
+   }
+}
+
+void
+radix_sort
+(
+ long * a,      // Indices to sort. (may be modified)
+ long * b,      // Aux buffer.
+ long   n,      // Length of a.
+ long   maxval  // Maximum value in a.
+)
+{
+   const int rs_bits = 16;
+   const int rs_size = 1 << rs_bits;
+   const int rs_mask = rs_size - 1;
+ 
+   int ref = 0, new = 1, it = 0;
+   long cnt[rs_size];
+   long prf[rs_size];
+   long * s[2];
+
+   // Count iterations per value.
+   while ((maxval >> (rs_bits*it)) & rs_mask) it++;
+
+   s[0] = a;
+   s[1] = b;
+   for (long j = 0; j < it; j++) {
+      int shift = rs_bits * j;
+      // Reset count and prefix.
+      memset(cnt, 0, rs_size*sizeof(long));
+      prf[0] = 0;
+      // Count radix RS_BITS.
+      for (long i = 0; i < n; i++) cnt[(s[ref][i] >> shift) & rs_mask]++;
+      // Prefix.
+      for (int  i = 1; i < rs_size; i++) prf[i] = prf[i-1] + cnt[i-1];
+      // Sorted.
+      for (long i = 0; i < n; i++) s[new][prf[(s[ref][i] >> shift) & rs_mask]++] = s[ref][i];
+      // Swap buffers.
+      ref = (ref+1)%2;
+      new = (new+1)%2;
+   }
+   
+   // Move data to a.
+   if (ref == 1) memcpy(s[0], s[1], n*sizeof(long));
+}
