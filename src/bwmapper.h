@@ -44,16 +44,23 @@
 
 #define KMER_SIZE      14
 #define LAST_THRESHOLD 7
+#define SUBSEQID_BITS  24
 #define HIT_MAX_LOCI   1000
 
-#define WINDOW_SIZE    100
+#define WINDOW_SIZE    200
 
 #define SCORE_BITS     16
 #define SCORE_MASK     0x000000000000FFFF
 
+// SW-alignment
+#define SCORE_MATCH    1
+#define SCORE_DELETE   -1
+#define SCORE_INSERT   -1
+
 // Inline definition
 #define max(a,b) (a > b ? a : b)
 #define min(a,b) (a < b ? a : b)
+
 char translate[256] = {[0 ... 255] = 4, ['@'] = 0,
                            ['a'] = 1, ['c'] = 2, ['g'] = 3, ['n'] = 4, ['t'] = 5,
                            ['A'] = 1, ['C'] = 2, ['G'] = 3, ['N'] = 4, ['T'] = 5 };
@@ -81,7 +88,8 @@ typedef struct sub_t      sub_t;
 typedef struct list_t     list_t;
 typedef struct chr_t      chr_t;
 typedef struct pebble_t   pebble_t;
-typedef struct loci_t     loci_t;
+typedef struct match_t    match_t;
+typedef struct matchlist_t matchlist_t;
 typedef struct node_t     node_t;
 typedef struct trie_t     trie_t;
 typedef struct arg_t      arg_t;
@@ -121,10 +129,19 @@ struct pebble_t {
    long rowid; // [bits 63..16] node id. [bits 15..0] score.
 };
 
-struct loci_t {
-          int      size;
-          int      pos;
-   struct pebble_t loci[];
+struct match_t {
+   long ref_s;
+   long ref_e;
+   int read_s;
+   int read_e;
+   int hits;
+   int score;
+};
+
+struct matchlist_t {
+          int    size;
+          int    pos;
+   struct match_t  match[];
 };
 
 struct index_t {
@@ -195,7 +212,8 @@ struct sortargs_t {
 
 
 // Query functions.
-int           hitmap_analysis  (vstack_t * hitmap, loci_t * loci, int mindist, int maxdist);
+pebble_t      sw_align         (char * read, int rdlen, char * ref, int rflen);
+int           hitmap_analysis  (vstack_t * hitmap, matchlist_t * loci, int kmer_size, int tau, int maxdist);
 int           map_hits         (pstack_t ** hits, vstack_t ** hitmap, index_t * index, int tau, int id);
 sublist_t   * process_subseq   (seq_t * seqs, int numseqs, int k, vstack_t ** hitmaps);
 int           poucet           (const long sp, const long ep, const int wingsz, const uint* prow, const int depth, char* path, arg_t * arg);
@@ -231,4 +249,5 @@ seqstack_t  * new_seqstack     (int size);
 int           seqsort          (sub_t * data, int numels, int slen, int thrmax);
 void        * nukesort         (void * args);
 void          mergesort_long   (long * data, long * aux, int size, int b);
+void          mergesort_match  (match_t * data, match_t * aux, int size, int b);
 void          radix_sort       (long * a, long * b, long n, long maxval);

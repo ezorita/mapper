@@ -126,11 +126,11 @@ int main(int argc, char * argv[]) {
          if (hitmaps[i] == NULL) return -1;
       }
       // Allocate loci stack.
-      int max_loci = 25;
-      loci_t * loci = malloc(sizeof(loci_t) + max_loci * sizeof(pebble_t));
-      if (loci == NULL) return -1;
-      loci->size = max_loci;
-      loci->pos  = 0;
+      int max_match = 25;
+      matchlist_t * matches = malloc(sizeof(matchlist_t) + max_match * sizeof(match_t));
+      if (matches == NULL) return -1;
+      matches->size = max_match;
+      matches->pos  = 0;
 
       for (int s = 0 ; s < seqs->pos; s += seq_block) {
          // Pre-process sequence block: chunk in subsequences and sort.
@@ -152,7 +152,7 @@ int main(int argc, char * argv[]) {
          // Poucet algorithm over the k-mers.
          for (int i = 0; i < subseqs->size; i++) {
             // DEBUG.
-            clock_t tstart = clock();
+            //            clock_t tstart = clock();
             // Extract subseq.
             sub_t query = subseqs->sub[i];
             int    qlen = KMER_SIZE;
@@ -237,7 +237,7 @@ int main(int argc, char * argv[]) {
             // Sort hitmap.
             start = trail;
             // DEBUG.
-            fprintf(stdout, "query time: %luus\n",((clock()-tstart)*1000000)/CLOCKS_PER_SEC);
+            //            fprintf(stdout, "query time: %luus\n",((clock()-tstart)*1000000)/CLOCKS_PER_SEC);
          }
          // DEBUG.
          fprintf(stdout, "TOTAL query time: %luus\n",((clock()-istart)*1000000)/CLOCKS_PER_SEC);
@@ -258,20 +258,46 @@ int main(int argc, char * argv[]) {
                   fprintf(stdout, "sorting error index %d\n", n);
             }
             // Find matching loci in hitmaps.
-            hitmap_analysis(hitmaps[i], loci, KMER_SIZE - tau, WINDOW_SIZE);
+            hitmap_analysis(hitmaps[i], matches, KMER_SIZE, tau, WINDOW_SIZE);
+            if (matches == NULL) continue;
+
+            // Smith-Waterman align of hits.
+            for(long k = 0; k < matches->pos; k++) {
+               match_t * match = matches->match + k;
+               long rlen  = match->ref_e - match->ref_s + 1;               
+               // Copy and reverse reference sequence.
+               char ref[rlen];
+               for (int i = 0 ; i < rlen; i++) ref[i] = index.genome[match->ref_e - i];
+
+               int slen = strlen(seqs->seq[i].seq);
+               pebble_t salign = sw_align(seqs->seq[i].seq, slen, ref, rlen);
+               pebble_t ralign = sw_align(seqs->seq[i].rseq, slen, ref, rlen);
+               pebble_t best = (salign.rowid > ralign.rowid ? salign : ralign);
+               match->score  = best.rowid;
+               match->read_s = best.sp;
+               match->read_e = best.ep;
+            }
+
+            // Sort mapped regions by significance.
+            match_t aux[matches->pos];
+            memcpy(aux, matches->match, matches->pos * sizeof(match_t));
+            mergesort_match(matches->match, aux, matches->pos, 0);
+
             // Print results.
-            for (int k = 0; k < loci->pos; k++) {
-               pebble_t locus = loci->loci[k];
-               long start = index.gsize - locus.ep;
-               long end   = index.gsize - locus.sp;
-               int chrnum = bisect_search(0, chr->nchr-1, chr->start, start+1)-1;
-               fprintf(stdout, "%ld\t%s\t%s:%ld-%ld (%ld)\n",
-                       locus.rowid,
+            for (long k = 0; k < matches->pos; k++) {
+               match_t match = matches->match[k];
+               long g_start = index.gsize - match.ref_e;
+               long g_end   = index.gsize - match.ref_s;
+               int chrnum = bisect_search(0, chr->nchr-1, chr->start, g_start+1)-1;
+               fprintf(stdout, "%d\t%d\t%d-%d\t%s\t%s:%ld-%ld (%ld)\n",
+                       match.hits,
+                       match.score,
+                       match.read_s, match.read_e,
                        seqs->seq[s+i].tag,
                        chr->name[chrnum],
-                       start - chr->start[chrnum]+1,
-                       end - chr->start[chrnum]+1,
-                       locus.ep - locus.sp + 1);
+                       g_start - chr->start[chrnum]+1,
+                       g_end - chr->start[chrnum]+1,
+                       g_end - g_start + 1);
             }
          }
       }
@@ -290,51 +316,135 @@ int main(int argc, char * argv[]) {
 /** query functions **/
 /*********************/
 
+pebble_t
+sw_align
+(
+ char * read,
+ int    rdlen,
+ char * ref,
+ int    rflen
+)
+{
+   pebble_t align = {.sp = 0, .ep = 0, .rowid = 0};
+
+   char ref_val[rflen];
+   for (int i = 0; i < rflen; i++) ref_val[i] = translate[(int)ref[i]];
+
+   if (rdlen < 1 || rflen < 1) return align;
+   int score[rflen];
+   int start[rflen];
+   score[0] = 0;
+   
+   // 1st column.
+   char read_val = translate[(int)read[0]];
+   for (int i = 0; i < rflen; i++) {
+      score[i] = (read_val == ref_val[i]);
+      start[i]   = 0;
+   }
+
+   // Next columns.
+   for (int c = 1; c < rdlen; c++) {
+      int match_old = 0;
+      int start_old = c;
+      read_val = translate[(int)read[c]];
+      for (int i = 0; i < rflen; i++) {
+         // Match.
+         int sc = max(0, match_old + SCORE_MATCH*(read_val == ref_val[i] ? 1 : -1));
+         int st = (match_old ? start_old : c);
+         // Deletion.
+         if (i > 0 && score[i-1] > 1 && score[i-1] > sc) {
+            if (sc == score[i-1] - 1) {
+               st = min(start[i-1], st);
+            } else {
+               sc = score[i-1] + SCORE_DELETE;
+               st = start[i-1];
+            }
+         }
+         // Insertion.
+         if (score[i] > 1 &&  score[i] > sc) {
+            if (sc == score[i] - 1) {
+               st = min(start[i] , st);
+            } else {
+               sc = score[i] + SCORE_INSERT;
+               st = start[i];
+            }
+         }
+
+         match_old = score[i];
+         start_old = start[i];
+         start[i] = st;
+         score[i] = max(sc, 0);
+
+         if (score[i] > align.rowid) {
+            align.rowid = score[i];
+            align.sp    = start[i];
+            align.ep    = c;
+         }
+      }
+   }
+
+   return align;
+}
+
 int
 hitmap_analysis
 (
- vstack_t * hitmap,
- loci_t   * loci,
- int        mindist,
- int        maxdist
+ vstack_t    * hitmap,
+ matchlist_t * matchlist,
+ int           kmer_size,
+ int           tau,
+ int           maxdist
 )
 {
-   if (loci->size < 1) return -1;
+   if (matchlist->size < 1) return -1;
    long minv = 0;
    int  min  = 0;
+   int  mindist = kmer_size - tau;
    
-   // Initialize loci list.
-   loci->pos = 0;
+   // Initialize matchlist list.
+   matchlist->pos = 0;
+
+   // Initialize match.
+   match_t match;
+   match.read_s = 0;
+   match.read_e = 0;
+   match.score  = 0;
    
    // Find clusters in hitmap.
    int   streak = 0;
-   pebble_t hit;
-   for (int i = 0; i < hitmap->pos - 1; i++) {
-      long diff = hitmap->val[i+1] - hitmap->val[i];
+   long id_mask = (1 << SUBSEQID_BITS) - 1;
+   long loc1, loc2 = hitmap->val[0] >> SUBSEQID_BITS;
+   long sid1, sid2 = hitmap->val[0] & id_mask;
+   for (int i = 1; i < hitmap->pos - 1; i++) {
+      loc1 = loc2;
+      sid1 = sid2;
+      loc2 = hitmap->val[i+1] >> SUBSEQID_BITS;
+      sid2 = hitmap->val[i+1] & id_mask;
+      long diff = loc2 - loc1;
       if (diff < maxdist) {
-         if (diff > mindist) {
+         if (diff > mindist && sid1 != sid2) {
             if (!streak) {
-               hit.sp = hitmap->val[i];
+               match.ref_s = max(0, loc1 - WINDOW_SIZE);
                streak = 2;
             } else streak++;
          }
       } else {
          if (streak) {
-            hit.ep = hitmap->val[i];
-            hit.rowid = streak;
+            match.ref_e = loc1 + kmer_size + WINDOW_SIZE;
+            match.hits = streak;
             // Check significance.
             if (streak > minv) {
-               loci->loci[min] = hit;
-               // Extend loci list if not yet full.
-               if (loci->pos == min && loci->pos < loci->size) min = ++loci->pos;
+               matchlist->match[min] = match;
+               // Extend matchlist list if not yet full.
+               if (matchlist->pos == min && matchlist->pos < matchlist->size) min = ++matchlist->pos;
                // Find minimum.
                else {
                   min = 0;
-                  minv = loci->loci[0].rowid;
-                  for (int j = 1 ; j < loci->pos; j++) {
-                     if (minv > loci->loci[j].rowid) {
+                  minv = matchlist->match[0].hits;
+                  for (int j = 1 ; j < matchlist->pos; j++) {
+                     if (minv > matchlist->match[j].hits) {
                         min  = j;
-                        minv = loci->loci[j].rowid;
+                        minv = matchlist->match[j].hits;
                      }
                   }
                }
@@ -344,8 +454,6 @@ hitmap_analysis
          }
       }
    }
-   // Sort mapped regions by significance.
-   // mergesort_score(...);
    return 0;
 }
 
@@ -359,13 +467,31 @@ map_hits
  int         id
  )
 {
+   vstack_t * hmap    = *hitmap;
+   long       idstamp = id & ((1 << SUBSEQID_BITS) - 1);
+
    // Push hits to hitmap.
    for (int a = 0 ; a < tau ; a++) {
       for (int h = 0; h < hits[a]->pos; h++) {
-         pebble_t hit = hits[a]->pebble[h];
+         pebble_t hit    = hits[a]->pebble[h];
+         long     n_hits = hit.ep - hit.sp + 1;
          // Filter out too abundant sequences. (To speed up the sorting).
-         if (hit.ep - hit.sp + 1 < HIT_MAX_LOCI) {
-            if(pushvec(hitmap, index->pos + hit.sp, hit.ep - hit.sp + 1)) return -1;
+         if (n_hits < HIT_MAX_LOCI) {
+            // Realloc hitmap if needed.
+            if (hmap->pos + n_hits >= hmap->size) {
+               long newsize = hmap->size + n_hits + 1;
+               hmap = *hitmap = realloc(hmap, sizeof(vstack_t) + newsize * sizeof(long));
+               if (hmap == NULL) {
+                  fprintf(stderr, "error in 'push' (realloc): %s\n", strerror(errno));
+                  return -1;
+               }
+               hmap->size = newsize;
+            }
+
+            // Copy hits.
+            for (long i = hit.sp; i <= hit.ep ; i++) {
+               hmap->val[hmap->pos++] = (index->pos[i] << SUBSEQID_BITS) | idstamp;
+            }
          }
       }
    }
@@ -1690,6 +1816,65 @@ mergesort_long
       // Do the comparison.
       if (l[i] < r[j]) buf[idx++] = l[i++];
       else             buf[idx++] = r[j++];
+   }
+}
+
+void
+mergesort_match
+(
+ match_t * data,
+ match_t * aux,
+ int size,
+ int b
+)
+// SYNOPSIS:
+//   Recursive part of 'seqsort'.
+//
+// ARGUMENTS:
+//   args: a sortargs_t struct.
+//
+// RETURN:
+//   
+//
+// SIDE EFFECTS:
+//   Sorts the array of 'seq_t' specified in 'args'.
+{
+   
+   if (size < 2) return;
+
+   // Next level params.
+   int newsize = size/2;
+   int newsize2 = newsize + size%2;
+   match_t * data2 = data + newsize;
+   match_t * aux2 = aux + newsize;
+   mergesort_match(data, aux, newsize, (b+1)%2);
+   mergesort_match(data2, aux2, newsize2, (b+1)%2);
+
+
+   // Separate data and buffer (b specifies which is buffer).
+   match_t * l = (b ? data : aux);
+   match_t * r = (b ? data2 : aux2);
+   match_t * buf = (b ? aux : data);
+
+   int i = 0;
+   int j = 0;
+   int idx = 0;
+
+   // Merge sets
+   while (idx < size) {
+      // Right buffer is exhausted. Copy left buffer...
+      if (j == newsize2) {
+         memcpy(buf+idx, l+i, (newsize-i) * sizeof(match_t));
+         break;
+      }
+      // ... or vice versa.
+      if (i == newsize) {
+         memcpy(buf+idx, r+j, (newsize2-j) * sizeof(match_t));
+         break;
+      }
+      // Do the comparison.
+      if (l[i].hits > r[j].hits || (l[i].hits == r[j].hits && l[i].score > r[j].score)) buf[idx++] = l[i++];
+      else                                                                              buf[idx++] = r[j++];
    }
 }
 
