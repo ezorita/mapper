@@ -14,8 +14,8 @@ GSOURCES= $(addprefix $(SRC_DIR)/,$(SOURCE_FILES))
 GHEADERS= $(addprefix $(INC_DIR)/,$(HEADER_FILES))
 INCLUDES= $(addprefix -I, $(INC_DIR))
 
-CFLAGS= -std=c99 -g -Wall -O3
-LDLIBS= -lpthread
+CFLAGS= -std=c99 -g -Wall
+LDLIBS= -lpthread -lm
 CC= gcc
 
 all: bwmapper

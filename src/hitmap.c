@@ -177,32 +177,37 @@ hitmap
 
          // Smith-Waterman alignment.
          for(long k = 0; k < matches->pos; k++) {
+            // Get next match.
             match_t * match = matches->match + k;
-            long rlen  = match->ref_e - match->ref_s + 1;               
-            // Copy and reverse reference sequence.
-            char ref[rlen+1];
-            ref[rlen] = 0;
-            for (int i = 0 ; i < rlen; i++)
-               ref[i] = index.genome[match->ref_e - i];
+            // Extend alignment.
+            align_t align_r, align_l;
+            char * read = (match->dir ? seqs->seq[i].rseq : seqs->seq[i].seq);
 
-            tstart = clock();            
-            align_t salign = sw_align(seqs->seq[i].seq, slen, ref, rlen);
-            fprintf(stderr, "forward alingment (%d x %ld) done in %fs\n", slen, rlen, (clock()-tstart)*1.0/CLOCKS_PER_SEC);
-            align_t ralign = sw_align(seqs->seq[i].rseq, slen, ref, rlen);
-            align_t best;
-            if (salign.score > ralign.score) best = salign;
-            else {
-               best.start = (slen - ralign.max);
-               best.max = slen - ralign.start;
-               best.score = ralign.score;
-               best.ident = ralign.ident;
-               match->dir = 1;
+            // Will align both from the start point (backward from start, forward from start+1).
+            // The previously matched region will be aligned again,
+            // but it's the only way to know precisely the total identity of the read.
+            // Note that the genome is stored backwards so all signs are changed.
+            tstart = clock();
+            align_r = nw_align(read + match->read_s + 1, index.genome + match->ref_s - 1, WINDOW_SIZE, ALIGN_FORWARD, ALIGN_BACKWARD);
+            align_l = nw_align(read + match->read_s, index.genome + match->ref_s, WINDOW_SIZE, ALIGN_BACKWARD, ALIGN_FORWARD);
+            // Smith-waterman.
+            //            align_t salign = sw_align(seqs->seq[i].seq, slen, ref, rlen);
+            //            align_t ralign = sw_align(seqs->seq[i].rseq, slen, ref, rlen);
+            fprintf(stderr, "extended alingment done in %fs\n", (clock()-tstart)*1.0/CLOCKS_PER_SEC);
+
+            match->score  = align_l.score + align_r.score;
+            match->ident  = 1.0 - (match->score*1.0)/(align_l.pathlen + align_r.pathlen);
+            match->ref_s  = index.gsize - match->ref_e - align_r.end; // Align.end is the genome breakpoint.
+            match->ref_e  = index.gsize - match->ref_s + align_l.end; // Align.end is the genome breakpoint.
+            match->read_s = match->read_s - align_l.start;     // Align.start is the read breakpoint.
+            match->read_e = match->read_s + 1 + align_r.start; // Align.start is the read breakpoint.
+
+            // Correct read start and end points if we are matching the reverse complement.
+            if (match->dir) {
+               long end = slen - match->read_s;
+               match->read_s = slen - match->read_e;
+               match->read_e = end;
             }
-
-            match->score  = best.score;
-            match->read_s = best.start;
-            match->read_e = best.max;
-            match->ident  = best.ident;
          }
 
          // Sort mapped regions by significance.
@@ -216,13 +221,13 @@ hitmap
          for (long k = 0; k < matches->pos; k++) {
             match_t match = matches->match[k];
             int dir = match.dir;
-            long g_start = index.gsize - match.ref_e;
-            long g_end   = index.gsize - match.ref_s;
+            long g_start = match.ref_e;
+            long g_end   = match.ref_s;
             int chrnum = bisect_search(0, chr->nchr-1, chr->start, g_start+1)-1;
             fprintf(stdout, "%d\t%d (%.2f%%)\t%d-%d\t%s:%ld-%ld:%c (%ld)\n",
                     match.hits,
                     match.score,
-                    match.ident*100.0/(match.read_e - match.read_s),
+                    match.ident*100.0,
                     match.read_s, match.read_e,
                     chr->name[chrnum],
                     g_start - chr->start[chrnum]+1,
@@ -279,7 +284,11 @@ hitmap_analysis
 
       // Start streak.
       int streak = 1;
-      match.ref_s = max(0, refloc - WINDOW_SIZE);
+
+      // Store reference start and read offsets.
+      match.ref_s  = refloc;
+      match.read_s = refkmer;
+      match.dir    = refdir;
 
       // DEBUG.
       long refdbg = ref;
@@ -287,6 +296,7 @@ hitmap_analysis
       // Explore hitmap.
       long i = ref;
       long streakloc = refloc;
+      long kmer = refkmer;
       ref = -1;
       while (i < hitmap->pos - 1) {
          // Increase pointer.
@@ -297,12 +307,12 @@ hitmap_analysis
 
          // Get next subsequence.
          long loc = hitmap->val[i] >> KMERID_BITS;
-         long kmer = (hitmap->val[i] & KMERID_MASK) >> 1;
+         kmer = (hitmap->val[i] & KMERID_MASK) >> 1;
          long dir = hitmap->val[i] & 1;
 
          // Distances.
          long r_dist = refkmer - kmer;
-         long g_dist = loc - refloc;
+         long g_dist = loc - refloc; // Recall that the genome is stored backwards.
 
          // DEBUG.
          fprintf(stdout, "[%ld<->%ld]:\tr_dist=%ld\tg_dist=%ld\tfactor=%f\tkmers=[%ld:%c,%ld:%c]\tloc=[%ld,%ld]\n", refdbg, i,r_dist, g_dist, ((float)g_dist)/r_dist, refkmer, (refdir ? '+' : '-'), kmer, (dir ? '+' : '-'), refloc, loc);
@@ -331,7 +341,8 @@ hitmap_analysis
       // Save streak.
       if (streak > minv) {
          // Recompute the position of the last subseq in the streak.
-         match.ref_e = streakloc + kmer_size + WINDOW_SIZE;
+         match.ref_e = streakloc - kmer_size;
+         match.read_e = kmer + kmer_size;
          match.hits = streak;
          // Append if list not yet full, replace the minimum value otherwise.
          if (matchlist->pos < matchlist->size) matchlist->match[matchlist->pos++] = match;

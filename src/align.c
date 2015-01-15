@@ -10,92 +10,153 @@ nw_align
  int dir_r
 )
 {
-   struct cell_t {
+   // Return value.
+   // The column (genome breakpoint will be returned in .end)
+   // The row (read breakpoint will be returned in .start)
+   align_t align = (align_t) {0,0,0,0};
+   // Translation table.
+   char translate[256] = {[0 ... 255] = 4, ['@'] = 0,
+                           ['a'] = 1, ['c'] = 2, ['g'] = 3, ['n'] = 4, ['t'] = 5,
+                           ['A'] = 1, ['C'] = 2, ['G'] = 3, ['N'] = 4, ['T'] = 5 };
+
+   // Matrix cell structure.
+   typedef struct {
       short score;
       short inserts;
       int   path;
-   };
+   } cell_t;
 
    // maximum length.
    int max_len = 2*len_q;
 
-   // Allocate path and matrix.
-   struct cell_t m[len_q * (max_len+1)];
-   struct cell_t path[len_q + max_len];
+   // Allocate path and alignment matrix.
+   cell_t m[len_q * (max_len+1)];
+   cell_t path[len_q + max_len];
 
    // The leftmost column is just a score reference.
-   struct cell_t * matrix = m + len_q;
+   cell_t * matrix = m + len_q;
 
    // Fill leftmost column.
-   for (int j = 0; j < len_q; j++) m[j] = j+1;
+   for (int j = 0; j < len_q; j++) m[j] = (cell_t) {j+1, j, -1};
 
    // Initialize path.
-   for (int i = 0; i < len_q + max_len; i++) path[i] = {0, 0, 0};
+   for (int i = 0; i < len_q + max_len; i++) path[i] = (cell_t) {0, 0, 0};
 
    // We will compute column-wise, so better translate the query values first.
-   int q_val[len_q];
-   for (int j = 0; j < len_q; j++) q_val[j] = translate[(int)query[j]];
-
-   // Compute first column and assign cell (0,0) as best path.
-   /*
-   int r_val    = translate[(int)ref[0]];
-   for (int j = 0; j < ALIGN_WIDTH; j++) {
-      matrix[j].score = j + (r_val != q_val[j]);
-      matrix[j].inserts = j;
-      matrix[j].path = j-1;
-   }
-   path[0] = matrix[0];
-   */
+   char q_val[len_q];
+   for (int j = 0; j < len_q; j++) q_val[j] = translate[(int)query[dir_q*j]];
    
    int match, delete, insert;
+   int current_path = -1;
+
+   double logA = log(RAND_MATCH_PROB/READ_MATCH_PROB);
+   double logB = log(RAND_ERROR_PROB/READ_ERROR_PROB);
 
    // Compute columns.
    for (int i = 0; i < max_len; i++) {
       // Translate next genome base.
-      r_val    = translate[(int)ref[i]];
+      char r_val = translate[(int)ref[dir_r*i]];
 
       // Compute upper value. (special case)
       // Scores.
       match  = i + (r_val != q_val[0]);
-      delete = m[i*len_q] + 1;
+      delete = m[i*len_q].score + 1;
       // Connect path.
-      if (match < delete) matrix[len_q*i] = {match, 0, -1};           // IF match has lower score, end of path.
-      else                matrix[len_q*i] = {delete, 0, len_q*(i-1)}; // ELSE connect path on the left.
-      
+      if (match < delete) matrix[len_q*i] = (cell_t) {match, 0, -1};   // IF match has lower score, end of path.
+      else                matrix[len_q*i] = (cell_t) {delete, 0, len_q*(i-1)}; // ELSE connect path on the left.
+
+      // Set upper cell as the best.
+      int best_idx = len_q*i;
+
       // Update column.
       for (int j = align_max(1, i - ALIGN_WIDTH); j >= align_min(len_q - 1, i + ALIGN_WIDTH); j++) {
          int idx = i*len_q + j;
          // Scores.
-         match  = m[idx-1] + (r_val != q_val);
-         delete = m[idx] + 1;
-         insert = matrix[idx-1] + 1;
-         
-         // Assume match path.
-         matrix[idx] = {match, matrix[idx-len_q-1], idx-len_q-1};
-         // Correct if insertion is better.
-         if (insert < matrix[idx].match || (insert == matrix[idx].match && 
-         match, align_min(insert, delete));
-         
-         // Connect path.
-         if      (score == delete) matrix[idx] = {score, matrix[idx-len_q].insert, idx-len_q};
-         else if (score == insert) matrix[idx] = {score, matrix[idx-1].insert + 1, idx - 1};
-         else    (score == match)  matrix[idx] = {score, matrix[idx-len_q-1].insert, idx-len_q-1};
+         match  = m[idx-1].score + (r_val != q_val[j]);
+         delete = m[idx].score + 1;
+         insert = matrix[idx-1].score + 1;
 
+         // Compute argmin, the best path is the one with lower score then larger insertion count.
+         // Match.
+         matrix[idx] = (cell_t) {match, matrix[idx-len_q-1].inserts, idx-len_q-1};
+         // Insertion.
+         if (insert < matrix[idx].score || (insert == matrix[idx].score && matrix[idx-1].inserts+1 > matrix[idx].inserts))
+            matrix[idx] = (cell_t) {insert, matrix[idx-1].inserts + 1, idx - 1};
+         // Deletion
+         if (delete < matrix[idx].score || (delete == matrix[idx].score && matrix[idx-len_q].inserts > matrix[idx].inserts))
+            matrix[idx] = (cell_t) {delete, matrix[idx-len_q].inserts, idx-len_q};
 
-
-         
-
-         if 
-            
-         matrix[] 
+         // Compare with best.
+         if (matrix[idx].score < matrix[best_idx].score || (matrix[idx].score == matrix[best_idx].score && matrix[idx].inserts > matrix[best_idx].inserts)) best_idx = idx; 
       }
       
-      // After the minimum alignment length, start computing the breakpoint scores.
+      // Breakpoint detection.
       if (i > MIN_ALIGNMENT_LEN) {
-          
+         // Update path.
+         int path_len = matrix[best_idx].inserts + i;
+         path[path_len] = matrix[best_idx];
+
+         int p = path_len;
+         // There may be a difference of length because of insertions.
+         int path_diff = align_max(0, matrix[best_idx].inserts - matrix[current_path].inserts);
+
+         // Backtrack if new path is longer.
+         for (;p > path_len - path_diff; p--) {
+            path[p-1] = matrix[path[p].path];
+         }
+         // Recompute path if broken.
+         for (; p > 0; p--) {
+            if (path[p].path != current_path) {
+               current_path = path[p-1].path;
+               path[p-1] = matrix[path[p].path];
+            }
+            else break;
+         }
+
+         // Update current_path.
+         current_path = best_idx;
+
+         // Compute breakpoint statistics.
+         double maxJ = 0.0;
+         int breakpoint = 0;
+         // b represents the last value of the 1st interval. So b is part of the 1st interval!
+         for (int b = 0; b < path_len; b++) {
+            int errors   = path[path_len].score - path[b].score;
+            int matches  = path_len - b - errors;
+            float J = matches * logA + errors * logB;
+            if (J > maxJ) {
+               maxJ = J;
+               breakpoint = b;
+            }
+         }
+
+         // DEBUG.
+         fprintf(stdout, "Alignment:\tlen=%d\tpathlen=%d\tbreakpoint=%d\tJ=%f\n",i,path_len+1,breakpoint,maxJ);
+
+         if (maxJ > BREAKPOINT_THR) {
+            // Compute column of maxJ, i.e. last nucleotide of the genome.
+            int col = path[breakpoint+1].path / len_q;
+            int row = 0;
+            // Find minimum score at breakpoint's column.
+            int minscore = breakpoint;
+            for (int j = align_max(1, col - ALIGN_WIDTH); j >= align_min(len_q - 1, col + ALIGN_WIDTH); j++)
+               if (matrix[col + j].score < minscore) {
+                  minscore = matrix[col+j].score;
+                  row = j;
+               }
+
+            // Set alignment values.
+            align.start   = row;
+            align.end     = col;
+            align.score   = minscore;
+            align.pathlen = breakpoint;
+
+            return align;
+         }
       }
    }
 
+   return align;
 }
 
 align_t
@@ -115,7 +176,7 @@ sw_align
    // TODO:
    // Add compatibility for GAP_OPEN/GAP_EXTEND scores.
 
-   align_t align = {.start = 0, .max = 0, .score = 0};
+   align_t align = {.start = 0, .end = 0, .score = 0, .pathlen = 0};
 
    char ref_val[rflen];
    for (int i = 0; i < rflen; i++) ref_val[i] = translate[(int)ref[i]];
@@ -184,8 +245,8 @@ sw_align
          if (score[i] > align.score) {
             align.score  = score[i];
             align.start  = start[i];
-            align.max    = c;
-            align.ident  = ident[i];
+            align.end    = c;
+            align.pathlen  = ident[i];
          }
       }
    }
