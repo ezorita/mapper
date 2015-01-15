@@ -46,7 +46,7 @@ int main(int argc, char * argv[]) {
       char * filename = malloc(strlen(argv[3])+5);
       strcpy(filename, argv[3]);
 
-      // mmap index file.
+      // Open index file.
       strcpy(filename+strlen(argv[3]), ".fmi");
       int fd = open(filename, O_RDONLY);
       if (fd == -1) {
@@ -68,23 +68,8 @@ int main(int argc, char * argv[]) {
          return EXIT_FAILURE;
       }
 
-      // Sort sequences.
-      /*
-        fprintf(stderr, "sorting input sequences...\n");
-        if(seqsort(&(seqs->seq[0]), seqs->pos, opt_nthreads)) {
-        return EXIT_FAILURE;
-        }
-      */
-
+      // Load index.
       int mflags = MAP_PRIVATE | MAP_POPULATE;
-      /*
-        if (seqs->pos < 1000) {
-        fprintf(stderr, "reading index (fly mode)...\n");
-        } else {
-        fprintf(stderr, "pre-loading index (populate)...\n");
-        mflags |= MAP_POPULATE;
-        }
-      */
       long idxsize = lseek(fd, 0, SEEK_END);
       lseek(fd, 0, SEEK_SET);
       long * indexp = mmap(NULL, idxsize, PROT_READ, mflags, fd, 0);
@@ -105,9 +90,9 @@ int main(int argc, char * argv[]) {
 
       // Hitmap is too slow...
       clock_t tstart = clock();
-      //hitmap(0, index, chr, seqs);
+      hitmap(0, index, chr, seqs);
       // Let's try something faster, tau=0 seeds.
-      fastseed(seqs, index, chr, KMER_SIZE);
+      //fastseed(seqs, index, chr, KMER_SIZE);
       
       fprintf(stderr, "query time: %ldus\n", ((clock()-tstart)*1000000)/CLOCKS_PER_SEC);
       

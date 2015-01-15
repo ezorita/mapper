@@ -16,24 +16,34 @@
 #define PBSTACK_SIZE  1024
 
 // Search algorithm parameters
-#define KMER_SIZE      17
+#define KMER_SIZE      22
 #define LAST_THRESHOLD 7
-#define SUBSEQID_BITS  24
-#define HIT_MAX_LOCI   1000
+#define HIT_MAX_LOCI   20
+#define EXACT_MAX_LOCI 20
 
-#define WINDOW_SIZE    200
+// Hitmap analysis parameters
+#define READ_TO_GENOME_RATIO 2
 
-#define SCORE_BITS     16
-#define SCORE_MASK     0x000000000000FFFF
+// SW-Alignment parameters.
+#define WINDOW_SIZE    400
+
+// Sequence ID definitions.
+#define KMERID_BITS     24
+#define KMERID_MASK     0x0000000000FFFFFF
+
+// Macros
+#define seqid_read(a)  ((a >> SEQID_BITS) & SEQID_MASK)
+#define seqid_kmer(a)  (a & SEQID_MASK)
 
 // Private structure definition
 
-typedef struct sub_t      sub_t;
-typedef struct match_t    match_t;
+typedef struct sub_t       sub_t;
+typedef struct match_t     match_t;
 typedef struct matchlist_t matchlist_t;
-typedef struct sublist_t  sublist_t;
+typedef struct sublist_t   sublist_t;
 
 struct sub_t {
+   long               seqid;
    char             * seq;
    struct vstack_t ** hitmap;
 };
@@ -45,6 +55,8 @@ struct match_t {
    int read_e;
    int hits;
    int score;
+   int ident;
+   int dir;
 };
 
 struct matchlist_t {
@@ -62,6 +74,7 @@ struct sublist_t {
 int           hitmap           (int tau, index_t index, chr_t * chr, seqstack_t * seqs);
 int           hitmap_analysis  (vstack_t * hitmap, matchlist_t * loci, int kmer_size, int tau, int maxdist);
 int           map_hits         (pstack_t ** hits, vstack_t ** hitmap, index_t * index, int tau, int id);
+int           hitmap_push      (vstack_t ** hitmap, index_t * index, long * fm_ptr, int id);
 sublist_t   * process_subseq   (seq_t * seqs, int numseqs, int k, vstack_t ** hitmaps);
 void          mergesort_match  (match_t * data, match_t * aux, int size, int b);
 int           subseqsort       (sub_t * data, int numels, int slen, int thrmax);

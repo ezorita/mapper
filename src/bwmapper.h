@@ -14,7 +14,6 @@
 #include "dc3.h"
 #include "algs.h"
 #include "hitmap.h"
-#include "fastseed.h"
 
 #ifndef _BWMAPPER_H
 #define _BWMAPPER_H

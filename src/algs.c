@@ -70,6 +70,62 @@ seq_push
    return 0;
 }
 
+int
+query_index
+(
+ char  * query,
+ long    gsize,
+ long  * ptr,
+ long  * c,
+ list_t * occs
+)
+{
+   long sp, ep;
+   int slen = strlen(query);
+   int qval[slen];
+   translate_query(query, qval, slen);
+   int i = 0;
+   // Initialize range.
+   sp = c[qval[0]];
+   ep = c[qval[0] + 1] - 1;
+
+   // Iterate over FM-index.
+   for (i = 1; i < strlen(query) && sp <= ep; i++) {
+      int nt = qval[i];
+      long occsp = bisect_search(0, occs[nt].max-1, occs[nt].val, sp-1);
+      long occep = bisect_search(0, occs[nt].max-1, occs[nt].val, ep);
+      sp = c[nt] + (occs[nt].max ? occsp : 0);
+      ep = c[nt] + (occs[nt].max ? occep : 0 ) - 1;
+   }
+   if (ep < sp) {
+      return 0;
+   }
+
+   // Return hits.
+   ptr[0] = sp;
+   ptr[1] = ep;
+   
+   return ep-sp+1;
+}
+
+
+void
+translate_query
+(
+ char * query,
+ int  * qval,
+ int    qlen
+)
+{
+   char translate[256] = {[0 ... 255] = 4, ['@'] = 0,
+                           ['a'] = 1, ['c'] = 2, ['g'] = 3, ['n'] = 4, ['t'] = 5,
+                           ['A'] = 1, ['C'] = 2, ['G'] = 3, ['N'] = 4, ['T'] = 5 };
+
+   // Converts to int and reverses query.
+   for (int i = 0; i < qlen; i++) qval[i] = translate[(int)query[i]];
+}
+
+
 seqstack_t *
 new_seqstack
 (

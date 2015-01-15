@@ -4,6 +4,8 @@
 *.fmi
 *.index
 bwmapper
+gbrowser
 tmp/*
 genomes/*
 *.o
+input/*

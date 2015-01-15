@@ -130,6 +130,8 @@ void          radix_sort       (long * a, long * b, long n, long maxval);
 
 // General algorithms.
 long          bisect_search    (long start, long end, long* set, long value);
+int           query_index      (char* query, long gsize, long* ptr, long* c, list_t* occs);
+void          translate_query  (char* query, int* qval, int qlen);
 
 // Stack functions.
 vstack_t    * new_stack        (long size);
