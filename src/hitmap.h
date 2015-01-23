@@ -27,6 +27,10 @@
 // SW-Alignment parameters.
 #define WINDOW_SIZE    400
 
+// Sequence quality parameters
+#define SEQ_MINLEN     100
+#define SEQ_MINID      0.6
+
 // Sequence ID definitions.
 #define KMERID_BITS     24
 #define KMERID_MASK     0x0000000000FFFFFF
@@ -55,7 +59,7 @@ struct match_t {
    int read_e;
    int hits;
    int score;
-   int ident;
+   double ident;
    int dir;
 };
 

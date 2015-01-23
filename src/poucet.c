@@ -62,9 +62,13 @@ poucet
       shift = min(row[-1], row[1]) + 1;
       row[0] = min(mmatch, shift);
 
+      int g_offset = 0;
       score = MAXTAU;
       for (int i = -wingsz ; i <= wingsz; i++) {
-         if (row[i] < score) score = row[i];
+         if (row[i] < score) {
+            score = row[i];
+            g_offset = -i;
+         }
       }
 
       // DEBUG.
@@ -80,11 +84,13 @@ poucet
 
       // Reached height of the trie: it's a hit!
       if (depth == arg->qlen) {
+         // Find number of cummulative in/dels.
          pebble_t hit = {
             .sp = newsp,
             .ep = newep,
-            .rowid = 0
+            .rowid = arg->qlen - (g_offset > 0 ? g_offset : 0)
          };
+         fprintf(stderr,"hit found: offset %ld\n", hit.rowid);
          ppush(arg->hits + score, hit);
          continue;
       }
@@ -117,8 +123,9 @@ poucet
       // Dash path if mismatches exhausted.
       if (depth > arg->trail && score == arg->tau) {
          for (int i = -wingsz; i <= wingsz; i++) {
-            if (row[i] == score)
+            if (row[i] == score) {
                dash(newsp, newep, depth+1, i, path, arg);
+            }
          }
          continue;
       }
@@ -183,7 +190,7 @@ dash
    pebble_t hit = {
       .sp = sp,
       .ep = ep,
-      .rowid = 0
+      .rowid = i - 3 - (align > 0 ? align : 0)
    };
    ppush(arg->hits + arg->tau, hit);
 }

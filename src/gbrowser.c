@@ -136,7 +136,10 @@ read_CHRindex
 
 int main(int argc, char *argv[])
 {
-   if (argc != 5) exit(EXIT_FAILURE);
+   if (argc != 5) {
+      fprintf(stderr, "usage: gbrowser genome_index chromosome locus output_length\n");
+      exit(EXIT_FAILURE);
+   }
    
    char * chromosome = argv[2];   
    long locus = atol(argv[3]);

@@ -88,12 +88,9 @@ int main(int argc, char * argv[]) {
       chr_t * chr = read_CHRindex(filename);
       if (chr == NULL) return EXIT_FAILURE;
 
-      // Hitmap is too slow...
+      // Hitmap.
       clock_t tstart = clock();
       hitmap(0, index, chr, seqs);
-      // Let's try something faster, tau=0 seeds.
-      //fastseed(seqs, index, chr, KMER_SIZE);
-      
       fprintf(stderr, "query time: %ldus\n", ((clock()-tstart)*1000000)/CLOCKS_PER_SEC);
       
    }

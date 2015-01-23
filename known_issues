@@ -1,0 +1,8 @@
+OAK mapper known issues:
+- The hit value returned by poucet in a pebble_t structure indicates the matched length of the query in rowid.
+  This value is computed both in dash and in the recursive poucet. The way it is computed right now may not be robust.
+
+- The length of the alignment in align.c and the posterior assignments in hitmap.c may have offsets of 1.
+
+- In align_nw, if i reaches len_q it stops, but it may happen that the best path is still some nucleotides above. So it may
+  be worth to extend the matrix in a rectangular fashion.
