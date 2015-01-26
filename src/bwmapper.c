@@ -32,7 +32,6 @@ int main(int argc, char * argv[]) {
    // TODO: parametrize
    int opt_reverse  = 1;
    int opt_verbose  = 1;
-   int tau = 1;
 
    // Backtrace handler
    //   signal(SIGSEGV, SIGSEGV_handler); 

@@ -46,18 +46,27 @@ hitmap
       if (hitmaps[i] == NULL) return -1;
    }
    // Allocate loci stack.
-   int max_aligns = 1000;
-   matchlist_t * matches = malloc(sizeof(matchlist_t) + max_aligns * sizeof(match_t));
+   matchlist_t * matches = malloc(sizeof(matchlist_t) + MATCHLIST_SIZE * sizeof(match_t));
    if (matches == NULL) return -1;
-   matches->size = max_aligns;
+   matches->size = MATCHLIST_SIZE;
    matches->pos  = 0;
 
    for (int s = 0 ; s < seqs->pos; s += seq_block) {
+
+      /**                                         **
+       **         PRE-PROCESS SUBSEQUENCES        **
+       **                                         **/
+
       // Pre-process sequence block: chunk in subsequences and sort.
       int         numseqs = (seq_block < seqs->pos - s ? seq_block : seqs->pos - s);
       sublist_t * subseqs = process_subseq(seqs->seq+s, numseqs, KMER_SIZE, hitmaps);
       
       fprintf(stderr, "subsequences %d to %d\n", s+1, s+numseqs);
+
+
+      /**                                         **
+       **             MAP SUBSEQUENCES            **
+       **                                         **/
 
       // Clear hitmaps.
       for (int i = 0 ; i < numseqs ; i++) {
@@ -70,7 +79,7 @@ hitmap
 
       // Poucet algorithm over the k-mers.
       for (int i = 0; i < subseqs->size; i++) {
-         if (1%100 == 0) fprintf(stderr, "mapping ... %7d/%7d\r", i, subseqs->size);
+         if (i%100 == 0) fprintf(stderr, "mapping ... %7d/%7d\r", i, subseqs->size);
          // Extract subseq.
          sub_t query = subseqs->sub[i];
          int    qlen = KMER_SIZE;
@@ -150,6 +159,12 @@ hitmap
       // Sort all hitmaps
       for (int i = 0 ; i < numseqs ; i++) {
          if (i % 100 == 0) fprintf(stderr, "aligning... %7d/%7d\r", i, numseqs);
+
+
+         /**                                         **
+          **             HITMAP ANALYSIS             **
+          **                                         **/
+
          // Sequence length.
          int slen = strlen(seqs->seq[i].seq);
 
@@ -161,7 +176,6 @@ hitmap
          // Merge-sort loci.
          memcpy(sortbuf, hitmaps[i]->val, hitmaps[i]->pos * sizeof(long));
          mergesort_long(hitmaps[i]->val, sortbuf, hitmaps[i]->pos, 0);
-         //radix_sort(hitmaps[i]->val, sortbuf, hitmaps[i]->pos, index.gsize);
 
          // Find matching loci in hitmaps.
          hitmap_analysis(hitmaps[i], matches, KMER_SIZE, tau, slen);
@@ -170,6 +184,11 @@ hitmap
          matchlist_t * significant = malloc(sizeof(matchlist_t) + matches->pos * sizeof(match_t));
          significant->size = matches->pos;
          significant->pos = 0;
+
+
+         /**                                         **
+          **           SEQUENCE ALIGNMENT            **
+          **                                         **/
 
          // Smith-Waterman alignment.
          for(long k = 0; k < matches->pos; k++) {
@@ -183,7 +202,6 @@ hitmap
             // The previously matched region will be aligned again,
             // but it's the only way to know precisely the total identity of the read.
             // Note that the genome is stored backwards so all signs are changed.
-            int chrnum = bisect_search(0, chr->nchr-1, chr->start, index.gsize - match->ref_s +1)-1;
             align_r = nw_align(read + match->read_s + 1, index.genome + match->ref_s - 1, slen - match->read_s - 1, ALIGN_FORWARD, ALIGN_BACKWARD);
             align_l = nw_align(read + match->read_s, index.genome + match->ref_s, match->read_s, ALIGN_BACKWARD, ALIGN_FORWARD);
 
@@ -208,10 +226,13 @@ hitmap
             significant->match[significant->pos++] = *match;
          }
 
+
+         /**                                         **
+          **              ASSEMBLE READ              **
+          **                                         **/
+
          // Sort mapped regions by significance.
-         match_t aux[significant->pos];
-         memcpy(aux, significant->match, significant->pos * sizeof(match_t));
-         mergesort_match(significant->match, aux, significant->pos, 0);
+         mergesort_mt(significant->match, significant->pos, sizeof(match_t), 0, 1, compar_matchstart);
 
          // Print results.
          if (significant->pos) fprintf(stdout, "%s\n", seqs->seq[s+i].tag);
@@ -252,6 +273,8 @@ hitmap_analysis
  int           readlen
  )
 {
+   fprintf(stdout, "starting hitmap analysis: %ld candidate loci.\n", hitmap->pos);
+   
    if (matchlist->size < 1) return -1;
    long minv = 0;
    int  min  = 0;
@@ -267,9 +290,6 @@ hitmap_analysis
 
    // Find clusters in hitmap.
    long ref = 0;
-
-   // DEBUG.
-   //   fprintf(stdout, "Hitmap Analysis:\n\n");
 
    while (ref >= 0) {
       // Reference position.
@@ -289,9 +309,6 @@ hitmap_analysis
       match.read_e = refkmer;
       match.dir    = refdir;
 
-      // DEBUG.
-      long refdbg = ref;
-      
       // Explore hitmap.
       long i = ref;
       long streakloc = refloc;
@@ -312,9 +329,6 @@ hitmap_analysis
          // Distances.
          long r_dist = refkmer - kmer;
          long g_dist = loc - refloc; // Recall that the genome is stored backwards.
-
-         // DEBUG.
-         //         fprintf(stdout, "[%ld<->%ld]:\tr_dist=%ld\tg_dist=%ld\tfactor=%f\tkmers=[%ld:%c,%ld:%c]\tloc=[%ld,%ld]\n", refdbg, i,r_dist, g_dist, ((float)g_dist)/r_dist, refkmer, (refdir ? '+' : '-'), kmer, (dir ? '+' : '-'), refloc, loc);
 
          // Check if the compared sequence is too far away.
          if (loc > refend) {
@@ -359,90 +373,10 @@ hitmap_analysis
       }
 
    }
+
    return 0;
 }
 
-/*
-int
-hitmap_analysis
-(
- vstack_t    * hitmap,
- matchlist_t * matchlist,
- int           kmer_size,
- int           tau
- )
-{
-   if (matchlist->size < 1) return -1;
-   long minv = 0;
-   int  min  = 0;
-
-   // Initialize matchlist list.
-   matchlist->pos = 0;
-
-   // Initialize match.
-   match_t match;
-   match.read_s = 0;
-   match.read_e = 0;
-   match.score  = 0;
-
-   // Find clusters in hitmap.
-   int  streak = 1;
-   // First subsequence.
-   long loc1, loc2 = hitmap->val[0] >> KMERID_BITS;
-   long kmer1, kmer2 = (hitmap->val[0] & KMERID_MASK) >> 1;
-   long dir1, dir2 = hitmap->val[0] & 1;
-
-   // DEBUG.
-   fprintf(stdout, "Hitmap Analysis:\n\n");
-
-   for (int i = 1; i < hitmap->pos - 1; i++) {
-      // Swap subsequences 2 and 1.
-      loc1 = loc2;
-      kmer1 = kmer2;
-      dir1 = dir2;
-
-      // Get new subsequence.
-      loc2 = hitmap->val[i+1] >> KMERID_BITS;
-      kmer2 = (hitmap->val[i+1] & KMERID_MASK) >> 1;
-      dir2 = hitmap->val[i+1] & 1;
-      long r_dist = kmer1 - kmer2;
-      long g_dist = loc2 - loc1;
-      
-      // Start streak.
-      if (streak == 1) match.ref_s = max(0, loc1 - WINDOW_SIZE);
-
-      // DEBUG.
-      fprintf(stdout, "[%d<->%d]:\tr_dist=%ld\tg_dist=%ld\tfactor=%f\tkmers=[%ld:%c,%ld:%c]\tloc=[%ld,%ld]\n", i, i+1,r_dist, g_dist, ((float)g_dist)/r_dist, kmer1, (dir1 ? '+' : '-'), kmer2, (dir2 ? '+' : '-'), loc1, loc2);
-
-      if (r_dist > 0 && dir1 == dir2 && g_dist < READ_TO_GENOME_RATIO * r_dist) streak++;
-      else {
-         match.ref_e = loc1 + kmer_size + WINDOW_SIZE;
-         match.hits = streak;
-         // Check significance.
-         if (streak > minv) {
-            // Append if list not yet full, replace the minimum value otherwise.
-            if (matchlist->pos < matchlist->size) matchlist->match[matchlist->pos++] = match;
-            else matchlist->match[min] = match;
-            
-            // Find the minimum that will be substituted next.
-            if (matchlist->pos == matchlist->size) {
-               minv = matchlist->match[0].hits;
-               for (int j = 1 ; j < matchlist->pos; j++) {
-                  if (minv > matchlist->match[j].hits) {
-                     min  = j;
-                     minv = matchlist->match[j].hits;
-                  }
-               }
-            }
-         }
-
-         // Reset streak.
-         streak = 1;
-      }
-   }
-   return 0;
-}
-*/
 
 int
 map_hits
@@ -462,6 +396,8 @@ map_hits
       for (int h = 0; h < hits[a]->pos; h++) {
          pebble_t hit    = hits[a]->pebble[h];
          long     n_hits = hit.ep - hit.sp + 1;
+         // The offset between the genome start and end points in the alignment has
+         // been stored in rowid during the poucet search.
          long     offset = hit.rowid;
          // Filter out too abundant sequences. (To speed up the sorting).
          if (n_hits < HIT_MAX_LOCI) {
@@ -500,7 +436,7 @@ hitmap_push
    vstack_t * hmap = *hitmap;
    long n_hits = fm_ptr[1] - fm_ptr[0] + 1;
    // Filter out too abundant sequences. (To speed up the sorting).
-   if (n_hits < EXACT_MAX_LOCI) {
+   if (n_hits < HIT_MAX_LOCI) {
       // Realloc hitmap if needed.
       if (hmap->pos + n_hits >= hmap->size) {
          long newsize = hmap->size + n_hits + 1;
@@ -545,6 +481,9 @@ process_subseq
       seq_t s  = seqs[i];
       int slen = strlen(s.seq);
       int subs = slen - k + 1;
+      
+      // Convert to uppercase.
+      for (int k = 0; k < slen; k++) if (s.seq[k] > 90) s.seq[k] -= 32;
 
       for (int j = 0; j < subs; j++) {
          // Realloc full list.
@@ -577,70 +516,6 @@ process_subseq
    return list;
 }
 
-void
-mergesort_match
-(
- match_t * data,
- match_t * aux,
- int size,
- int b
- )
-// SYNOPSIS:
-//   Recursive part of 'seqsort'.
-//
-// ARGUMENTS:
-//   args: a sortargs_t struct.
-//
-// RETURN:
-//   
-//
-// SIDE EFFECTS:
-//   Sorts the array of 'seq_t' specified in 'args'.
-{
-   
-   if (size < 2) return;
-
-   // Next level params.
-   int newsize = size/2;
-   int newsize2 = newsize + size%2;
-   match_t * data2 = data + newsize;
-   match_t * aux2 = aux + newsize;
-   mergesort_match(data, aux, newsize, (b+1)%2);
-   mergesort_match(data2, aux2, newsize2, (b+1)%2);
-
-
-   // Separate data and buffer (b specifies which is buffer).
-   match_t * l = (b ? data : aux);
-   match_t * r = (b ? data2 : aux2);
-   match_t * buf = (b ? aux : data);
-
-   int i = 0;
-   int j = 0;
-   int idx = 0;
-
-   // Merge sets
-   while (idx < size) {
-      // Right buffer is exhausted. Copy left buffer...
-      if (j == newsize2) {
-         memcpy(buf+idx, l+i, (newsize-i) * sizeof(match_t));
-         break;
-      }
-      // ... or vice versa.
-      if (i == newsize) {
-         memcpy(buf+idx, r+j, (newsize2-j) * sizeof(match_t));
-         break;
-      }
-      // Do the comparison.
-      /*
-      if (l[i].hits > r[j].hits || (l[i].hits == r[j].hits && l[i].score > r[j].score)) buf[idx++] = l[i++];
-      else                                                                              buf[idx++] = r[j++];
-      */
-      // Sort by identity.
-      if (l[i].ident > r[j].ident) buf[idx++] = l[i++];
-      else buf[idx++] = r[j++];
-   }
-}
-
 int
 compar_seqsort
 (
@@ -658,4 +533,53 @@ compar_seqsort
       compar = (seq_a->seqid >= seq_b->seqid ? 1 : -1);
    } 
    return compar;
+}
+
+int
+compar_matchid
+(
+ const void * a,
+ const void * b,
+ const int   param
+)
+{
+   match_t * ma = (match_t *) a;
+   match_t * mb = (match_t *) b;
+   
+   if (mb->ident > ma->ident) return 1;
+   else return -1;
+}
+
+int
+compar_matchlen
+(
+ const void * a,
+ const void * b,
+ const int   param
+)
+{
+   match_t * ma = (match_t *) a;
+   match_t * mb = (match_t *) b;
+   
+   long lena = ma->read_e - ma->read_s;
+   long lenb = mb->read_e - mb->read_s;
+   if (lenb > lena) return 1;
+   else if (lenb < lena) return -1;
+   else return (mb->ident > ma->ident ? 1 : -1);
+}
+
+int
+compar_matchstart
+(
+ const void * a,
+ const void * b,
+ const int   param
+)
+{
+   match_t * ma = (match_t *) a;
+   match_t * mb = (match_t *) b;
+   
+   if (ma->read_s > mb->read_s) return 1;
+   else if (ma->read_s < mb->read_s) return -1;
+   else return (mb->ident > ma->ident ? 1 : -1);
 }

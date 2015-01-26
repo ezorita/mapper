@@ -65,19 +65,12 @@ poucet
       int g_offset = 0;
       score = MAXTAU;
       for (int i = -wingsz ; i <= wingsz; i++) {
-         if (row[i] < score) {
+         if (row[i] <= score) {
             score = row[i];
-            g_offset = -i;
+            g_offset = max(0, i);
          }
       }
 
-      // DEBUG.
-      /*
-      for (int k = 1; k <= depth; k++) fprintf(stdout, "%c", revert[(int)arg->query[k]]);
-      fprintf(stdout, "\n");
-      for (int k = 1 ; k < depth; k++) fprintf(stdout, "%c", revert[(int)path[k]]);
-      fprintf(stdout, "%c\t%d\n", revert[nt], score);
-      */
       // Stop searching if 'tau' is exceeded.
       if (score > arg->tau)
          continue;
@@ -88,9 +81,8 @@ poucet
          pebble_t hit = {
             .sp = newsp,
             .ep = newep,
-            .rowid = arg->qlen - (g_offset > 0 ? g_offset : 0)
+            .rowid = arg->qlen - g_offset - 1
          };
-         fprintf(stderr,"hit found: offset %ld\n", hit.rowid);
          ppush(arg->hits + score, hit);
          continue;
       }
@@ -186,11 +178,13 @@ dash
       if (ep < sp) return;
    }
 
+   // i has been increased passed EOS.
+   i -= 2;
 
    pebble_t hit = {
       .sp = sp,
       .ep = ep,
-      .rowid = i - 3 - (align > 0 ? align : 0)
+      .rowid = i - 1 - max(align, 0)
    };
    ppush(arg->hits + arg->tau, hit);
 }

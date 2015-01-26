@@ -540,12 +540,8 @@ _mergesort
    arg2.size = arg1.size + arg2.size % 2;
 
    // Increment pointer positions.
-   char * buf0_byte = (char *) arg2.buf0;
-   char * buf1_byte = (char *) arg2.buf1;
-   buf0_byte += arg1.size * offset;
-   buf1_byte += arg1.size * offset;
-   arg2.buf0 = (void *) buf0_byte;
-   arg2.buf1 = (void *) buf1_byte;
+   arg2.buf0 = (void *) (((char *) arg2.buf0) + arg1.size * offset);
+   arg2.buf1 = (void *) (((char *) arg2.buf1) + arg1.size * offset);
    arg1.b = arg2.b = (arg1.b + 1) % 2;
 
    // Either run threads or DIY.
@@ -554,17 +550,15 @@ _mergesort
       arg1.thread = arg2.thread = arg1.thread - 1;
       // Create threads.
       pthread_t thread1, thread2;
-      if ( pthread_create(&thread1, NULL, _mergesort, &arg1) ||
-           pthread_create(&thread2, NULL, _mergesort, &arg2) ) {
-         return NULL;
-      }
+      pthread_create(&thread1, NULL, _mergesort, &arg1);
+      pthread_create(&thread2, NULL, _mergesort, &arg2);
       // Wait for threads.
       pthread_join(thread1, NULL); // TODO: Catch retval and return if retval == -1.
       pthread_join(thread2, NULL);
    }
    else {
-      if (_mergesort(&arg1)) return NULL;
-      if (_mergesort(&arg2)) return NULL;
+      _mergesort(&arg1);
+      _mergesort(&arg2);
    }
 
    // Separate data and buffer (b specifies which is buffer).
@@ -590,7 +584,7 @@ _mergesort
          break;
       }
       // Do the comparison.
-      cmp = arg1.compar(l + i*offset, r + i*offset, arg1.param);
+      cmp = arg1.compar(l + i*offset, r + j*offset, arg1.param);
       if (cmp < 0) memcpy(buf + (idx++)*offset, l + (i++)*offset, offset);
       else         memcpy(buf + (idx++)*offset, r + (j++)*offset, offset);
    }

@@ -19,13 +19,10 @@
 #define KMER_SIZE      22
 #define LAST_THRESHOLD 7
 #define HIT_MAX_LOCI   20
-#define EXACT_MAX_LOCI 20
 
 // Hitmap analysis parameters
 #define READ_TO_GENOME_RATIO 2
-
-// SW-Alignment parameters.
-#define WINDOW_SIZE    400
+#define MATCHLIST_SIZE       1000
 
 // Sequence quality parameters
 #define SEQ_MINLEN     100
@@ -83,6 +80,8 @@ sublist_t   * process_subseq   (seq_t * seqs, int numseqs, int k, vstack_t ** hi
 void          mergesort_match  (match_t * data, match_t * aux, int size, int b);
 int           subseqsort       (sub_t * data, int numels, int slen, int thrmax);
 int           compar_seqsort   (const void * a, const void * b, const int val);
-
+int           compar_matchlen  (const void * a, const void * b, const int param);
+int           compar_matchid   (const void * a, const void * b, const int param);
+int           compar_matchstart(const void * a, const void * b, const int param);
 
 #endif
