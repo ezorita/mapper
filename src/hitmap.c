@@ -46,10 +46,13 @@ hitmap
       if (hitmaps[i] == NULL) return -1;
    }
    // Allocate loci stack.
-   matchlist_t * matches = malloc(sizeof(matchlist_t) + MATCHLIST_SIZE * sizeof(match_t));
+   matchlist_t * matches = matchlist_new(MATCHLIST_SIZE);
    if (matches == NULL) return -1;
-   matches->size = MATCHLIST_SIZE;
-   matches->pos  = 0;
+   // Allocate match buffer.
+   matchlist_t ** seqmatches;
+   seqmatches = malloc(seq_block * sizeof(matchlist_t *));
+   for (int i = 0; i < seq_block; i++)
+      seqmatches[i] = matchlist_new(HITBUF_SIZE);
 
    for (int s = 0 ; s < seqs->pos; s += seq_block) {
 
@@ -156,6 +159,7 @@ hitmap
       fprintf(stderr, "mapping ... %7d/%7d - hitmap built\t[%.3fms]\n", subseqs->size, subseqs->size, (clock()-tstart)*1000.0/CLOCKS_PER_SEC);
 
       tstart = clock();
+
       // Sort all hitmaps
       for (int i = 0 ; i < numseqs ; i++) {
          if (i % 100 == 0) fprintf(stderr, "aligning... %7d/%7d\r", i, numseqs);
@@ -179,12 +183,7 @@ hitmap
 
          // Find matching loci in hitmaps.
          hitmap_analysis(hitmaps[i], matches, KMER_SIZE, tau, slen);
-         if (matches == NULL) continue;
-
-         matchlist_t * significant = malloc(sizeof(matchlist_t) + matches->pos * sizeof(match_t));
-         significant->size = matches->pos;
-         significant->pos = 0;
-
+         if (matches->pos == 0) continue;
 
          /**                                         **
           **           SEQUENCE ALIGNMENT            **
@@ -193,7 +192,7 @@ hitmap
          // Smith-Waterman alignment.
          for(long k = 0; k < matches->pos; k++) {
             // Get next match.
-            match_t * match = matches->match + k;
+            match_t * match = matches->match[k];
             // Extend alignment.
             align_t align_r, align_l;
             char * read = (match->dir ? seqs->seq[i].rseq : seqs->seq[i].seq);
@@ -213,7 +212,11 @@ hitmap
             match->read_s = match->read_s - align_l.start;     // Align.start is the read breakpoint.
 
             // Filter out matches that do not meet the minimum quality.
-            if ((match->ref_e - match->ref_s < SEQ_MINLEN) || (match->ident < SEQ_MINID)) continue;
+            if ((match->ref_e - match->ref_s < SEQ_MINLEN) || (match->ident < SEQ_MINID)) {
+               free(match->repeats);
+               free(match);
+               continue;
+            }
             
             // Correct read start and end points if we are matching the reverse complement.
             if (match->dir) {
@@ -222,8 +225,8 @@ hitmap
                match->read_e = end;
             }
 
-            // Add to significant match list.
-            significant->match[significant->pos++] = *match;
+            // Add to significant matchlist.
+            matchlist_add(seqmatches+i, match);
          }
 
 
@@ -231,19 +234,26 @@ hitmap
           **              ASSEMBLE READ              **
           **                                         **/
 
-         // Sort mapped regions by significance.
-         mergesort_mt(significant->match, significant->pos, sizeof(match_t), 0, 1, compar_matchstart);
+         // Sort mapped regions.
+         mergesort_mt(seqmatches[i]->match, seqmatches[i]->pos, sizeof(match_t *), 0, 1, compar_matchstart);
+
+         // Find sequence repeats.
+         find_repeats(seqmatches[i]);
+
+         // Assemble read.
+         long matched;
+         matchlist_t * intervals = combine_matches(seqmatches[i], &matched);
 
          // Print results.
-         if (significant->pos) fprintf(stdout, "%s\n", seqs->seq[s+i].tag);
+         if (seqmatches[i]->pos) fprintf(stdout, "%s\n", seqs->seq[s+i].tag);
 
-         for (long k = 0; k < significant->pos; k++) {
-            match_t match = significant->match[k];
+         for (long k = 0; k < seqmatches[i]->pos; k++) {
+            match_t match = *(seqmatches[i]->match[k]);
             int dir = match.dir;
             long g_start = match.ref_s;
             long g_end   = match.ref_e;
             int chrnum = bisect_search(0, chr->nchr-1, chr->start, g_start+1)-1;
-            fprintf(stdout, "%d\t%d (%.2f%%)\t%d-%d\t%s:%ld-%ld:%c (%ld)\n",
+            fprintf(stdout, "%d\t%d (%.2f%%)\t%d-%d\t%s:%ld-%ld:%c (%ld)\tr=%d\n",
                     match.hits,
                     match.score,
                     match.ident*100.0,
@@ -252,8 +262,51 @@ hitmap
                     g_start - chr->start[chrnum]+1,
                     g_end - chr->start[chrnum]+1,
                     dir ? '-' : '+',
-                    g_end - g_start + 1);
+                    g_end - g_start + 1,
+                    match.repeats->pos);
          }
+         
+         // Intervals:
+         fprintf(stdout, "Intervals:\n");
+         for (long k = intervals->pos - 1, cnt = 0 ; k >= 0; k--) {
+            match_t * match = intervals->match[k];
+            int dir = match->dir;
+            long g_start = match->ref_s;
+            long g_end   = match->ref_e;
+            int chrnum = bisect_search(0, chr->nchr-1, chr->start, g_start+1)-1;
+            fprintf(stdout, "[interval %ld]\t(%d,%d)\t%s:%ld-%ld:%c\t(%.2f%%)\n",
+                    ++cnt,
+                    match->read_s, match->read_e,
+                    chr->name[chrnum],
+                    g_start - chr->start[chrnum]+1,
+                    g_end - chr->start[chrnum]+1,
+                    dir ? '-' : '+',
+                    match->ident*100.0);
+            for (int j = 0; j < match->repeats->pos; j++) {
+               match   = match->repeats->match[j];
+               dir     = match->dir;
+               g_start = match->ref_s;
+               g_end   = match->ref_e;
+               chrnum  = bisect_search(0, chr->nchr-1, chr->start, g_start+1)-1;
+               fprintf(stdout, "\t\t(%d,%d)\t%s:%ld-%ld:%c\t(%.2f%%)\n",
+                       match->read_s, match->read_e,
+                       chr->name[chrnum],
+                       g_start - chr->start[chrnum]+1,
+                       g_end - chr->start[chrnum]+1,
+                       dir ? '-' : '+',
+                       match->ident*100.0);
+            }
+
+            if (k > 0) {
+               match_t * next = intervals->match[k-1];
+               if (next->read_s - match->read_e > SEQ_MINLEN)
+                  fprintf(stdout, "[interval %ld]\t(%d,%d)\n", ++cnt, match->read_e+1, next->read_s-1);
+            } else {
+               if (slen - match->read_e > SEQ_MINLEN)
+                  fprintf(stdout, "[interval %ld]\t(%d,%d)\n", ++cnt, match->read_e+1, slen);
+            }
+         }
+         fprintf(stdout, "matched %ld out of %d (%.1f%%) nucleotides.\n", matched, slen, matched*100.0/slen);
       }
       fprintf(stderr, "aligning... %7d/%7d - alignment done\t[%.3fms]\n", numseqs, numseqs, (clock()-tstart)*1000.0/CLOCKS_PER_SEC);
    }
@@ -279,14 +332,8 @@ hitmap_analysis
    long minv = 0;
    int  min  = 0;
 
-   // Initialize matchlist list.
+   // Reset matchlist.
    matchlist->pos = 0;
-
-   // Initialize match.
-   match_t match;
-   match.read_s = 0;
-   match.read_e = 0;
-   match.score  = 0;
 
    // Find clusters in hitmap.
    long ref = 0;
@@ -303,11 +350,6 @@ hitmap_analysis
 
       // Start streak.
       int streak = 1;
-
-      // Store reference start and read offsets.
-      match.ref_e  = refloc;
-      match.read_e = refkmer;
-      match.dir    = refdir;
 
       // Explore hitmap.
       long i = ref;
@@ -352,21 +394,35 @@ hitmap_analysis
 
       // Save streak.
       if (streak > minv) {
-         // Recompute the position of the last subseq in the streak.
-         match.ref_s = streakloc;
-         match.read_s = streakkmer;
-         match.hits = streak;
+         // Allocate match.
+         match_t * match = malloc(sizeof(match_t));
+         match->ref_e  = refloc;
+         match->read_e = refkmer;
+         match->dir    = refdir;
+         match->ref_s  = streakloc;
+         match->read_s = streakkmer;
+         match->hits   = streak;
+         match->score  = -1;
+         match->repeats = matchlist_new(REPEATS_SIZE);
+
          // Append if list not yet full, replace the minimum value otherwise.
-         if (matchlist->pos < matchlist->size) matchlist->match[matchlist->pos++] = match;
-         else matchlist->match[min] = match;
+         if (matchlist->pos < matchlist->size) {
+            matchlist->match[matchlist->pos++] = match;
+            }
+         else {
+            match_t * match_min = matchlist->match[min];
+            free(match_min->repeats);
+            free(match_min);
+            matchlist->match[min] = match;
+         }
                
          // Find the minimum that will be substituted next.
          if (matchlist->pos == matchlist->size) {
-            minv = matchlist->match[0].hits;
+            minv = matchlist->match[0]->hits;
             for (int j = 1 ; j < matchlist->pos; j++) {
-               if (minv > matchlist->match[j].hits) {
+               if (minv > matchlist->match[j]->hits) {
                   min  = j;
-                  minv = matchlist->match[j].hits;
+                  minv = matchlist->match[j]->hits;
                }
             }
          }
@@ -517,6 +573,186 @@ process_subseq
 }
 
 int
+find_repeats
+(
+ matchlist_t * list
+)
+{
+   // Delete previous repeat record.
+   for (int i = 0; i < list->pos; i++) list->match[i]->repeats->pos = 0;
+
+   // Iterate over all the matches and compare overlaps.
+   for (int i = 0; i < list->pos - 1; i++) {
+      match_t * ref = list->match[i];
+      int last_nt = ref->read_s + (int)((ref->read_e - ref->read_s)*(1-REPEAT_OVERLAP)) + 1;
+      for (int j = i+1; j < list->pos; j++) {
+         match_t * cmp = list->match[j];
+         if (cmp->read_s > last_nt) break;
+         // Compute combined sequence span and overlap.
+         int span    = hm_max(cmp->read_e, ref->read_e) - hm_min(cmp->read_s, ref->read_s);
+         int overlap = hm_min(cmp->read_e, ref->read_e) - hm_max(cmp->read_s, ref->read_s);
+         // Check whether the two compared matches share at least REPEAT_OVERLAP.
+         if (overlap*1.0/span >= REPEAT_OVERLAP) {
+            if(matchlist_add(&(ref->repeats), cmp)) return -1;
+            if(matchlist_add(&(cmp->repeats), ref)) return -1;
+         }
+      }
+   }
+   return 0;
+}
+
+matchlist_t *
+combine_matches
+(
+ matchlist_t * list,
+ long        * matched
+)
+{
+   mnode_t * root = mnode_new(MNODE_SIZE);
+
+   // Add to root a fake match with start 0 and end 0.
+   match_t rootmatch = (match_t) {.read_s = 0, .read_e = 0};
+   root->match = &rootmatch;
+
+   // Will store the best match here (Higher read coverage).
+   mnode_t * best = root;
+
+   // Build the combination tree.
+   for (int i = 0; i < list->pos; i++) {
+      mnode_t * cmp = recursive_build(root, list->match[i]);
+      if (cmp->matched > best->matched) best = cmp;
+   }
+
+   // Save matched nucleotides count.
+   *matched = best->matched;
+
+   // Trace back the best node.
+   matchlist_t * intervals = matchlist_new(list->pos);
+   matchlist_add(&intervals, best->match);
+   while ((best = best->parent) != root) matchlist_add(&intervals, best->match);
+
+   // Destroy tree.
+   recursive_free(root);
+   
+   return intervals;
+}
+
+void
+recursive_free
+(
+ mnode_t * node
+)
+{
+   // Recursive call.
+   for (int i = 0; i < node->nlinks; i++) recursive_free(node->child[i]);
+   // Free current node.
+   free(node->child);
+   free(node);
+}
+
+
+mnode_t *
+recursive_build
+(
+ mnode_t * node,
+ match_t * match
+)
+{
+   int add = (node->nlinks == 0);
+   mnode_t * best = node;
+   for (int i = 0; i < node->nlinks; i++) {
+      mnode_t * child = node->child[i];
+      if (child->match->read_e - match->read_s < OVERLAP_THR) {
+         mnode_t * cmp = recursive_build(child, match);
+         if (cmp->matched > best->matched) best = cmp;
+      } else {
+         add = 1;
+      }
+   }      
+
+   if (add) {
+      mnode_t * newnode = mnode_new(MNODE_SIZE);
+      newnode->parent = node;
+      newnode->match = match;
+      newnode->matched = node->matched + (match->read_e - match->read_s) - hm_max(0, node->match->read_e - match->read_s);
+      // Inline function.
+      if (node->nlinks >= node->size) {
+         int newsize = node->size * 2;
+         node->child = realloc(node->child, newsize * sizeof(mnode_t *));
+         if (node->child == NULL) return NULL;
+         node->size = newsize;
+      }
+      // Add new child.
+      node->child[node->nlinks++] = newnode;
+      
+      // Check best combination.
+      if (newnode->matched > best->matched) best = newnode;
+   }
+
+   return best;
+}
+
+
+mnode_t *
+mnode_new
+(
+ int children
+)
+{
+   if (children < 1) children = 1;
+   mnode_t * node = malloc(sizeof(mnode_t));
+   mnode_t ** child = malloc(children * sizeof(mnode_t *));
+   if (node == NULL) return NULL;
+   node->match = NULL;
+   node->parent = NULL;
+   node->size = children;
+   node->nlinks = 0;
+   node->matched = 0;
+   node->child = child;
+   
+   return node;
+}
+
+
+matchlist_t *
+matchlist_new
+(
+ int elements
+)
+{
+   if (elements < 1) elements = 1;
+   matchlist_t * list = malloc(sizeof(matchlist_t) + elements*sizeof(match_t *));
+   if (list == NULL) return NULL;
+   list->pos  = 0;
+   list->size = elements;
+   return list;
+}
+
+int
+matchlist_add
+(
+ matchlist_t ** listp,
+ match_t      * match
+)
+{
+   matchlist_t * list = *listp;
+
+   // Check whether stack is full.
+   if (list->pos >= list->size) {
+      int newsize = list->size * 2;
+      *listp = list = realloc(list, sizeof(matchlist_t) + newsize * sizeof(match_t *));
+      if (list == NULL) return -1;
+      list->size = newsize;
+   }
+
+   // Add new match to the stack.
+   list->match[list->pos++] = match;
+
+   return 0;
+}
+
+
+int
 compar_seqsort
 (
  const void * a,
@@ -543,8 +779,8 @@ compar_matchid
  const int   param
 )
 {
-   match_t * ma = (match_t *) a;
-   match_t * mb = (match_t *) b;
+   match_t * ma = *((match_t **) a);
+   match_t * mb = *((match_t **) b);
    
    if (mb->ident > ma->ident) return 1;
    else return -1;
@@ -558,8 +794,8 @@ compar_matchlen
  const int   param
 )
 {
-   match_t * ma = (match_t *) a;
-   match_t * mb = (match_t *) b;
+   match_t * ma = *((match_t **) a);
+   match_t * mb = *((match_t **) b);
    
    long lena = ma->read_e - ma->read_s;
    long lenb = mb->read_e - mb->read_s;
@@ -576,8 +812,8 @@ compar_matchstart
  const int   param
 )
 {
-   match_t * ma = (match_t *) a;
-   match_t * mb = (match_t *) b;
+   match_t * ma = *((match_t **) a);
+   match_t * mb = *((match_t **) b);
    
    if (ma->read_s > mb->read_s) return 1;
    else if (ma->read_s < mb->read_s) return -1;

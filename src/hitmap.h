@@ -14,6 +14,9 @@
 #define HITSTACK_SIZE 16
 #define SORTBUF_SIZE  4096
 #define PBSTACK_SIZE  1024
+#define HITBUF_SIZE   32
+#define REPEATS_SIZE  4
+#define MNODE_SIZE    4
 
 // Search algorithm parameters
 #define KMER_SIZE      22
@@ -25,8 +28,12 @@
 #define MATCHLIST_SIZE       1000
 
 // Sequence quality parameters
-#define SEQ_MINLEN     100
-#define SEQ_MINID      0.6
+#define SEQ_MINLEN     75
+#define SEQ_MINID      0.8
+
+// Read assembly parameters
+#define REPEAT_OVERLAP 0.9
+#define OVERLAP_THR    20
 
 // Sequence ID definitions.
 #define KMERID_BITS     24
@@ -35,6 +42,8 @@
 // Macros
 #define seqid_read(a)  ((a >> SEQID_BITS) & SEQID_MASK)
 #define seqid_kmer(a)  (a & SEQID_MASK)
+#define hm_max(a,b)    ((a) > (b) ? (a) : (b))
+#define hm_min(a,b)    ((a) < (b) ? (a) : (b))
 
 // Private structure definition
 
@@ -42,6 +51,7 @@ typedef struct sub_t       sub_t;
 typedef struct match_t     match_t;
 typedef struct matchlist_t matchlist_t;
 typedef struct sublist_t   sublist_t;
+typedef struct mnode_t     mnode_t;
 
 struct sub_t {
    long               seqid;
@@ -56,20 +66,32 @@ struct match_t {
    int read_e;
    int hits;
    int score;
-   double ident;
    int dir;
+   int unused; // This fills the alingment. Maybe for future use.
+   double ident;
+   matchlist_t * repeats;
 };
 
 struct matchlist_t {
-          int    size;
-          int    pos;
-   struct match_t  match[];
+          int       size;
+          int       pos;
+   struct match_t * match[];
 };
 
 struct sublist_t {
           int   size;
    struct sub_t sub[];
 };
+
+struct mnode_t {
+   match_t  * match;
+   mnode_t  * parent;
+   int        matched;
+   int        nlinks;
+   int        size;
+   mnode_t ** child;
+};
+
 
 
 int           hitmap           (int tau, index_t index, chr_t * chr, seqstack_t * seqs);
@@ -79,6 +101,14 @@ int           hitmap_push      (vstack_t ** hitmap, index_t * index, long * fm_p
 sublist_t   * process_subseq   (seq_t * seqs, int numseqs, int k, vstack_t ** hitmaps);
 void          mergesort_match  (match_t * data, match_t * aux, int size, int b);
 int           subseqsort       (sub_t * data, int numels, int slen, int thrmax);
+int           find_repeats     (matchlist_t * list);
+matchlist_t * combine_matches  (matchlist_t * list, long * matched);
+mnode_t *     recursive_build  (mnode_t * node, match_t * match);
+void          recursive_free   (mnode_t * node);
+mnode_t *     mnode_new        (int children);
+int           mnode_add        (mnode_t * node, mnode_t * match);
+matchlist_t * matchlist_new    (int elements);
+int           matchlist_add    (matchlist_t ** listp, match_t * match);
 int           compar_seqsort   (const void * a, const void * b, const int val);
 int           compar_matchlen  (const void * a, const void * b, const int param);
 int           compar_matchid   (const void * a, const void * b, const int param);
