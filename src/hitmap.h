@@ -25,6 +25,7 @@
 
 // Hitmap analysis parameters
 #define READ_TO_GENOME_RATIO 2
+#define MIN_DISTANCE_RATIO   10
 #define MATCHLIST_SIZE       10000
 
 // Sequence quality parameters

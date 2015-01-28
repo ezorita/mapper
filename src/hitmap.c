@@ -69,6 +69,9 @@ hitmap
       for (int a = 0; a <= maxtau; a++) {
 
          fprintf(stderr, "[tau=%d] %d subsequences\n", a, subseqs->size);
+
+         // Sort subsequences.
+         mergesort_mt(subseqs->sub, subseqs->size, sizeof(sub_t), KMER_SIZE, 1, compar_seqsort);
      
          /**                                         **
           **             MAP SUBSEQUENCES            **
@@ -167,7 +170,7 @@ hitmap
 
          // Sort all hitmaps
          for (int i = 0 ; i < numseqs ; i++) {
-            if (i % 100 == 0) fprintf(stderr, "aligning... %7d/%7d\r", i, numseqs);
+            fprintf(stderr, "aligning... %7d/%7d\r", i, numseqs);
 
 
             /**                                         **
@@ -187,17 +190,14 @@ hitmap
             mergesort_long(hitmaps[i]->val, sortbuf, hitmaps[i]->pos, 0);
 
             // Find matching loci in hitmaps.
-            fprintf(stdout, "starting hitmap analysis: %ld candidate loci.\n", hitmaps[i]->pos);
+            //fprintf(stderr, "starting hitmap analysis: %ld candidate loci.\n", hitmaps[i]->pos);
             hitmap_analysis(hitmaps[i], matches, KMER_SIZE, slen);
-            fprintf(stdout, "hitmap analysis: %d alignments will be performed.\n", matches->pos);
+            //fprintf(stderr, "hitmap analysis: %d alignments will be performed.\n", matches->pos);
             if (matches->pos == 0) continue;
 
             /**                                         **
              **           SEQUENCE ALIGNMENT            **
              **                                         **/
-
-            // Print results.
-            if (seqmatches[i]->pos) fprintf(stdout, "%s\n", seqs->seq[s+i].tag);
 
             // Smith-Waterman alignment.
             for(long k = 0; k < matches->pos; k++) {
@@ -234,7 +234,6 @@ hitmap
                   match->read_s = slen - match->read_e;
                   match->read_e = end;
                }
-
                long g_start = match->ref_s;
                long g_end   = match->ref_e;
                int chrnum = bisect_search(0, chr->nchr-1, chr->start, g_start+1)-1;
@@ -251,7 +250,6 @@ hitmap
                        match->repeats->pos);
 
 
-
                // Add to significant matchlist.
                matchlist_add(seqmatches+i, match);
             }
@@ -260,6 +258,8 @@ hitmap
             /**                                         **
              **              ASSEMBLE READ              **
              **                                         **/
+
+            fprintf(stderr, "matches before read re-assembly %d\n", seqmatches[i]->pos);
 
             // Sort mapped regions.
             mergesort_mt(seqmatches[i]->match, seqmatches[i]->pos, sizeof(match_t *), 0, 1, compar_matchstart);
@@ -272,36 +272,38 @@ hitmap
             matchlist_t * intervals = combine_matches(seqmatches[i], &matched);
 
             // Intervals:
-            fprintf(stdout, "Intervals:\n");
+            if (seqmatches[i]->pos) fprintf(stdout, "%s\n", seqs->seq[s+i].tag);
             for (long k = intervals->pos - 1, cnt = 0 ; k >= 0; k--) {
                match_t * match = intervals->match[k];
-               int dir = match->dir;
-               long g_start = match->ref_s;
-               long g_end   = match->ref_e;
-               int chrnum = bisect_search(0, chr->nchr-1, chr->start, g_start+1)-1;
-               fprintf(stdout, "[interval %ld]\t(%d,%d)\t%s:%ld-%ld:%c\t(%.2f%%)\n",
-                       ++cnt,
-                       match->read_s, match->read_e,
-                       chr->name[chrnum],
-                       g_start - chr->start[chrnum]+1,
-                       g_end - chr->start[chrnum]+1,
-                       dir ? '-' : '+',
-                       match->ident*100.0);
-               for (int j = 0; j < match->repeats->pos; j++) {
-                  match   = match->repeats->match[j];
-                  dir     = match->dir;
-                  g_start = match->ref_s;
-                  g_end   = match->ref_e;
-                  chrnum  = bisect_search(0, chr->nchr-1, chr->start, g_start+1)-1;
-                  fprintf(stdout, "\t\t(%d,%d)\t%s:%ld-%ld:%c\t(%.2f%%)\n",
+               //if (a == maxtau) {
+                  int dir = match->dir;
+                  long g_start = match->ref_s;
+                  long g_end   = match->ref_e;
+                  int chrnum = bisect_search(0, chr->nchr-1, chr->start, g_start+1)-1;
+                  // Print results.
+                  fprintf(stdout, "[interval %ld]\t(%d,%d)\t%s:%ld-%ld:%c\t(%.2f%%)\n",
+                          ++cnt,
                           match->read_s, match->read_e,
                           chr->name[chrnum],
                           g_start - chr->start[chrnum]+1,
                           g_end - chr->start[chrnum]+1,
                           dir ? '-' : '+',
                           match->ident*100.0);
-               }
-
+                  for (int j = 0; j < match->repeats->pos; j++) {
+                     match   = match->repeats->match[j];
+                     dir     = match->dir;
+                     g_start = match->ref_s;
+                     g_end   = match->ref_e;
+                     chrnum  = bisect_search(0, chr->nchr-1, chr->start, g_start+1)-1;
+                     fprintf(stdout, "\t\t(%d,%d)\t%s:%ld-%ld:%c\t(%.2f%%)\n",
+                             match->read_s, match->read_e,
+                             chr->name[chrnum],
+                             g_start - chr->start[chrnum]+1,
+                             g_end - chr->start[chrnum]+1,
+                             dir ? '-' : '+',
+                             match->ident*100.0);
+                  }
+                  //}
                // Find sequence gaps and feedback them to a sublist_t.
                // Both unmapped gaps and intervals with identity below
                // INTERVAL_MINID will be mapped again after increasing tau.
@@ -320,10 +322,10 @@ hitmap
                         subseqs->sub[subseqs->size++] = sseq;
                      }
                   }
-                  if (gapend - match->read_e > SEQ_MINLEN) fprintf(stdout, "[interval %ld]\t(%d,%d)\n", ++cnt, match->read_e+1, gapend-1);
+                  //                  if (gapend - match->read_e > SEQ_MINLEN) fprintf(stdout, "[interval %ld]\t(%d,%d)\n", ++cnt, match->read_e+1, gapend-1);
                }
             }
-            fprintf(stdout, "matched %ld out of %d (%.1f%%) nucleotides. (%ldnt will be queried again)\n", matched, slen, matched*100.0/slen, slen-matched);
+            fprintf(stdout, "[%d] matched %ld out of %d (%.1f%%) nucleotides. (%ldnt will be queried again)\n",i, matched, slen, matched*100.0/slen, slen-matched);
          }
          fprintf(stderr, "aligning... %7d/%7d - alignment done\t[%.3fms]\n", numseqs, numseqs, (clock()-tstart)*1000.0/CLOCKS_PER_SEC);
       }
@@ -359,7 +361,7 @@ hitmap_analysis
       long refloc = hitmap->val[ref] >> KMERID_BITS;
       long refkmer = (hitmap->val[ref] & KMERID_MASK) >> 1;
       long refdir = hitmap->val[ref] & 1;
-      long refend = refloc + refkmer * READ_TO_GENOME_RATIO;
+      long refend = refloc + (refdir ? (readlen - refkmer) : (refkmer))  * READ_TO_GENOME_RATIO;
 
       // Mark subseq as used.
       hitmap->val[ref] *= -1;
@@ -369,6 +371,7 @@ hitmap_analysis
 
       // Explore hitmap.
       long i = ref;
+      //      long refdbg = ref;
       long streakloc = refloc;
       long streakkmer = refkmer;
       ref = -1;
@@ -388,6 +391,9 @@ hitmap_analysis
          long r_dist = refkmer - kmer;
          long g_dist = loc - refloc; // Recall that the genome is stored backwards.
 
+         // DEBUG.
+         //         fprintf(stdout, "[%ld<->%ld]:\tend=%ld(refkmer=%ld, readlen=%d)\tr_dist=%ld\tg_dist=%ld\tfactor=%f\tkmers=[%ld:%c,%ld:%c]\tloc=[%ld,%ld]\n", refdbg, i, refend, refkmer, readlen, r_dist, g_dist, ((float)g_dist)/r_dist, refkmer, (refdir ? '+' : '-'), kmer, (dir ? '+' : '-'), refloc, loc);
+
          // Check if the compared sequence is too far away.
          if (loc > refend) {
             if (ref == -1) ref = i;
@@ -395,7 +401,7 @@ hitmap_analysis
          }
       
          // Check if the sequences are placed similarly both in the read and the genome.
-         if (r_dist > 0 && dir == refdir && g_dist < READ_TO_GENOME_RATIO * r_dist) {
+         if (r_dist > 0 && dir == refdir && (g_dist < (READ_TO_GENOME_RATIO * r_dist) || (g_dist < MIN_DISTANCE_RATIO && r_dist < MIN_DISTANCE_RATIO))) {
             // Save the last index of the streak.
             streakkmer = kmer;
             streakloc = loc;
@@ -582,8 +588,6 @@ process_subseq
    // Realloc list.
    list->size = lpos;
    list = realloc(list, sizeof(sublist_t) + lpos * sizeof(sub_t));
-   // Sort subsequences.
-   mergesort_mt(list->sub, list->size, sizeof(sub_t), k, 1, compar_seqsort);
 
    return list;
 }
