@@ -12,6 +12,7 @@ poucet
  arg_t      * arg
 )
 {
+   int tau = arg->tau;
    // Index.
    long   * c      = arg->index->c;
    list_t * occs   = arg->index->occ;
@@ -22,8 +23,8 @@ poucet
    uint score;
 
    // Part of the cache that is shared between all the children.
-   uint r[MAXTAU*2+1];
-   uint * row = r + MAXTAU;
+   uint r[tau*2+3];
+   uint * row = r + tau + 1;
    // Initialize wing ends.
    row[wingsz+1]  = prow[wingsz]  + 1;
    row[-wingsz-1] = prow[-wingsz] + 1;
@@ -63,7 +64,7 @@ poucet
       row[0] = min(mmatch, shift);
 
       int g_offset = 0;
-      score = MAXTAU;
+      score = tau+1;
       for (int i = -wingsz ; i <= wingsz; i++) {
          if (row[i] <= score) {
             score = row[i];

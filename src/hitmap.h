@@ -25,11 +25,12 @@
 
 // Hitmap analysis parameters
 #define READ_TO_GENOME_RATIO 2
-#define MATCHLIST_SIZE       1000
+#define MATCHLIST_SIZE       10000
 
 // Sequence quality parameters
 #define SEQ_MINLEN     75
-#define SEQ_MINID      0.8
+#define SEQ_MINID      0.7
+#define INTERVAL_MINID 0.8
 
 // Read assembly parameters
 #define REPEAT_OVERLAP 0.9
@@ -95,7 +96,7 @@ struct mnode_t {
 
 
 int           hitmap           (int tau, index_t index, chr_t * chr, seqstack_t * seqs);
-int           hitmap_analysis  (vstack_t * hitmap, matchlist_t * loci, int kmer_size, int tau, int maxdist);
+int           hitmap_analysis  (vstack_t * hitmap, matchlist_t * loci, int kmer_size, int maxdist);
 int           map_hits         (pstack_t ** hits, vstack_t ** hitmap, index_t * index, int tau, int id);
 int           hitmap_push      (vstack_t ** hitmap, index_t * index, long * fm_ptr, int id);
 sublist_t   * process_subseq   (seq_t * seqs, int numseqs, int k, vstack_t ** hitmaps);

@@ -89,7 +89,7 @@ int main(int argc, char * argv[]) {
 
       // Hitmap.
       clock_t tstart = clock();
-      hitmap(0, index, chr, seqs);
+      hitmap(2, index, chr, seqs);
       fprintf(stderr, "query time: %ldus\n", ((clock()-tstart)*1000000)/CLOCKS_PER_SEC);
       
    }
