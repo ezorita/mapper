@@ -262,7 +262,7 @@ hitmap
             fprintf(stderr, "matches before read re-assembly %d\n", seqmatches[i]->pos);
 
             // Sort mapped regions.
-            mergesort_mt(seqmatches[i]->match, seqmatches[i]->pos, sizeof(match_t *), 0, 1, compar_matchstart);
+            mergesort_mt(seqmatches[i]->match, seqmatches[i]->pos, sizeof(match_t *), 0, 1, compar_matchsize);
 
             // Find sequence repeats.
             find_repeats(seqmatches[i]);
@@ -273,7 +273,7 @@ hitmap
 
             // Intervals:
             if (seqmatches[i]->pos) fprintf(stdout, "%s\n", seqs->seq[s+i].tag);
-            for (long k = intervals->pos - 1, cnt = 0 ; k >= 0; k--) {
+            for (long k = 0, cnt = 0 ; k < intervals->pos; k++) {
                match_t * match = intervals->match[k];
                //if (a == maxtau) {
                   int dir = match->dir;
@@ -307,7 +307,7 @@ hitmap
                // Find sequence gaps and feedback them to a sublist_t.
                // Both unmapped gaps and intervals with identity below
                // INTERVAL_MINID will be mapped again after increasing tau.
-               int gapend = (k > 0 ? intervals->match[k-1]->read_s : slen);
+               int gapend = (k < intervals->pos - 1 ? intervals->match[k+1]->read_s : slen);
                if (gapend - match->read_e > SEQ_MINLEN || match->ident < INTERVAL_MINID) {
                   for (int j = match->read_e; j <= gapend - KMER_SIZE; j++) {
                      sub_t sseq = (sub_t) {
@@ -322,7 +322,7 @@ hitmap
                         subseqs->sub[subseqs->size++] = sseq;
                      }
                   }
-                  //                  if (gapend - match->read_e > SEQ_MINLEN) fprintf(stdout, "[interval %ld]\t(%d,%d)\n", ++cnt, match->read_e+1, gapend-1);
+                  if (gapend - match->read_e > SEQ_MINLEN) fprintf(stdout, "[interval %ld]\t(%d,%d)\n", ++cnt, match->read_e+1, gapend-1);
                }
             }
             fprintf(stdout, "[%d] matched %ld out of %d (%.1f%%) nucleotides. (%ldnt will be queried again)\n",i, matched, slen, matched*100.0/slen, slen-matched);
@@ -628,6 +628,7 @@ combine_matches
  long        * matched
 )
 {
+   /*
    mnode_t * root = mnode_new(MNODE_SIZE);
 
    // Add to root a fake match with start 0 and end 0.
@@ -636,7 +637,36 @@ combine_matches
 
    // Will store the best match here (Higher read coverage).
    mnode_t * best = root;
+   */
+   // Allocate intervals.
+   matchlist_t * interv = matchlist_new(list->pos);
 
+   // Fill read with maximum coverage.
+   for (int i = 0; i < list->pos; i++) {
+      int append = 1;
+      for (int j = 0; j < interv->pos; j++) {
+         if (list->match[i]->read_s < interv->match[j]->read_s) {
+            if (list->match[i]->read_e - interv->match[j]->read_s > OVERLAP_THR) {
+               append = 0;
+               break;
+            }
+         } else if (list->match[i]->read_e > interv->match[j]->read_e) {
+            if (interv->match[j]->read_e - list->match[i]->read_s > OVERLAP_THR) {
+               append = 0;
+               break;
+            }
+         } else {
+            append = 0;
+            break;
+         }
+      }
+      if (append) matchlist_add(&interv, list->match[i]);
+   }
+
+   mergesort_mt(interv->match, interv->pos, sizeof(match_t *), 0, 1, compar_matchstart);   
+   
+   //
+   /*
    // Build the combination tree.
    for (int i = 0; i < list->pos; i++) {
       mnode_t * cmp = recursive_build(root, list->match[i]);
@@ -653,8 +683,8 @@ combine_matches
 
    // Destroy tree.
    recursive_free(root);
-   
-   return intervals;
+   */
+   return interv;
 }
 
 void
@@ -838,4 +868,23 @@ compar_matchstart
    if (ma->read_s > mb->read_s) return 1;
    else if (ma->read_s < mb->read_s) return -1;
    else return (mb->ident > ma->ident ? 1 : -1);
+}
+
+int
+compar_matchsize
+(
+ const void * a,
+ const void * b,
+ const int   param
+)
+{
+   match_t * ma = *((match_t **) a);
+   match_t * mb = *((match_t **) b);
+
+   int sza = ma->read_e - ma->read_s;
+   int szb = mb->read_e - mb->read_s;
+   
+   if (szb > sza) return 1;
+   else if (szb < sza) return -1;
+   else return (mb->read_s < ma->read_s ? 1 : -1);
 }

@@ -115,5 +115,6 @@ int           compar_seqsort   (const void * a, const void * b, const int val);
 int           compar_matchlen  (const void * a, const void * b, const int param);
 int           compar_matchid   (const void * a, const void * b, const int param);
 int           compar_matchstart(const void * a, const void * b, const int param);
+int           compar_matchsize (const void * a, const void * b, const int param);
 
 #endif
