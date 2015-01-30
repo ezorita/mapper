@@ -34,7 +34,7 @@ int main(int argc, char * argv[]) {
    int opt_verbose  = 1;
 
    // Backtrace handler
-   //   signal(SIGSEGV, SIGSEGV_handler); 
+    signal(SIGSEGV, SIGSEGV_handler); 
 
    if (argc < 3) {
       fprintf(stderr, "usage: bwmapper {query <file.fastq> | index} <genome file>\n");
@@ -68,7 +68,7 @@ int main(int argc, char * argv[]) {
       }
 
       // Load index.
-      int mflags = MAP_PRIVATE | MAP_POPULATE;
+      int mflags = MAP_PRIVATE;// | MAP_POPULATE;
       long idxsize = lseek(fd, 0, SEEK_END);
       lseek(fd, 0, SEEK_SET);
       long * indexp = mmap(NULL, idxsize, PROT_READ, mflags, fd, 0);
@@ -76,6 +76,7 @@ int main(int argc, char * argv[]) {
          fprintf(stderr, "error opening index file: %s.\n", strerror(errno));
          return EXIT_FAILURE;
       }
+      fprintf(stderr, "index pointer: %p\n", indexp);
       
       // Read FM index format.
       index_t index;

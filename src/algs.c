@@ -60,7 +60,7 @@ seq_push
    if (reverse) {
       int len = strlen(seq);
       char * rseq = malloc(len+1);
-      for (int i = 0; i <= len; i++)
+      for (int i = 0; i < len; i++)
          rseq[len-1-i] = rcode[(int)seq[i]];
       rseq[len] = 0;
       seqt->rseq = rseq;

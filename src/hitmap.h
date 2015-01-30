@@ -103,8 +103,9 @@ int           hitmap_push      (vstack_t ** hitmap, index_t * index, long * fm_p
 sublist_t   * process_subseq   (seq_t * seqs, int numseqs, int k, vstack_t ** hitmaps);
 void          mergesort_match  (match_t * data, match_t * aux, int size, int b);
 int           subseqsort       (sub_t * data, int numels, int slen, int thrmax);
+void          fuse_matches     (matchlist_t ** listp, int slen);
 int           find_repeats     (matchlist_t * list);
-matchlist_t * combine_matches  (matchlist_t * list, long * matched);
+matchlist_t * combine_matches  (matchlist_t * list);
 mnode_t *     recursive_build  (mnode_t * node, match_t * match);
 void          recursive_free   (mnode_t * node);
 mnode_t *     mnode_new        (int children);
@@ -116,5 +117,6 @@ int           compar_matchlen  (const void * a, const void * b, const int param)
 int           compar_matchid   (const void * a, const void * b, const int param);
 int           compar_matchstart(const void * a, const void * b, const int param);
 int           compar_matchsize (const void * a, const void * b, const int param);
+int           compar_refstart  (const void * a, const void * b, const int param);
 
 #endif

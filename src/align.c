@@ -33,6 +33,7 @@ nw_align
    int VEC_SIZE = 2*ALIGN_WIDTH + 3;
    int allocated = align_min(len_q+1, ALLOC_BLOCK_SIZE);
    cell_t ** Ls = malloc((len_q+1)*sizeof(cell_t*));
+
    for (int i = 0; i < allocated; i++) {
       Ls[i] = malloc(VEC_SIZE * sizeof(cell_t));
    }
