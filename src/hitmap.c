@@ -293,6 +293,7 @@ hitmap
             }
 
             // Intervals:
+            long recompute = 0;
             if (a == maxtau && seqmatches[i]->pos) fprintf(stdout, "%s\n", seqs->seq[s+i].tag);
             for (long k = 0, cnt = 0 ; k < intervals->pos; k++) {
                match_t * match = intervals->match[k];
@@ -338,7 +339,9 @@ hitmap
                // INTERVAL_MINID will be mapped again after increasing tau.
                int gapend = (k < intervals->pos - 1 ? intervals->match[k+1]->read_s : slen);
                if (gapend - match->read_e > SEQ_MINLEN || match->ident < INTERVAL_MINID) {
-                  for (int j = match->read_e; j <= gapend - KMER_SIZE; j++) {
+                  int start = (match->ident < INTERVAL_MINID ? match->read_s : match->read_e);
+                  recompute += gapend - start + 1;
+                  for (int j = start; j <= gapend - KMER_SIZE; j++) {
                      sub_t sseq = (sub_t) {
                         .seqid = (i << KMERID_BITS | (j*2 & KMERID_MASK)),
                         .seq   = seqs->seq[i].seq + j,
@@ -354,7 +357,7 @@ hitmap
                   if (a == maxtau && gapend - match->read_e > SEQ_MINLEN) fprintf(stdout, "[interval %ld]\t(%d,%d)\n", ++cnt, match->read_e+1, gapend-1);
                }
             }
-            fprintf(stdout, "[%d] matched %ld out of %d (%.1f%%) nucleotides. (%ldnt will be queried again)\n",i, matched, slen, matched*100.0/slen, slen-matched);
+            fprintf(stdout, "[%d] matched %ld out of %d (%.1f%%) nucleotides. (%ldnt will be queried again)\n",i, matched, slen, matched*100.0/slen, recompute);
          }
          fprintf(stderr, "aligning... %7d/%7d - alignment done\t[%.3fms]\n", numseqs, numseqs, (clock()-tstart)*1000.0/CLOCKS_PER_SEC);
       }
