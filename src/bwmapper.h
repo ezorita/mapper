@@ -47,6 +47,6 @@ void          bwt_index        (char* text, long tlen, long** pos, vstack_t** oc
 long        * compute_c        (char* genome, long gsize);
 
 // Misc functions.
-seqstack_t  * read_file        (FILE * inputf, const int reverse, const int verbose);
+seqstack_t  * read_file        (FILE * inputf, const int reverse);
 
 #endif

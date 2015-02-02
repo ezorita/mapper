@@ -39,7 +39,7 @@ struct align_t {
    long pathlen;
 };
 
-align_t      nw_align         (char * query, char * ref, int len_q, int dir_q, int dir_r);
+align_t      nw_align         (const char * query, const char * ref, const int len_q, const int dir_q, const int dir_r);
 align_t      sw_align         (char * read, int rdlen, char * ref, int rflen);
 
 #endif

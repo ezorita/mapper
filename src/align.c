@@ -3,13 +3,18 @@
 align_t
 nw_align
 (
- char * query,
- char * ref,
- int len_q,
- int dir_q,
- int dir_r
+ const char * query,
+ const char * ref,
+ const int len_q,
+ const int dir_q,
+ const int dir_r
 )
 {
+
+   if (len_q < 1) {
+      // Return alignment at position 0.
+      return (align_t) {0, 0, 0, 0};
+   }
    // Return value.
    // The column (genome breakpoint will be returned in .end)
    // The row (read breakpoint will be returned in .start)
@@ -41,12 +46,12 @@ nw_align
 
    // Translate sequences.
    char val_q[len_q];
-   char val_r[len_q];
+   char val_r[len_q + ALIGN_WIDTH];
 
-   for (int i = 0; i < len_q; i++) {
+   for (int i = 0; i < len_q; i++)
       val_q[i] = translate[(int)query[dir_q*i]];
+   for (int i = 0; i < len_q + ALIGN_WIDTH; i++)
       val_r[i] = translate[(int)ref[dir_r*i]];
-   }
 
    // Aux vars.
    int match, r_gap, g_gap;

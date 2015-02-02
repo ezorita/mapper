@@ -31,7 +31,6 @@ int main(int argc, char * argv[]) {
 
    // TODO: parametrize
    int opt_reverse  = 1;
-   int opt_verbose  = 1;
 
    // Backtrace handler
     signal(SIGSEGV, SIGSEGV_handler); 
@@ -62,7 +61,7 @@ int main(int argc, char * argv[]) {
 
       // Read file.
       fprintf(stderr, "reading query file...\n");
-      seqstack_t * seqs = read_file(queryfile, opt_reverse, opt_verbose); // TODO: set reverse and verbose options.
+      seqstack_t * seqs = read_file(queryfile, opt_reverse); // TODO: set reverse and verbose options.
       if (seqs == NULL) {
          return EXIT_FAILURE;
       }
@@ -76,7 +75,6 @@ int main(int argc, char * argv[]) {
          fprintf(stderr, "error opening index file: %s.\n", strerror(errno));
          return EXIT_FAILURE;
       }
-      fprintf(stderr, "index pointer: %p\n", indexp);
       
       // Read FM index format.
       index_t index;
@@ -436,8 +434,7 @@ seqstack_t *
 read_file
 (
    FILE      * inputf,
-   const int   reverse,
-   const int   verbose
+   const int   reverse
 )
 {
    // TODO: Set a maximum read size in MB, when this limit is reached return.
@@ -457,15 +454,12 @@ read_file
 
    switch(c) {
    case '>':
-      if (verbose) fprintf(stderr, "FASTA format detected\n");
       format = FASTA;
       break;
    case '@':
-      if (verbose) fprintf(stderr, "FASTQ format detected\n");
       format = FASTQ;
       break;
    default:
-      if (verbose) fprintf(stderr, "raw format detected\n");
       format = RAW;
    }
 
