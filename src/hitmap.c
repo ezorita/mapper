@@ -235,7 +235,8 @@ hitmap
                   match->read_e = end;
                }
 
-                 // DEBUG.
+               // DEBUG.
+               /*
                long g_start = match->ref_s;
                long g_end   = match->ref_e;
                int chrnum = bisect_search(0, chr->nchr-1, chr->start, g_start+1)-1;
@@ -250,7 +251,7 @@ hitmap
                        match->dir ? '-' : '+',
                        g_end - g_start + 1,
                        match->repeats->pos);
-
+               */
 
                // Add to significant matchlist.
                matchlist_add(seqmatches+i, match);
@@ -295,35 +296,43 @@ hitmap
             if (a == maxtau && seqmatches[i]->pos) fprintf(stdout, "%s\n", seqs->seq[s+i].tag);
             for (long k = 0, cnt = 0 ; k < intervals->pos; k++) {
                match_t * match = intervals->match[k];
-               //               if (a == maxtau) {
-                  int dir = match->dir;
-                  long g_start = match->ref_s;
-                  long g_end   = match->ref_e;
-                  int chrnum = bisect_search(0, chr->nchr-1, chr->start, g_start+1)-1;
-                  // Print results.
-                  fprintf(stdout, "[interval %ld]\t(%d,%d)\t%s:%ld-%ld:%c\t(%.2f%%)\n",
-                          ++cnt,
-                          match->read_s, match->read_e,
-                          chr->name[chrnum],
-                          g_start - chr->start[chrnum]+1,
-                          g_end - chr->start[chrnum]+1,
-                          dir ? '-' : '+',
-                          match->ident*100.0);
-                  for (int j = 0; j < match->repeats->pos; j++) {
-                     match   = match->repeats->match[j];
-                     dir     = match->dir;
-                     g_start = match->ref_s;
-                     g_end   = match->ref_e;
-                     chrnum  = bisect_search(0, chr->nchr-1, chr->start, g_start+1)-1;
-                     fprintf(stdout, "\t\t(%d,%d)\t%s:%ld-%ld:%c\t(%.2f%%)\n",
+               if (a == maxtau) {
+                  if (match->repeats->pos > 1) {
+                     mergesort_mt(match->repeats->match, match->repeats->pos, sizeof(match_t *), 0, 1, compar_matchid);
+                     fprintf(stdout, "[interval %ld]\t*%d* significant loci\n", ++cnt, match->repeats->pos);
+                     for (int j = 0; j < hm_min(PRINT_REPEATS_NUM, match->repeats->pos); j++) {
+                        match_t * rmatch = match->repeats->match[j];
+                        int          dir = rmatch->dir;
+                        long     g_start = rmatch->ref_s;
+                        long       g_end = rmatch->ref_e;
+                        int       chrnum = bisect_search(0, chr->nchr-1, chr->start, g_start+1)-1;
+                        fprintf(stdout, "\t\t(%d,%d)\t%s:%ld-%ld:%c\t(%.2f%%)\n",
+                                rmatch->read_s, rmatch->read_e,
+                                chr->name[chrnum],
+                                g_start - chr->start[chrnum]+1,
+                                g_end - chr->start[chrnum]+1,
+                                dir ? '-' : '+',
+                                rmatch->ident*100.0);
+                     }
+                     if (match->repeats->pos > PRINT_REPEATS_NUM) fprintf(stdout, "\t\t...\n");
+                     match = match->repeats->match[0];
+                  } else {
+                     int      dir = match->dir;
+                     long g_start = match->ref_s;
+                     long   g_end = match->ref_e;
+                     int   chrnum = bisect_search(0, chr->nchr-1, chr->start, g_start+1)-1;
+                     // Print results.
+                     fprintf(stdout, "[interval %ld]\t(%d,%d)\t%s:%ld-%ld:%c\t(%.2f%%)\n",
+                             ++cnt,
                              match->read_s, match->read_e,
                              chr->name[chrnum],
                              g_start - chr->start[chrnum]+1,
                              g_end - chr->start[chrnum]+1,
                              dir ? '-' : '+',
                              match->ident*100.0);
+ 
                   }
-                  //}
+               }
                // Find sequence gaps and feedback them to a sublist_t.
                // Both unmapped gaps and intervals with identity below
                // INTERVAL_MINID will be mapped again after increasing tau.
@@ -342,7 +351,7 @@ hitmap
                         subseqs->sub[subseqs->size++] = sseq;
                      }
                   }
-                  //                  if (gapend - match->read_e > SEQ_MINLEN) fprintf(stdout, "[interval %ld]\t(%d,%d)\n", ++cnt, match->read_e+1, gapend-1);
+                  if (a == maxtau && gapend - match->read_e > SEQ_MINLEN) fprintf(stdout, "[interval %ld]\t(%d,%d)\n", ++cnt, match->read_e+1, gapend-1);
                }
             }
             fprintf(stdout, "[%d] matched %ld out of %d (%.1f%%) nucleotides. (%ldnt will be queried again)\n",i, matched, slen, matched*100.0/slen, slen-matched);
@@ -714,9 +723,13 @@ find_repeats
    for (int i = 0; i < list->pos; i++) list->match[i]->repeats->pos = 0;
 
    // Iterate over all the matches and compare overlaps.
-   for (int i = 0; i < list->pos - 1; i++) {
+   for (int i = 0; i < list->pos; i++) {
       match_t * ref = list->match[i];
+      // Add a feedback link. This will be helpful when sorting.
+      matchlist_add(&(ref->repeats), ref);
+      // Compute the position of the last nucleotide.
       int last_nt = ref->read_s + (int)((ref->read_e - ref->read_s)*(1-REPEAT_OVERLAP)) + 1;
+      // Iterate over the other matches.
       for (int j = i+1; j < list->pos; j++) {
          match_t * cmp = list->match[j];
          if (cmp->read_s > last_nt) break;

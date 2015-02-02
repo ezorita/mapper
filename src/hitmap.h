@@ -18,6 +18,9 @@
 #define REPEATS_SIZE  4
 #define MNODE_SIZE    4
 
+// Output format parameters
+#define PRINT_REPEATS_NUM 5
+
 // Search algorithm parameters
 #define KMER_SIZE      22
 #define LAST_THRESHOLD 7
