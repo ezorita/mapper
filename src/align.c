@@ -31,13 +31,13 @@ nw_align
 
    // Allocate path and alignment matrix.
    int VEC_SIZE = 2*ALIGN_WIDTH + 3;
-   int allocated = align_min(len_q+1, ALLOC_BLOCK_SIZE);
-   cell_t ** Ls = malloc((len_q+1)*sizeof(cell_t*));
+   int allocated = align_min(len_q+ALIGN_WIDTH+1, ALLOC_BLOCK_SIZE);
+   cell_t ** Ls = malloc((len_q+ALIGN_WIDTH+1)*sizeof(cell_t*));
 
    for (int i = 0; i < allocated; i++) {
       Ls[i] = malloc(VEC_SIZE * sizeof(cell_t));
    }
-   cell_t ** path = malloc(2*len_q*sizeof(cell_t *));
+   cell_t ** path = malloc((2*len_q+ALIGN_WIDTH)*sizeof(cell_t *));
 
    // Translate sequences.
    char val_q[len_q];
@@ -64,11 +64,11 @@ nw_align
    for (int i = 0; i < 2*len_q; i++) path[i] = NULL;
 
    // Compute inverted Ls.
-   for (int i = 0; i < len_q; i++) {
+   for (int i = 0; i < len_q + ALIGN_WIDTH; i++) {
       int l = i + 1;
       // Expand matrix.
       if (l >= allocated) {
-         allocated = align_min(len_q+1, allocated + ALLOC_BLOCK_SIZE);
+         allocated = align_min(len_q+ALIGN_WIDTH+1, allocated + ALLOC_BLOCK_SIZE);
          for (int k = l; k < allocated; k++) {
             Ls[k] = malloc(VEC_SIZE * sizeof(cell_t));
          }
@@ -80,19 +80,22 @@ nw_align
       if (i <= ALIGN_WIDTH) {
          width = i;
          // Vertical L border.
-         L[width+1] = (cell_t) {uL[width].score + 1, uL[width].r_gaps + 1, i - width - 1, i, uL + width};
+         if (i < len_q) {
+            L[width+1] = (cell_t) {uL[width].score + 1, uL[width].r_gaps + 1, i - width - 1, i, uL + width};
+         }
          // Horizontal L border.
          L[-width-1] = (cell_t) {uL[-width].score + 1, uL[-width].r_gaps, i, i - width - 1, uL - width};
       } else {
          width = ALIGN_WIDTH;
          // Vertical L border.
-         r_gap = uL[width].score + 1;
-         match = uL[width+1].score + (val_q[i-width-1] != val_r[i]);
-         if (match < r_gap || (match == r_gap && uL[width+1].r_gaps > uL[width].r_gaps))
-            L[width+1] = (cell_t) {match, uL[width+1].r_gaps, i - width - 1, i, uL + width + 1};
-         else
-            L[width+1] = (cell_t) {r_gap, uL[width].r_gaps + 1, i - width - 1, i, uL + width};
-
+         if (i < len_q) {
+            r_gap = uL[width].score + 1;
+            match = uL[width+1].score + (val_q[i-width-1] != val_r[i]);
+            if (match < r_gap || (match == r_gap && uL[width+1].r_gaps > uL[width].r_gaps))
+               L[width+1] = (cell_t) {match, uL[width+1].r_gaps, i - width - 1, i, uL + width + 1};
+            else
+               L[width+1] = (cell_t) {r_gap, uL[width].r_gaps + 1, i - width - 1, i, uL + width};
+         }
          // Horizontal L border.
          g_gap = uL[-width].score + 1;
          match = uL[-width-1].score + (val_q[i] != val_r[i-width-1]);
@@ -104,20 +107,22 @@ nw_align
       }
 
       // Compute L elements.
-      for (int j = width; j > 0; j--) {
+      for (int j = width ; j > align_max(0, i - len_q); j--) {
          // Vertical wing.
-         match  = uL[j].score + (val_q[i-j] != val_r[i]);
-         r_gap = uL[j-1].score + 1;
-         g_gap = L[j+1].score + 1;
+         if (i < len_q) {
+            match  = uL[j].score + (val_q[i-j] != val_r[i]);
+            r_gap = uL[j-1].score + 1;
+            g_gap = L[j+1].score + 1;
 
-         // Assume r_gap.
-         L[j] = (cell_t) {r_gap, uL[j-1].r_gaps + 1, i - j, i, uL + j - 1};
-         // Check g_gap.
-         if (g_gap < L[j].score || (g_gap == L[j].score && L[j+1].r_gaps > L[j].r_gaps))
-            L[j] = (cell_t) {g_gap, L[j+1].r_gaps, i - j, i, L + j + 1};
-         // Check match.
-         if (match < L[j].score || (match == L[j].score && uL[j].r_gaps >= L[j].r_gaps))
-            L[j] = (cell_t) {match, uL[j].r_gaps, i - j, i, uL + j};
+            // Assume r_gap.
+            L[j] = (cell_t) {r_gap, uL[j-1].r_gaps + 1, i - j, i, uL + j - 1};
+            // Check g_gap.
+            if (g_gap < L[j].score || (g_gap == L[j].score && L[j+1].r_gaps > L[j].r_gaps))
+               L[j] = (cell_t) {g_gap, L[j+1].r_gaps, i - j, i, L + j + 1};
+            // Check match.
+            if (match < L[j].score || (match == L[j].score && uL[j].r_gaps >= L[j].r_gaps))
+               L[j] = (cell_t) {match, uL[j].r_gaps, i - j, i, uL + j};
+         }
 
          // Horizontal wing.
          match = uL[-j].score + (val_q[i] != val_r[i-j]);
@@ -135,38 +140,42 @@ nw_align
       }
 
       // Center cell.
-      match = uL[0].score + (val_q[i] != val_r[i]);
-      r_gap = L[-1].score + 1;
-      g_gap = L[1].score + 1;
+      if (i < len_q) {
+         match = uL[0].score + (val_q[i] != val_r[i]);
+         r_gap = L[-1].score + 1;
+         g_gap = L[1].score + 1;
 
-      // Assume r_gap.
-      L[0] = (cell_t) {r_gap, L[-1].r_gaps + 1, i, i, L - 1};
-      // Check g_gap.
-      if (g_gap < L[0].score || (g_gap == L[0].score && L[1].r_gaps > L[0].r_gaps))
-         L[0] = (cell_t) {g_gap, L[1].r_gaps, i, i, L + 1};
-      // Check match.
-      if (match < L[0].score || (match == L[0].score && uL[0].r_gaps >= L[0].r_gaps))
-         L[0] = (cell_t) {match, uL[0].r_gaps, i, i, uL};
+         // Assume r_gap.
+         L[0] = (cell_t) {r_gap, L[-1].r_gaps + 1, i, i, L - 1};
+         // Check g_gap.
+         if (g_gap < L[0].score || (g_gap == L[0].score && L[1].r_gaps > L[0].r_gaps))
+            L[0] = (cell_t) {g_gap, L[1].r_gaps, i, i, L + 1};
+         // Check match.
+         if (match < L[0].score || (match == L[0].score && uL[0].r_gaps >= L[0].r_gaps))
+            L[0] = (cell_t) {match, uL[0].r_gaps, i, i, uL};
+      }
 
       // Find highest identity.
       // Priorities: 1. Center value. 2. Vertical wing. 3. Horizontal wing.
       double minerr = 1.0;
       int best_idx = 0;
-      for (int j = -width; j < 0; j++) {
+      for (int j = -width; j < align_min(0, len_q - i); j++) {
          double err = L[j].score*1.0/(L[j].r_gaps + L[j].row + 1);
          if (err <= minerr) {
             minerr = err;
             best_idx = j;
          }
       }
-      for (int j = width; j >= 0; j--) {
-         double err = L[j].score*1.0/(L[j].r_gaps + L[j].row + 1);
-         if (err <= minerr) {
-            minerr = err;
-            best_idx = j;
+      if (i < len_q) {
+         for (int j = width; j >= 0; j--) {
+            double err = L[j].score*1.0/(L[j].r_gaps + L[j].row + 1);
+            if (err <= minerr) {
+               minerr = err;
+               best_idx = j;
+            }
          }
       }
-      
+
       // Update path.
       int path_len = L[best_idx].r_gaps + L[best_idx].row;
       path[path_len] = L + best_idx;
@@ -213,7 +222,7 @@ nw_align
       }
 
       // Reached the end of the alignment without detecting breakpoint.
-      if (i == len_q - 1) {
+      if (i == len_q + ALIGN_WIDTH - 1) {
          cell_t * bp = path[path_len];
          // Set alignment values.
          align.start   = align_max(0,bp->row);
