@@ -457,7 +457,7 @@ hitmap_analysis
 
       // Explore hitmap.
       long i = ref;
-      //      long refdbg = ref;
+      //long refdbg = ref;
       long streakloc = refloc;
       long streakkmer = refkmer;
       ref = -1;
@@ -478,7 +478,7 @@ hitmap_analysis
          long g_dist = loc - refloc; // Recall that the genome is stored backwards.
 
          // DEBUG.
-         //         fprintf(stdout, "[%ld<->%ld]:\tend=%ld(refkmer=%ld, readlen=%d)\tr_dist=%ld\tg_dist=%ld\tfactor=%f\tkmers=[%ld:%c,%ld:%c]\tloc=[%ld,%ld]\n", refdbg, i, refend, refkmer, readlen, r_dist, g_dist, ((float)g_dist)/r_dist, refkmer, (refdir ? '+' : '-'), kmer, (dir ? '+' : '-'), refloc, loc);
+         //fprintf(stdout, "[%ld<->%ld]:\tend=%ld(refkmer=%ld, readlen=%d)\tr_dist=%ld\tg_dist=%ld\tfactor=%f\tkmers=[%ld:%c,%ld:%c]\tloc=[%ld,%ld]\n", refdbg, i, refend, refkmer, readlen, r_dist, g_dist, ((float)g_dist)/r_dist, refkmer, (refdir ? '+' : '-'), kmer, (dir ? '+' : '-'), refloc, loc);
 
          // Check if the compared sequence is too far away.
          if (loc > refend) {
@@ -487,7 +487,7 @@ hitmap_analysis
          }
       
          // Check if the sequences are placed similarly both in the read and the genome.
-         if (r_dist > 0 && dir == refdir && (g_dist < (READ_TO_GENOME_RATIO * r_dist) || (g_dist < MIN_DISTANCE_RATIO && r_dist < MIN_DISTANCE_RATIO))) {
+         if (dir == refdir && ((r_dist > 0 && g_dist < (READ_TO_GENOME_RATIO * r_dist)) || (g_dist < MIN_DISTANCE_ACCEPT && r_dist < MIN_DISTANCE_ACCEPT && -r_dist < MIN_DISTANCE_ACCEPT))) {
             // Save the last index of the streak.
             streakkmer = kmer;
             streakloc = loc;
@@ -707,7 +707,7 @@ fuse_matches
          // Break if we're already outside of the read scope.
          if (ref_d > max_distance) break;
          // If distances are comparable, fuse matches.
-         if (ref_d <= read_d * READ_TO_GENOME_RATIO || (read_d < MIN_DISTANCE_RATIO && ref_d < MIN_DISTANCE_RATIO)) {
+         if (ref_d <= read_d * READ_TO_GENOME_RATIO || (read_d < MIN_DISTANCE_ACCEPT && ref_d < MIN_DISTANCE_ACCEPT)) {
             matchlist_add(&to_combine, cmpar);
             list->match[j] = NULL;
          }
