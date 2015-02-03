@@ -173,6 +173,7 @@ hitmap
          tstart = clock();
 
          // Sort all hitmaps
+         long recompute = 0, matched = 0, totalnt = 0;
          progress = 0.0;
          for (int i = 0 ; i < numseqs ; i++) {
             if (i*100.0 / numseqs - progress > 0.1) {
@@ -187,6 +188,7 @@ hitmap
 
             // Sequence length.
             int slen = strlen(seqs->seq[i].seq);
+            totalnt += slen;
 
             // Realloc sort buffer if necessary.
             if (sortbuf_size < hitmaps[i]->pos) {
@@ -199,9 +201,9 @@ hitmap
 
             // Debug.
             // Find matching loci in hitmaps.
-            fprintf(stderr, "hitmap analysis: %ld hits.\n", hitmaps[i]->pos);
+            //            fprintf(stderr, "hitmap analysis: %ld hits.\n", hitmaps[i]->pos);
             hitmap_analysis(hitmaps[i], matches, KMER_SIZE, slen);
-            fprintf(stderr, "hitmap analysis: %d alignments will be performed.\n", matches->pos);
+            //            fprintf(stderr, "hitmap analysis: %d alignments will be performed.\n", matches->pos);
 
             /**                                         **
              **           SEQUENCE ALIGNMENT            **
@@ -293,7 +295,6 @@ hitmap
             matchlist_t * intervals = combine_matches(seqmatches[i]);
 
             // Compute matched nucleotides.
-            long matched = 0;
             for (int i = 0; i < intervals->pos; i++) {
                match_t * current = intervals->match[i];
                long next_s;
@@ -302,36 +303,67 @@ hitmap
                matched += hm_min(next_s, current->read_e) - current->read_s;
             }
 
-            // Intervals:
-            long recompute = 0;
-            int cnt = 0;
-            if (a == maxtau && seqmatches[i]->pos) fprintf(stdout, "%s\n", seqs->seq[s+i].tag);
-            // First gap.
-            int firstgap = (intervals->pos > 0 ? intervals->match[0]->read_s : slen);
-            if (firstgap > SEQ_MINLEN) {
-               for (int j = 0; j <= firstgap - KMER_SIZE; j++) {
-                  sub_t sseq = (sub_t) {
-                     .seqid = (i << KMERID_BITS | (j*2 & KMERID_MASK)),
-                     .seq   = seqs->seq[i].seq + j,
-                     .hitmap = hitmaps + i 
-                  };
-                  subseqs->sub[subseqs->size++] = sseq;
-                  if (seqs->seq[i].rseq != NULL) {
-                     sseq.seqid = (i << KMERID_BITS | (((slen-j)*2+1) & KMERID_MASK));
-                     sseq.seq = seqs->seq[i].rseq + slen - j;
+            // Intervals: Feedback algorithm.
+            // Find gaps between intervals.
+            if (a < maxtau) {
+               // First gap.
+               int firstgap = (intervals->pos > 0 ? intervals->match[0]->read_s : slen);
+               if (firstgap > SEQ_MINLEN) {
+                  recompute += firstgap;
+                  for (int j = 0; j <= firstgap - KMER_SIZE; j++) {
+                     sub_t sseq = (sub_t) {
+                        .seqid = (i << KMERID_BITS | (j*2 & KMERID_MASK)),
+                        .seq   = seqs->seq[i].seq + j,
+                        .hitmap = hitmaps + i 
+                     };
                      subseqs->sub[subseqs->size++] = sseq;
+                     if (seqs->seq[i].rseq != NULL) {
+                        sseq.seqid = (i << KMERID_BITS | (((slen-j)*2+1) & KMERID_MASK));
+                        sseq.seq = seqs->seq[i].rseq + slen - j;
+                        subseqs->sub[subseqs->size++] = sseq;
+                     }
                   }
                }
-               if (a == maxtau) fprintf(stdout, "[interval %d]\t(%d,%d)\n", ++cnt, 0, firstgap-1);
-            }
             
 
-                  // Gaps between intervals.
-            for (long k = 0; k < intervals->pos; k++) {
-               match_t * match = intervals->match[k];
-               if (match->repeats->pos > 1) {
-                  mergesort_mt(match->repeats->match, match->repeats->pos, sizeof(match_t *), 0, 1, compar_matchid);
-                  if (a == maxtau) {
+               for (long k = 0; k < intervals->pos; k++) {
+                  match_t * match = intervals->match[k];
+                  if (match->repeats->pos > 1) {
+                     mergesort_mt(match->repeats->match, match->repeats->pos, sizeof(match_t *), 0, 1, compar_matchid);
+                     match = match->repeats->match[0];
+                  }
+
+                  // Find sequence gaps and feedback them to a sublist_t.
+                  // Both unmapped gaps and intervals with identity below
+                  // INTERVAL_MINID will be mapped again after increasing tau.
+                  int gapend = (k < intervals->pos - 1 ? intervals->match[k+1]->read_s : slen);
+                  if (gapend - match->read_e > SEQ_MINLEN || match->ident < INTERVAL_MINID) {
+                     int start = (match->ident < INTERVAL_MINID ? match->read_s : match->read_e);
+                     recompute += gapend - start + 1;
+                     for (int j = start; j <= gapend - KMER_SIZE; j++) {
+                        sub_t sseq = (sub_t) {
+                           .seqid = (i << KMERID_BITS | (j*2 & KMERID_MASK)),
+                           .seq   = seqs->seq[i].seq + j,
+                           .hitmap = hitmaps + i 
+                        };
+                        subseqs->sub[subseqs->size++] = sseq;
+                        if (seqs->seq[i].rseq != NULL) {
+                           sseq.seqid = (i << KMERID_BITS | (((slen- j - KMER_SIZE)*2+1) & KMERID_MASK));
+                           sseq.seq = seqs->seq[i].rseq + slen - j - KMER_SIZE;
+                           subseqs->sub[subseqs->size++] = sseq;
+                        }
+                     }
+                  }
+               }
+            } 
+            // Print results if a == maxtau.
+            else {
+               int cnt = 0;
+               if (intervals->pos) fprintf(stdout, "%s\n", seqs->seq[s+i].tag);
+               for (long k = 0; k < intervals->pos; k++) {
+                  match_t * match = intervals->match[k];
+                  if (match->repeats->pos > 1) {
+                     mergesort_mt(match->repeats->match, match->repeats->pos, sizeof(match_t *), 0, 1, compar_matchid);
                      fprintf(stdout, "[interval %d]\t*%d* significant loci\n", ++cnt, match->repeats->pos);
                      for (int j = 0; j < hm_min(PRINT_REPEATS_NUM, match->repeats->pos); j++) {
                         match_t * rmatch = match->repeats->match[j];
@@ -349,8 +381,7 @@ hitmap
                      }
                      if (match->repeats->pos > PRINT_REPEATS_NUM) fprintf(stdout, "\t\t...\n");
                   }
-                  match = match->repeats->match[0];
-               } else if (a == maxtau) {
+                  else {
                      int      dir = match->dir;
                      long g_start = match->ref_s;
                      long   g_end = match->ref_e;
@@ -364,38 +395,14 @@ hitmap
                              g_end - chr->start[chrnum]+1,
                              dir ? '-' : '+',
                              match->ident*100.0);
- 
-               }
-
-               // Find sequence gaps and feedback them to a sublist_t.
-               // Both unmapped gaps and intervals with identity below
-               // INTERVAL_MINID will be mapped again after increasing tau.
-               int gapend = (k < intervals->pos - 1 ? intervals->match[k+1]->read_s : slen);
-               if (gapend - match->read_e > SEQ_MINLEN || match->ident < INTERVAL_MINID) {
-                  int start = (match->ident < INTERVAL_MINID ? match->read_s : match->read_e);
-                  recompute += gapend - start + 1;
-                  for (int j = start; j <= gapend - KMER_SIZE; j++) {
-                     sub_t sseq = (sub_t) {
-                        .seqid = (i << KMERID_BITS | (j*2 & KMERID_MASK)),
-                        .seq   = seqs->seq[i].seq + j,
-                        .hitmap = hitmaps + i 
-                     };
-                     subseqs->sub[subseqs->size++] = sseq;
-                     if (seqs->seq[i].rseq != NULL) {
-                        sseq.seqid = (i << KMERID_BITS | (((slen- j - KMER_SIZE)*2+1) & KMERID_MASK));
-                        sseq.seq = seqs->seq[i].rseq + slen - j - KMER_SIZE;
-                        subseqs->sub[subseqs->size++] = sseq;
-                     }
+                           
                   }
-                  if (a == maxtau && gapend - match->read_e > SEQ_MINLEN) fprintf(stdout, "[interval %d]\t(%d,%d)\n", ++cnt, match->read_e+1, gapend-1);
                }
             }
-
             free(intervals);
-
-            fprintf(stdout, "[%d] matched %ld out of %d (%.1f%%) nucleotides. (%ldnt will be queried again)\n",i, matched, slen, matched*100.0/slen, recompute);
          }
          fprintf(stderr, "aligning... 100.0%% - alignment done\t[%.3fms]\n", (clock()-tstart)*1000.0/CLOCKS_PER_SEC);
+         fprintf(stderr, "matched %ld out of %ld nt (%.1f%%), %ld nt will be queried again.\n", matched, totalnt, matched*100.0/totalnt, recompute);
       }
    }
    
