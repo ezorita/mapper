@@ -89,7 +89,8 @@ int main(int argc, char * argv[]) {
       // Hitmap.
       clock_t tstart = clock();
       hitmap(2, index, chr, seqs);
-      fprintf(stderr, "query time: %ldus\n", ((clock()-tstart)*1000000)/CLOCKS_PER_SEC);
+      double totaltime = ((clock()-tstart)*1.0)/CLOCKS_PER_SEC;
+      fprintf(stderr, "query time [%.3fs] / rate [%.3f s/read]\n", totaltime, totaltime/seqs->pos);
       
    }
    else if (strcmp(argv[1],"index") == 0) {

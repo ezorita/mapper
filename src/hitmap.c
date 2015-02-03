@@ -68,14 +68,16 @@ hitmap
 
       for (int a = 0; a <= maxtau; a++) {
 
-         fprintf(stderr, "[tau=%d] %d subsequences\n", a, subseqs->size);
-
+         fprintf(stderr, "[tau=%d] %d subsequences\nsorting  ...", a, subseqs->size);
+         clock_t tstart = clock();
          // Sort subsequences.
          mergesort_mt(subseqs->sub, subseqs->size, sizeof(sub_t), KMER_SIZE, 1, compar_seqsort);
      
          /**                                         **
           **             MAP SUBSEQUENCES            **
           **                                         **/
+
+         fprintf(stderr, "  [%.3fms]\n", (clock()-tstart)*1000.0/CLOCKS_PER_SEC);
 
          // Clear hitmaps.
          for (int i = 0 ; i < numseqs ; i++) {
@@ -84,14 +86,13 @@ hitmap
 
          // Poucet variables.
          int start = 0;
-         clock_t tstart = clock();
-
+         tstart = clock();
          // Poucet algorithm over the k-mers.
          double progress = 0.0;
          for (int i = 0; i < subseqs->size; i++) {
             if (i*100.0/subseqs->size - progress > 0.1) {
                progress = i*100.0/subseqs->size;
-               fprintf(stderr, "mapping ... %.1f%%\r", progress);
+               fprintf(stderr, "mapping  ...  %.1f%%\r", progress);
             }
             // Extract subseq.
             sub_t query = subseqs->sub[i];
@@ -165,7 +166,7 @@ hitmap
 
             start = trail;
          }
-         fprintf(stderr, "mapping ... 100.0%% - hitmap built\t[%.3fms]\n", (clock()-tstart)*1000.0/CLOCKS_PER_SEC);
+         fprintf(stderr, "mapping  ...  [%.3fms]\n", (clock()-tstart)*1000.0/CLOCKS_PER_SEC);
 
          // Reset the subsequence list. It will be filled up with the unmatched regions.
          subseqs->size = 0;
@@ -178,7 +179,7 @@ hitmap
          for (int i = 0 ; i < numseqs ; i++) {
             if (i*100.0 / numseqs - progress > 0.1) {
                progress = i*100.0/numseqs;
-               fprintf(stderr, "aligning... %.1f%%\r", progress);
+               fprintf(stderr, "aligning ...  %.1f%%\r", progress);
             }
 
 
@@ -309,8 +310,8 @@ hitmap
                      };
                      subseqs->sub[subseqs->size++] = sseq;
                      if (seqs->seq[i].rseq != NULL) {
-                        sseq.seqid = (i << KMERID_BITS | (((slen-j)*2+1) & KMERID_MASK));
-                        sseq.seq = seqs->seq[i].rseq + slen - j;
+                        sseq.seqid = (i << KMERID_BITS | (((slen - j - KMER_SIZE)*2+1) & KMERID_MASK));
+                        sseq.seq = seqs->seq[i].rseq + slen - j - KMER_SIZE;
                         subseqs->sub[subseqs->size++] = sseq;
                      }
                   }
@@ -410,7 +411,7 @@ hitmap
 
             free(intervals);
          }
-         fprintf(stderr, "aligning... 100.0%% - alignment done\t[%.3fms]\n", (clock()-tstart)*1000.0/CLOCKS_PER_SEC);
+         fprintf(stderr, "aligning ...  [%.3fms]\n", (clock()-tstart)*1000.0/CLOCKS_PER_SEC);
          fprintf(stderr, "matched %ld out of %ld nt (%.1f%%), %ld nt will be queried again.\n", matched, totalnt, matched*100.0/totalnt, recompute);
       }
    }
