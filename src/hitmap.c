@@ -294,15 +294,6 @@ hitmap
             // Assemble read.
             matchlist_t * intervals = combine_matches(seqmatches[i]);
 
-            // Compute matched nucleotides.
-            for (int i = 0; i < intervals->pos; i++) {
-               match_t * current = intervals->match[i];
-               long next_s;
-               if (i < intervals->pos - 1) next_s = intervals->match[i+1]->read_s;
-               else next_s = slen;
-               matched += hm_min(next_s, current->read_e) - current->read_s;
-            }
-
             // Intervals: Feedback algorithm.
             // Find gaps between intervals.
             if (a < maxtau) {
@@ -358,6 +349,10 @@ hitmap
             } 
             // Print results if a == maxtau.
             else {
+               // Fill read gaps allowing greater overlap.
+               fill_gaps(&intervals, seqmatches[i], CONTIGS_OVERLAP);
+
+               // Print intervals.
                int cnt = 0;
                if (intervals->pos) fprintf(stdout, "%s\n", seqs->seq[s+i].tag);
                for (long k = 0; k < intervals->pos; k++) {
@@ -371,13 +366,16 @@ hitmap
                         long     g_start = rmatch->ref_s;
                         long       g_end = rmatch->ref_e;
                         int chrnum = bisect_search(0, chr->nchr-1, chr->start, g_start+1)-1;
-                        fprintf(stdout, "\t\t(%d,%d)\t%s:%ld-%ld:%c\t(%.2f%%)\n",
+                        fprintf(stdout, "\t\t(%d,%d)\t%s:%ld-%ld:%c\t(%.2f%%)\t%c%c\n",
                                 rmatch->read_s, rmatch->read_e,
                                 chr->name[chrnum],
                                 g_start - chr->start[chrnum]+1,
                                 g_end - chr->start[chrnum]+1,
                                 dir ? '-' : '+',
-                                rmatch->ident*100.0);
+                                rmatch->ident*100.0,
+                                (match->flags & WARNING_OVERLAP ? 'o' : '-'),
+                                (match->flags & FLAG_FUSED ? 'f' : '-'));
+
                      }
                      if (match->repeats->pos > PRINT_REPEATS_NUM) fprintf(stdout, "\t\t...\n");
                   }
@@ -387,18 +385,29 @@ hitmap
                      long   g_end = match->ref_e;
                      int   chrnum = bisect_search(0, chr->nchr-1, chr->start, g_start+1)-1;
                      // Print results.
-                     fprintf(stdout, "[interval %d]\t(%d,%d)\t%s:%ld-%ld:%c\t(%.2f%%)\n",
+                     fprintf(stdout, "[interval %d]\t(%d,%d)\t%s:%ld-%ld:%c\t(%.2f%%)\t%c%c\n",
                              ++cnt,
                              match->read_s, match->read_e,
                              chr->name[chrnum],
                              g_start - chr->start[chrnum]+1,
                              g_end - chr->start[chrnum]+1,
                              dir ? '-' : '+',
-                             match->ident*100.0);
-                           
+                             match->ident*100.0,
+                             (match->flags & WARNING_OVERLAP ? 'o' : '-'),
+                             (match->flags & FLAG_FUSED ? 'f' : '-'));
                   }
                }
             }
+
+            // Compute matched nucleotides.
+            for (int i = 0; i < intervals->pos; i++) {
+               match_t * current = intervals->match[i];
+               long next_s;
+               if (i < intervals->pos - 1) next_s = intervals->match[i+1]->read_s;
+               else next_s = slen;
+               matched += hm_min(next_s, current->read_e) - current->read_s;
+            }
+
             free(intervals);
          }
          fprintf(stderr, "aligning... 100.0%% - alignment done\t[%.3fms]\n", (clock()-tstart)*1000.0/CLOCKS_PER_SEC);
@@ -501,6 +510,7 @@ hitmap_analysis
          match->ref_s  = streakloc;
          match->read_s = streakkmer;
          match->hits   = streak;
+         match->flags  = 0;
          match->score  = -1;
          match->repeats = matchlist_new(REPEATS_SIZE);
 
@@ -718,6 +728,7 @@ fuse_matches
          newmatch->ref_s  = match->ref_s;
          newmatch->ref_e  = match->ref_e;
          newmatch->dir    = match->dir;
+         newmatch->flags  = FLAG_FUSED;
          totalnt = match->read_e - match->read_s + 1;
          cmid += totalnt * match->ident;
 
@@ -826,6 +837,57 @@ combine_matches
    mergesort_mt(interv->match, interv->pos, sizeof(match_t *), 0, 1, compar_matchstart);   
 
    return interv;
+}
+
+int
+fill_gaps
+(
+ matchlist_t ** intervp,
+ matchlist_t *  matches,
+ double         contigs_overlap
+ )
+// Intervals must be sorted by read start position!
+{
+   int modified = 0;
+   matchlist_t * intervals = *intervp;
+   mergesort_mt(matches->match, matches->pos, sizeof(match_t *), 0, 1, compar_matchend);
+   int gap_start = 0;
+   int prev_size = 0;
+   for (long i = 0, j = 0; i < intervals->pos; i++) {
+      match_t * match = intervals->match[i];
+      int gap_end = match->read_s;
+      int curr_size = (match->read_e - match->read_s + 1);
+      if (gap_end - gap_start >= SEQ_MINLEN) {
+         int min_start = gap_start - (int)(prev_size * contigs_overlap);
+         int max_end   = gap_end + (int)(curr_size * contigs_overlap);
+         match_t * candidate = NULL;
+         double id = 0.0;
+         while (matches->match[j]->read_e <= max_end) {
+            match_t *cmpmatch = matches->match[j];
+            // Condition: to cover the gap with OVERLAP_THR tolerance.
+            if (cmpmatch->read_s >= min_start && cmpmatch->read_s < gap_start + OVERLAP_THR && cmpmatch->read_e >= gap_end - OVERLAP_THR) {
+               if (cmpmatch->ident > id) {
+                  candidate = cmpmatch;
+                  id = cmpmatch->ident;
+               }
+            }
+            j++;
+         }
+         if (candidate != NULL) {
+            candidate->flags |= WARNING_OVERLAP;
+            matchlist_add(intervp, candidate);
+            intervals = *intervp;
+            modified = 1;
+         }
+      }
+      prev_size = curr_size;
+      gap_start = match->read_e;
+   }
+   if (modified) {
+      mergesort_mt(intervals->match, intervals->pos, sizeof(match_t *), 0, 1, compar_matchstart);
+   }
+
+   return 0;
 }
 
 void
@@ -1008,6 +1070,22 @@ compar_matchstart
    
    if (ma->read_s > mb->read_s) return 1;
    else if (ma->read_s < mb->read_s) return -1;
+   else return (mb->ident > ma->ident ? 1 : -1);
+}
+
+int
+compar_matchend
+(
+ const void * a,
+ const void * b,
+ const int   param
+)
+{
+   match_t * ma = *((match_t **) a);
+   match_t * mb = *((match_t **) b);
+   
+   if (ma->read_e > mb->read_e) return 1;
+   else if (ma->read_e < mb->read_e) return -1;
    else return (mb->ident > ma->ident ? 1 : -1);
 }
 

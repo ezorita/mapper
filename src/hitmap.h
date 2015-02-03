@@ -37,12 +37,17 @@
 #define INTERVAL_MINID 0.8
 
 // Read assembly parameters
-#define REPEAT_OVERLAP 0.9
-#define OVERLAP_THR    20
+#define REPEAT_OVERLAP    0.9
+#define OVERLAP_THR       20
+#define CONTIGS_OVERLAP   0.5
 
 // Sequence ID definitions.
 #define KMERID_BITS     24
 #define KMERID_MASK     0x0000000000FFFFFF
+
+// Flags definition.
+#define WARNING_OVERLAP 0x00000001
+#define FLAG_FUSED      0x00000002
 
 // Macros
 #define seqid_read(a)  ((a >> SEQID_BITS) & SEQID_MASK)
@@ -72,7 +77,7 @@ struct match_t {
    int hits;
    int score;
    int dir;
-   int unused; // This fills the alingment. Maybe for future use.
+   int flags; // This fills the alingment. Maybe for future use.
    double ident;
    matchlist_t * repeats;
 };
@@ -109,6 +114,7 @@ int           subseqsort       (sub_t * data, int numels, int slen, int thrmax);
 void          fuse_matches     (matchlist_t ** listp, int slen);
 int           find_repeats     (matchlist_t * list);
 matchlist_t * combine_matches  (matchlist_t * list);
+int           fill_gaps        (matchlist_t ** intervp, matchlist_t * matches, double contigs_overlap);
 mnode_t *     recursive_build  (mnode_t * node, match_t * match);
 void          recursive_free   (mnode_t * node);
 mnode_t *     mnode_new        (int children);
@@ -119,6 +125,7 @@ int           compar_seqsort   (const void * a, const void * b, const int val);
 int           compar_matchlen  (const void * a, const void * b, const int param);
 int           compar_matchid   (const void * a, const void * b, const int param);
 int           compar_matchstart(const void * a, const void * b, const int param);
+int           compar_matchend  (const void * a, const void * b, const int param);
 int           compar_matchsize (const void * a, const void * b, const int param);
 int           compar_refstart  (const void * a, const void * b, const int param);
 
