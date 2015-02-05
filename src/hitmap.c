@@ -3,13 +3,13 @@
 int
 hitmap
 (
- int          maxtau,
  index_t    * index,
  chr_t      * chr,
  seqstack_t * seqs,
  hmargs_t     hmargs
  )
 {
+   int maxtau = hmargs.maxtau;
    // Buffer for mergesort_long.
    long   sortbuf_size = SORTBUF_SIZE;
    long * sortbuf      = malloc(sortbuf_size * sizeof(long));
@@ -35,7 +35,7 @@ hitmap
    for (int i = 0 ; i < seq_block ; i++) hitmaps[i] = new_stack(HITMAP_SIZE);
 
    // Allocate loci stack.
-   matchlist_t * seeds = matchlist_new(MATCHLIST_SIZE);
+   matchlist_t * seeds = matchlist_new(hmargs.max_align_per_read);
 
    // Allocate match buffer.
    matchlist_t ** seqmatches;
@@ -47,7 +47,7 @@ hitmap
 
       // Pre-process sequence block: chunk in subsequences and sort.
       int         numseqs = (seq_block < seqs->pos - s ? seq_block : seqs->pos - s);
-      sublist_t * subseqs = process_subseq(seqs->seq+s, numseqs, KMER_SIZE, hitmaps);
+      sublist_t * subseqs = process_subseq(seqs->seq+s, numseqs, hmargs.kmer_size, hitmaps);
 
       // Verbose processed blocks.
       if(hmargs.verbose) fprintf(stderr, "processing reads from %d to %d\n", s+1, s+numseqs);
@@ -58,7 +58,7 @@ hitmap
          if(hmargs.verbose) fprintf(stderr, "[tau=%d] %d subsequences\nsorting  ...", a, subseqs->size);
          clock_t tstart = clock();
          // Sort subsequences.
-         mergesort_mt(subseqs->sub, subseqs->size, sizeof(sub_t), KMER_SIZE, 1, compar_seqsort);
+         mergesort_mt(subseqs->sub, subseqs->size, sizeof(sub_t), hmargs.kmer_size, 1, compar_seqsort);
          // Verbose sort time.
          if(hmargs.verbose) fprintf(stderr, "  [%.3fms]\n", (clock()-tstart)*1000.0/CLOCKS_PER_SEC);
 
@@ -66,7 +66,7 @@ hitmap
          for (int i = 0 ; i < numseqs ; i++) hitmaps[i]->pos = 0;
 
          // Search subsequences.
-         poucet_search(subseqs, pebbles, hits, &trie, index, a, KMER_SIZE, KMER_SIZE, hmargs.verbose);
+         poucet_search(subseqs, pebbles, hits, &trie, index, a, hmargs.kmer_size, hmargs.kmer_size, hmargs.seed_max_loci, hmargs.verbose);
 
          // Reset the subsequence list. It will be filled up with the unmatched regions.
          subseqs->size = 0;
@@ -99,43 +99,34 @@ hitmap
             mergesort_long(hitmaps[i]->val, sortbuf, hitmaps[i]->pos, 0);
 
             // Process hitmap.
-            hitmap_analysis(hitmaps[i], seeds, KMER_SIZE, slen);
+            hitmap_analysis(hitmaps[i], seeds, hmargs.kmer_size, slen, hmargs);
 
             // Smith-Waterman alignment.
-            int newdata = align_seeds(seqs->seq[i], seeds, seqmatches + i, index);
+            int newdata = align_seeds(seqs->seq[i], seeds, seqmatches + i, index, hmargs);
 
              if (newdata) {
-               // Sort candidate matches by genome start position.
-               mergesort_mt(seqmatches[i]->match, seqmatches[i]->pos, sizeof(match_t *), 0, 1, compar_refstart);
-
                // Fuse matches.
-               fuse_matches(seqmatches+i, slen);
-
-               // Sort candidate matches by genome start position.
-               mergesort_mt(seqmatches[i]->match, seqmatches[i]->pos, sizeof(match_t *), 0, 1, compar_matchstart);
+               fuse_matches(seqmatches+i, slen, hmargs);
 
                // Find sequence repeats.
-               find_repeats(seqmatches[i]);
-
-               // Sort candidate matches by size.
-               mergesort_mt(seqmatches[i]->match, seqmatches[i]->pos, sizeof(match_t *), 0, 1, compar_matchsize);
+               find_repeats(seqmatches[i], hmargs.repeat_min_overlap);
             }
             // Assemble read.
-            matchlist_t * intervals = combine_matches(seqmatches[i]);
+             matchlist_t * intervals = combine_matches(seqmatches[i], hmargs.overlap_tolerance);
 
             if (a < maxtau) {
                // Feedback gaps between intervals and low identity matches.
-               recompute += feedback_gaps(KMER_SIZE, i, seqs->seq[i], intervals, subseqs, hitmaps + i);
+               recompute += feedback_gaps(hmargs.kmer_size, i, seqs->seq[i], intervals, subseqs, hitmaps + i, hmargs);
             } 
             else {
                // Print results if a == maxtau.
                // Fill read gaps allowing greater overlap.
-               fill_gaps(&intervals, seqmatches[i], CONTIGS_OVERLAP);
+               fill_gaps(&intervals, seqmatches[i], slen, hmargs.match_min_len, 1 - hmargs.overlap_tolerance, hmargs.overlap_max_tolerance);
 
                // Print intervals.
                if (intervals->pos) {
                   fprintf(stdout, "%s\n", seqs->seq[s+i].tag);
-                 print_intervals(intervals, chr, PRINT_REPEATS_NUM);
+                 print_intervals(intervals, chr, hmargs.repeat_print_num);
                }
             }
 
@@ -173,6 +164,7 @@ poucet_search
  int         tau,
  int         kmer_size,
  int         max_trail,
+ int         max_loci_per_hit,
  int         verbose
  )
 {
@@ -255,7 +247,7 @@ poucet_search
          poucet(pebble.sp, pebble.ep, wingsz, nwrow, start + 1, path, &arg);
       }
       // Map hits.
-      map_hits(hits, query.hitmap, index, tau, query.seqid);
+      map_hits(hits, query.hitmap, index, tau, query.seqid, max_loci_per_hit);
 
       start = trail;
    }
@@ -271,12 +263,15 @@ hitmap_analysis
  vstack_t    * hitmap,
  matchlist_t * matchlist,
  int           kmer_size,
- int           readlen
+ int           readlen,
+ hmargs_t      hmargs
  )
 {
    if (matchlist->size < 1) return -1;
    long minv = 0;
    int  min  = 0;
+   int  rg_ratio = hmargs.read_ref_ratio;
+   int  accept_d = hmargs.dist_accept;
 
    // Reset matchlist.
    matchlist->pos = 0;
@@ -291,7 +286,7 @@ hitmap_analysis
       long refloc = hitmap->val[ref] >> KMERID_BITS;
       long refkmer = (hitmap->val[ref] & KMERID_MASK) >> 1;
       long refdir = hitmap->val[ref] & 1;
-      long refend = refloc + (refdir ? (readlen - refkmer) : (refkmer))  * READ_TO_GENOME_RATIO;
+      long refend = refloc + (refdir ? (readlen - refkmer) : (refkmer))  * rg_ratio;
 
       // Mark subseq as used.
       hitmap->val[ref] *= -1;
@@ -331,7 +326,7 @@ hitmap_analysis
          }
       
          // Check if the sequences are placed similarly both in the read and the genome.
-         if (dir == refdir && ((r_dist > 0 && g_dist < (READ_TO_GENOME_RATIO * r_dist)) || (g_dist < MIN_DISTANCE_ACCEPT && r_dist < MIN_DISTANCE_ACCEPT && -r_dist < MIN_DISTANCE_ACCEPT))) {
+         if (dir == refdir && ((r_dist > 0 && g_dist < (rg_ratio * r_dist)) || (g_dist < accept_d && r_dist < accept_d && -r_dist < accept_d))) {
             // Save the last index of the streak.
             streakkmer = kmer;
             streakloc = loc;
@@ -394,7 +389,8 @@ map_hits
  vstack_t ** hitmap,
  index_t   * index,
  int         tau,
- int         id
+ int         id,
+ int         max_loci
  )
 {
    vstack_t * hmap    = *hitmap;
@@ -409,7 +405,7 @@ map_hits
          // been stored in rowid during the poucet search.
          long     offset = hit.rowid;
          // Filter out too abundant sequences. (To speed up the sorting).
-         if (n_hits < HIT_MAX_LOCI) {
+         if (n_hits <= max_loci) {
             // Realloc hitmap if needed.
             if (hmap->pos + n_hits >= hmap->size) {
                long newsize = hmap->size + n_hits + 1;
@@ -438,7 +434,8 @@ align_seeds
  seq_t          seq,
  matchlist_t *  seeds,
  matchlist_t ** seqmatches,
- index_t     *  index
+ index_t     *  index,
+ hmargs_t       hmargs
  )
 {
    int significant = 0;
@@ -454,8 +451,8 @@ align_seeds
       // The previously matched region will be aligned again,
       // but it's the only way to know precisely the total identity of the read.
       // Note that the genome is stored backwards so all signs are changed.
-      align_r = nw_align(read + seed->read_s + 1, index->genome + seed->ref_s - 1, slen - seed->read_s - 1, ALIGN_FORWARD, ALIGN_BACKWARD);
-      align_l = nw_align(read + seed->read_s, index->genome + seed->ref_s, seed->read_s + 1, ALIGN_BACKWARD, ALIGN_FORWARD);
+      align_r = nw_align(read + seed->read_s + 1, index->genome + seed->ref_s - 1, slen - seed->read_s - 1, ALIGN_FORWARD, ALIGN_BACKWARD, hmargs.align_likelihood_thr, hmargs.read_match_prob, hmargs.rand_match_prob);
+      align_l = nw_align(read + seed->read_s, index->genome + seed->ref_s, seed->read_s + 1, ALIGN_BACKWARD, ALIGN_FORWARD, hmargs.align_likelihood_thr, hmargs.read_match_prob, hmargs.rand_match_prob);
 
       seed->score  = align_l.score + align_r.score;
       seed->ident  = 1.0 - (seed->score*1.0)/(align_l.pathlen + align_r.pathlen);
@@ -465,7 +462,7 @@ align_seeds
       seed->read_s = seed->read_s - align_l.start;     // Align.start is the read breakpoint.
 
       // Filter out seeds that do not meet the minimum quality.
-      if ((seed->ref_e - seed->ref_s < SEQ_MINLEN) || (seed->ident < SEQ_MINID)) {
+      if ((seed->ref_e - seed->ref_s + 1 < hmargs.match_min_len) || (seed->ident < hmargs.match_min_id)) {
          free(seed->repeats);
          free(seed);
          continue;
@@ -494,8 +491,12 @@ feedback_gaps
  seq_t          seq,
  matchlist_t  * intervals,
  sublist_t    * subseqs,
- vstack_t    ** hitmap
+ vstack_t    ** hitmap,
+ hmargs_t       hmargs
 )
+// Find sequence gaps and feedback them to a sublist_t.
+// Both unmapped gaps and intervals with identity below
+// FEEDBACK_ID_THR will be mapped again after increasing tau.
 {
    int slen = strlen(seq.seq);
    int recompute = 0;
@@ -513,16 +514,13 @@ feedback_gaps
             mergesort_mt(match->repeats->match, match->repeats->pos, sizeof(match_t *), 0, 1, compar_matchid);
             match = match->repeats->match[0];
          }
-         if (match->ident < INTERVAL_MINID) continue;
+         if (match->ident < hmargs.feedback_id_thr) continue;
          // Check the gap length otherwise.
          gap_end = match->read_s;
          next_start = match->read_e;
       }
 
-      // Find sequence gaps and feedback them to a sublist_t.
-      // Both unmapped gaps and intervals with identity below
-      // INTERVAL_MINID will be mapped again after increasing tau.
-      if (gap_end - gap_start > SEQ_MINLEN) {
+      if (gap_end - gap_start > hmargs.match_min_len) {
          recompute += gap_end - gap_start + 1;
          for (int j = gap_start; j <= gap_end - kmer_size; j++) {
             sub_t sseq = (sub_t) {
@@ -596,38 +594,6 @@ print_intervals
    }
 }
 
-int
-hitmap_push
-(
- vstack_t ** hitmap,
- index_t  *  index,
- long     *  fm_ptr,
- int         id
-)
-{
-   long       idstamp = id & KMERID_MASK;
-   vstack_t * hmap = *hitmap;
-   long n_hits = fm_ptr[1] - fm_ptr[0] + 1;
-   // Filter out too abundant sequences. (To speed up the sorting).
-   if (n_hits < HIT_MAX_LOCI) {
-      // Realloc hitmap if needed.
-      if (hmap->pos + n_hits >= hmap->size) {
-         long newsize = hmap->size + n_hits + 1;
-         hmap = *hitmap = realloc(hmap, sizeof(vstack_t) + newsize * sizeof(long));
-         if (hmap == NULL) {
-            fprintf(stderr, "error in 'hitmap_push' (realloc): %s\n", strerror(errno));
-            return -1;
-         }
-         hmap->size = newsize;
-      }
-
-      // Copy hits.
-      for (long i = fm_ptr[0] ; i <= fm_ptr[1] ; i++) {
-         hmap->val[hmap->pos++] = (index->pos[i] << KMERID_BITS) | idstamp;
-      }
-   }
-   return 0;
-}
 
 sublist_t *
 process_subseq
@@ -691,17 +657,22 @@ void
 fuse_matches
 (
  matchlist_t ** listp,
- int slen
+ int            slen,
+ hmargs_t       hmargs
 )
 {
    matchlist_t * list = *listp;
+
+   // Sort candidate matches by genome start position.
+   mergesort_mt(list->match, list->pos, sizeof(match_t *), 0, 1, compar_refstart);
+
    int current_pos = list->pos;
    matchlist_t * to_combine = matchlist_new(current_pos);
 
    for (int i = 0; i < current_pos - 1; i++) {
       match_t * match = list->match[i];
       if (match == NULL) continue;
-      long max_distance = (slen - match->read_s)*READ_TO_GENOME_RATIO;
+      long max_distance = (slen - match->read_s)*hmargs.read_ref_ratio;
       to_combine->pos = 0;
 
       for (int j = i + 1; j < current_pos; j++) {
@@ -715,7 +686,7 @@ fuse_matches
          // Break if we're already outside of the read scope.
          if (ref_d > max_distance) break;
          // If distances are comparable, fuse matches.
-         if (ref_d <= read_d * READ_TO_GENOME_RATIO || (read_d < MIN_DISTANCE_ACCEPT && ref_d < MIN_DISTANCE_ACCEPT)) {
+         if (ref_d <= read_d * hmargs.read_ref_ratio || (read_d < hmargs.dist_accept && ref_d < hmargs.dist_accept)) {
             matchlist_add(&to_combine, cmpar);
             list->match[j] = NULL;
          }
@@ -781,9 +752,13 @@ fuse_matches
 int
 find_repeats
 (
- matchlist_t * list
+ matchlist_t * list,
+ double        overlap
 )
 {
+   // Sort candidate matches by genome start position.
+   mergesort_mt(list->match, list->pos, sizeof(match_t *), 0, 1, compar_readstart);
+
    // Delete previous repeat record.
    for (int i = 0; i < list->pos; i++) list->match[i]->repeats->pos = 0;
 
@@ -793,16 +768,16 @@ find_repeats
       // Add a feedback link. This will be helpful when sorting.
       matchlist_add(&(ref->repeats), ref);
       // Compute the position of the last nucleotide.
-      int last_nt = ref->read_s + (int)((ref->read_e - ref->read_s)*(1-REPEAT_OVERLAP)) + 1;
+      int last_nt = ref->read_s + (int)((ref->read_e - ref->read_s)*(1 - overlap)) + 1;
       // Iterate over the other matches.
       for (int j = i+1; j < list->pos; j++) {
          match_t * cmp = list->match[j];
          if (cmp->read_s > last_nt) break;
          // Compute combined sequence span and overlap.
-         int span    = hm_max(cmp->read_e, ref->read_e) - hm_min(cmp->read_s, ref->read_s);
-         int overlap = hm_min(cmp->read_e, ref->read_e) - hm_max(cmp->read_s, ref->read_s);
+         int span = hm_max(cmp->read_e, ref->read_e) - hm_min(cmp->read_s, ref->read_s);
+         int ovlp = hm_min(cmp->read_e, ref->read_e) - hm_max(cmp->read_s, ref->read_s);
          // Check whether the two compared matches share at least REPEAT_OVERLAP.
-         if (overlap*1.0/span >= REPEAT_OVERLAP) {
+         if (ovlp*1.0/span >= overlap) {
             if(matchlist_add(&(ref->repeats), cmp)) return -1;
             if(matchlist_add(&(cmp->repeats), ref)) return -1;
          }
@@ -814,23 +789,35 @@ find_repeats
 matchlist_t *
 combine_matches
 (
- matchlist_t * list
+ matchlist_t * list,
+ double        overlap_tolerance
 )
 {
+   // Sort candidate matches by size.
+   mergesort_mt(list->match, list->pos, sizeof(match_t *), 0, 1, compar_matchspan);
+
    // Allocate intervals.
    matchlist_t * interv = matchlist_new(list->pos);
 
    // Fill read with maximum coverage.
    for (int i = 0; i < list->pos; i++) {
+      match_t * match = list->match[i];
       int append = 1;
       for (int j = 0; j < interv->pos; j++) {
-         if (list->match[i]->read_s < interv->match[j]->read_s) {
-            if (list->match[i]->read_e - interv->match[j]->read_s > OVERLAP_THR) {
+         match_t * cmp = interv->match[j];
+         if (match->read_s < cmp->read_s) {
+            // match must be smaller in size because of the sorting.
+            int span    = match->read_e - match->read_s;
+            int overlap = hm_max(0, match->read_e - cmp->read_s);
+            if (overlap*1.0/span > overlap_tolerance) {
                append = 0;
                break;
             }
-         } else if (list->match[i]->read_e > interv->match[j]->read_e) {
-            if (interv->match[j]->read_e - list->match[i]->read_s > OVERLAP_THR) {
+         } else if (match->read_e > cmp->read_e) {
+            // match must be smaller in size because of the sorting.
+            int span    = match->read_e - match->read_s;
+            int overlap = hm_max(0, cmp->read_e - match->read_s);
+            if (overlap*1.0/span > overlap_tolerance) {
                append = 0;
                break;
             }
@@ -842,7 +829,8 @@ combine_matches
       if (append) matchlist_add(&interv, list->match[i]);
    }
 
-   mergesort_mt(interv->match, interv->pos, sizeof(match_t *), 0, 1, compar_matchstart);   
+   // Sort intervals by start position.
+   mergesort_mt(interv->match, interv->pos, sizeof(match_t *), 0, 1, compar_readstart);
 
    return interv;
 }
@@ -852,35 +840,63 @@ fill_gaps
 (
  matchlist_t ** intervp,
  matchlist_t *  matches,
- double         contigs_overlap
+ int            seq_len,
+ int            match_minlen,
+ double         gap_coverage,
+ double         max_overlap
  )
-// Intervals must be sorted by read start position!
+// Intervals must be sorted by read start position.
+// Matches that fill any gap with minimum coverage of (1-overlap_tolerance) will be included in the output.
+// These matches may overlap with the contiguous 
 {
    int modified = 0;
    matchlist_t * intervals = *intervp;
-   mergesort_mt(matches->match, matches->pos, sizeof(match_t *), 0, 1, compar_matchend);
+   mergesort_mt(matches->match, matches->pos, sizeof(match_t *), 0, 1, compar_readend);
    int gap_start = 0;
-   int prev_size = 0;
-   for (long i = 0, j = 0; i < intervals->pos; i++) {
-      match_t * match = intervals->match[i];
-      int gap_end = match->read_s;
-      int curr_size = (match->read_e - match->read_s + 1);
-      if (gap_end - gap_start >= SEQ_MINLEN) {
-         int min_start = gap_start - (int)(prev_size * contigs_overlap);
-         int max_end   = gap_end + (int)(curr_size * contigs_overlap);
+   int left_size = 0;
+   for (long i = 0, j = 0; i <= intervals->pos && j < matches->pos; i++) {
+      int gap_end, right_size, next_start;
+      if (i == intervals->pos) {
+         gap_end = seq_len-1;
+         right_size = 1;
+         next_start = 0;
+      } else {
+         match_t * match = intervals->match[i];
+         gap_end = match->read_s;
+         next_start = match->read_e;
+         right_size = next_start - gap_end + 1;
+      }
+      // TODO:
+      // This overlap must be the minimum 50% between:
+      // left: the gap and the previous match.
+      // right: the gap and the next match.
+      int gap_size = gap_end - gap_start + 1;
+      if (gap_size >= match_minlen) {
+         // Absolute maximum start and end positions.
+         int max_end   = gap_end + (int)(right_size * max_overlap);
          match_t * candidate = NULL;
          double id = 0.0;
-         while (matches->match[j]->read_e <= max_end) {
-            match_t *cmpmatch = matches->match[j];
-            // Condition: to cover the gap with OVERLAP_THR tolerance.
-            if (cmpmatch->read_s >= min_start && cmpmatch->read_s < gap_start + OVERLAP_THR && cmpmatch->read_e >= gap_end - OVERLAP_THR) {
-               if (cmpmatch->ident > id) {
-                  candidate = cmpmatch;
-                  id = cmpmatch->ident;
-               }
+         while (j < matches->pos && matches->match[j]->read_e <= max_end) {
+            match_t *cmpmatch = matches->match[j++];
+            // Conditions:
+            // 1. Overlap with gap of at least gap_coverage.
+            int gap_overlap = hm_min(cmpmatch->read_e, gap_end) - hm_max(cmpmatch->read_s, gap_start);
+            if (gap_overlap*1.0/gap_size < gap_coverage) continue;
+
+            // 2. No more than max_overlap between contigs.
+            int match_size = cmpmatch->read_e - cmpmatch->read_s + 1;
+            int ctg_overlap = hm_max(0, gap_start - cmpmatch->read_s);
+            if (ctg_overlap*1.0/hm_min(left_size, match_size) > max_overlap) continue;
+            ctg_overlap = hm_max(0, cmpmatch->read_e - gap_end);
+            if (ctg_overlap*1.0/hm_min(right_size, match_size) > max_overlap) continue;
+
+            // Conditions satisfied, take the one with best identity.
+            if (cmpmatch->ident > id) {
+               candidate = cmpmatch;
+               id = cmpmatch->ident;
             }
-            j++;
          }
+
          if (candidate != NULL) {
             candidate->flags |= WARNING_OVERLAP;
             matchlist_add(intervp, candidate);
@@ -888,11 +904,11 @@ fill_gaps
             modified = 1;
          }
       }
-      prev_size = curr_size;
-      gap_start = match->read_e;
+      left_size = right_size;
+      gap_start = next_start;
    }
    if (modified) {
-      mergesort_mt(intervals->match, intervals->pos, sizeof(match_t *), 0, 1, compar_matchstart);
+      mergesort_mt(intervals->match, intervals->pos, sizeof(match_t *), 0, 1, compar_readstart);
    }
 
    return 0;
@@ -950,7 +966,7 @@ compar_seqsort
    int compar;
 
    if ((compar = strncmp(seq_a->seq, seq_b->seq, val)) == 0) {
-      compar = (seq_a->seqid >= seq_b->seqid ? 1 : -1);
+      compar = (seq_a->seqid > seq_b->seqid ? 1 : -1);
    } 
    return compar;
 }
@@ -971,25 +987,7 @@ compar_matchid
 }
 
 int
-compar_matchlen
-(
- const void * a,
- const void * b,
- const int   param
-)
-{
-   match_t * ma = *((match_t **) a);
-   match_t * mb = *((match_t **) b);
-   
-   long lena = ma->read_e - ma->read_s;
-   long lenb = mb->read_e - mb->read_s;
-   if (lenb > lena) return 1;
-   else if (lenb < lena) return -1;
-   else return (mb->ident > ma->ident ? 1 : -1);
-}
-
-int
-compar_matchstart
+compar_readstart
 (
  const void * a,
  const void * b,
@@ -1001,11 +999,11 @@ compar_matchstart
    
    if (ma->read_s > mb->read_s) return 1;
    else if (ma->read_s < mb->read_s) return -1;
-   else return (mb->ident > ma->ident ? 1 : -1);
+   else return (ma->read_e > mb->read_e ? 1 : -1);
 }
 
 int
-compar_matchend
+compar_readend
 (
  const void * a,
  const void * b,
@@ -1017,11 +1015,11 @@ compar_matchend
    
    if (ma->read_e > mb->read_e) return 1;
    else if (ma->read_e < mb->read_e) return -1;
-   else return (mb->ident > ma->ident ? 1 : -1);
+   else return (ma->read_s > mb->read_s ? 1 : -1);
 }
 
 int
-compar_matchsize
+compar_matchspan
 (
  const void * a,
  const void * b,
@@ -1052,5 +1050,5 @@ compar_refstart
    
    if (ma->ref_s > mb->ref_s) return 1;
    else if (ma->ref_s < mb->ref_s) return -1;
-   else return (ma->ref_s > mb->ref_s ? 1 : -1);
+   else return (ma->ref_e > mb->ref_e ? 1 : -1);
 }

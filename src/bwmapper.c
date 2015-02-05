@@ -34,7 +34,7 @@ int main(int argc, char * argv[]) {
    int opt_verbose  = 1;
 
    // Backtrace handler
-    signal(SIGSEGV, SIGSEGV_handler); 
+   //    signal(SIGSEGV, SIGSEGV_handler); 
 
    if (argc < 3) {
       fprintf(stderr, "usage: bwmapper {query <file.fastq> | index} <genome file>\n");
@@ -88,9 +88,29 @@ int main(int argc, char * argv[]) {
       if (chr == NULL) return EXIT_FAILURE;
 
       // Hitmap.
-      hmargs_t hmargs = {.verbose = opt_verbose};
+      // Default arguments.
+
+      hmargs_t hmargs = {
+         .maxtau  = 2,
+         .verbose = opt_verbose,
+         .repeat_print_num = 5,
+         .kmer_size = 22,
+         .seed_max_loci = 20,
+         .read_ref_ratio = 2,
+         .dist_accept = 10,
+         .max_align_per_read = 10000,
+         .match_min_len = 75,
+         .match_min_id = 0.7,
+         .feedback_id_thr = 0.8,
+         .repeat_min_overlap = 0.9,
+         .overlap_tolerance = 0.1,
+         .overlap_max_tolerance = 0.5,
+         .align_likelihood_thr = 5.0,
+         .read_match_prob = 0.85,
+         .rand_match_prob = 0.5
+      };
       clock_t tstart = clock();
-      hitmap(2, &index, chr, seqs, hmargs);
+      hitmap(&index, chr, seqs, hmargs);
       double totaltime = ((clock()-tstart)*1.0)/CLOCKS_PER_SEC;
       if (opt_verbose) fprintf(stderr, "query time [%.3fs] / rate [%.3f s/read]\n", totaltime, totaltime/seqs->pos);
       

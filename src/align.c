@@ -7,7 +7,10 @@ nw_align
  const char * ref,
  const int len_q,
  const int dir_q,
- const int dir_r
+ const int dir_r,
+ const double likelihood_thr,
+ const double read_match_prob,
+ const double rand_match_prob
 )
 {
 
@@ -56,10 +59,8 @@ nw_align
    // Aux vars.
    int match, r_gap, g_gap;
 
-   double logA = log(READ_ERROR_PROB);
-   double logB = log(READ_MATCH_PROB);
-   double logC = log(RAND_ERROR_PROB);
-   double logD = log(RAND_MATCH_PROB);
+   double logA = log(1-rand_match_prob) - log(1-read_match_prob);
+   double logB = log(rand_match_prob) - log(read_match_prob);
 
    // Initialize (0,0) value.
    cell_t * uL = Ls[0] + ALIGN_WIDTH + 1;
@@ -206,7 +207,7 @@ nw_align
          for (int b = 0; b < path_len; b++) {
             int E1 = path[path_len]->score - path[b]->score;
             int M1 = path_len - b - E1;
-            float J = E1*(logC-logA) + M1*(logD-logB);
+            float J = E1*logA + M1*logB;
             if (J > maxJ) {
                maxJ = J;
                breakpoint = b;
