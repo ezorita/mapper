@@ -31,6 +31,7 @@ int main(int argc, char * argv[]) {
 
    // TODO: parametrize
    int opt_reverse  = 1;
+   int opt_verbose  = 1;
 
    // Backtrace handler
     signal(SIGSEGV, SIGSEGV_handler); 
@@ -60,7 +61,7 @@ int main(int argc, char * argv[]) {
       }
 
       // Read file.
-      fprintf(stderr, "reading query file...\n");
+      if (opt_verbose) fprintf(stderr, "reading query file...\n");
       seqstack_t * seqs = read_file(queryfile, opt_reverse); // TODO: set reverse and verbose options.
       if (seqs == NULL) {
          return EXIT_FAILURE;
@@ -87,10 +88,11 @@ int main(int argc, char * argv[]) {
       if (chr == NULL) return EXIT_FAILURE;
 
       // Hitmap.
+      hmargs_t hmargs = {.verbose = opt_verbose};
       clock_t tstart = clock();
-      hitmap(2, index, chr, seqs);
+      hitmap(2, &index, chr, seqs, hmargs);
       double totaltime = ((clock()-tstart)*1.0)/CLOCKS_PER_SEC;
-      fprintf(stderr, "query time [%.3fs] / rate [%.3f s/read]\n", totaltime, totaltime/seqs->pos);
+      if (opt_verbose) fprintf(stderr, "query time [%.3fs] / rate [%.3f s/read]\n", totaltime, totaltime/seqs->pos);
       
    }
    else if (strcmp(argv[1],"index") == 0) {

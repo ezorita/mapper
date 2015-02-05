@@ -4,279 +4,107 @@ int
 hitmap
 (
  int          maxtau,
- index_t      index,
+ index_t    * index,
  chr_t      * chr,
- seqstack_t * seqs
+ seqstack_t * seqs,
+ hmargs_t     hmargs
  )
 {
-   // Translate alphabet.
-   char translate[256] = {[0 ... 255] = 4, ['@'] = 0,
-                          ['a'] = 1, ['c'] = 2, ['g'] = 3, ['n'] = 4, ['t'] = 5,
-                          ['A'] = 1, ['C'] = 2, ['G'] = 3, ['N'] = 4, ['T'] = 5 };
-
-   // Map vars / structs.
+   // Buffer for mergesort_long.
    long   sortbuf_size = SORTBUF_SIZE;
    long * sortbuf      = malloc(sortbuf_size * sizeof(long));
+
+   // Poucet score trie.
    trie_t * trie = trie_new(TRIE_SIZE);
 
    // Initialize pebble and hit stacks.
    pstack_t ** pebbles = malloc((MAX_TRAIL+1)*sizeof(pstack_t *));
    pstack_t ** hits    = malloc((maxtau+1) * sizeof(pstack_t *));
-   for (int i = 0 ; i <= MAX_TRAIL ; i++) {
-      pebbles[i] = new_pstack(PBSTACK_SIZE);
-   }
-   for (int i = 0 ; i <= maxtau ; i++) {
-      hits[i]    = new_pstack(HITSTACK_SIZE);
-   }
+   for (int i = 0 ; i <= MAX_TRAIL ; i++) pebbles[i] = new_pstack(PBSTACK_SIZE);
+   for (int i = 0 ; i <= maxtau ; i++)    hits[i]    = new_pstack(HITSTACK_SIZE);
 
    // Push root node.
-   pebble_t root = {
-      .sp = 0,
-      .ep = index.gsize-1,
-      .rowid = 0
-   };
+   pebble_t root = {.sp = 0, .ep = index->gsize-1, .rowid = 0};
    ppush(pebbles, root);
 
    // Define number of seqs that will be mixed in each poucet search.
    int seq_block = 10000;
+
    // Allocate hitmaps.
    vstack_t ** hitmaps = malloc(seq_block * sizeof(vstack_t *));
-   for (int i = 0 ; i < seq_block ; i++) {
-      hitmaps[i] = new_stack(HITMAP_SIZE);
-      if (hitmaps[i] == NULL) return -1;
-   }
+   for (int i = 0 ; i < seq_block ; i++) hitmaps[i] = new_stack(HITMAP_SIZE);
+
    // Allocate loci stack.
-   matchlist_t * matches = matchlist_new(MATCHLIST_SIZE);
-   if (matches == NULL) return -1;
+   matchlist_t * seeds = matchlist_new(MATCHLIST_SIZE);
+
    // Allocate match buffer.
    matchlist_t ** seqmatches;
    seqmatches = malloc(seq_block * sizeof(matchlist_t *));
-   for (int i = 0; i < seq_block; i++)
-      seqmatches[i] = matchlist_new(HITBUF_SIZE);
+   for (int i = 0; i < seq_block; i++) seqmatches[i] = matchlist_new(HITBUF_SIZE);
 
+   // Iterate over sequence blocks.
    for (int s = 0 ; s < seqs->pos; s += seq_block) {
-
-      /**                                         **
-       **         PRE-PROCESS SUBSEQUENCES        **
-       **                                         **/
 
       // Pre-process sequence block: chunk in subsequences and sort.
       int         numseqs = (seq_block < seqs->pos - s ? seq_block : seqs->pos - s);
       sublist_t * subseqs = process_subseq(seqs->seq+s, numseqs, KMER_SIZE, hitmaps);
 
-      fprintf(stderr, "processing reads from %d to %d\n", s+1, s+numseqs);
+      // Verbose processed blocks.
+      if(hmargs.verbose) fprintf(stderr, "processing reads from %d to %d\n", s+1, s+numseqs);
 
+      // Iterate over increasing mismatch tolerance.
       for (int a = 0; a <= maxtau; a++) {
-
-         fprintf(stderr, "[tau=%d] %d subsequences\nsorting  ...", a, subseqs->size);
+         // Verbose sorting.
+         if(hmargs.verbose) fprintf(stderr, "[tau=%d] %d subsequences\nsorting  ...", a, subseqs->size);
          clock_t tstart = clock();
          // Sort subsequences.
          mergesort_mt(subseqs->sub, subseqs->size, sizeof(sub_t), KMER_SIZE, 1, compar_seqsort);
-     
-         /**                                         **
-          **             MAP SUBSEQUENCES            **
-          **                                         **/
-
-         fprintf(stderr, "  [%.3fms]\n", (clock()-tstart)*1000.0/CLOCKS_PER_SEC);
+         // Verbose sort time.
+         if(hmargs.verbose) fprintf(stderr, "  [%.3fms]\n", (clock()-tstart)*1000.0/CLOCKS_PER_SEC);
 
          // Clear hitmaps.
-         for (int i = 0 ; i < numseqs ; i++) {
-            hitmaps[i]->pos = 0;
-         }
+         for (int i = 0 ; i < numseqs ; i++) hitmaps[i]->pos = 0;
 
-         // Poucet variables.
-         int start = 0;
-         tstart = clock();
-         // Poucet algorithm over the k-mers.
-         double progress = 0.0;
-         for (int i = 0; i < subseqs->size; i++) {
-            if (i*100.0/subseqs->size - progress > 0.1) {
-               progress = i*100.0/subseqs->size;
-               fprintf(stderr, "mapping  ...  %.1f%%\r", progress);
-            }
-            // Extract subseq.
-            sub_t query = subseqs->sub[i];
-            int    qlen = KMER_SIZE;
-            int   trail = 0;
-            if (i < subseqs->size - 1) {
-               // Compute trail depth.
-               int k = 1;
-               while (i+k < subseqs->size && strcmp(query.seq, subseqs->sub[i+k].seq) == 0) k++;
-               if (i+k < subseqs->size) {
-                  sub_t next = subseqs->sub[i+k];
-                  while (query.seq[trail] == next.seq[trail]) trail++;
-               }
-            }
-            trail = min(MAX_TRAIL, trail);
-
-            // Reset hits.
-            for (int j = 0; j <= a; j++) {
-               hits[j]->pos = 0;
-            }
-
-            // Reset the pebbles that will be overwritten.
-            for (int j = start+1 ; j <= trail ; j++) {
-               pebbles[j]->pos = 0;
-            }
-
-            // Translate the query string. The first 'char' is kept to store
-            // the length of the query, which shifts the array by 1 position.
-            char translated[qlen+2];
-            translated[qlen+1] = EOS;
-            for (int j = 0 ; j < qlen ; j++) {
-               translated[j+1] = translate[(int) query.seq[j]];
-            }
-
-            // Set the search options.
-            struct arg_t arg = {
-               .query    = translated,
-               .tau      = a,
-               .trail    = trail,
-               .qlen     = qlen,
-               .index    = &index,
-               .triep    = &trie,
-               .pebbles  = pebbles,
-               .hits     = hits
-            };
-
-            // Run recursive search from cached pebbles.
-            uint row[2*a+3];
-            uint * nwrow = row + a + 1;
-            char path[qlen+a+1];
-
-            for (int p = 0 ; p < pebbles[start]->pos ; p++) {
-               // Next pebble.
-               pebble_t pebble = pebbles[start]->pebble[p];
-               // Compute current alignment from alignment trie.
-               int wingsz;
-               if (a > 0) trie_getrow(trie, pebble.rowid >> PATH_SCORE_BITS, pebble.rowid & PATH_SCORE_MASK, &wingsz, nwrow);
-               else {
-                  wingsz = 0;
-                  *nwrow = 0;
-               }
-               // Recover the current path.
-               long gpos = index.pos[pebble.sp];
-               for (int j = 0; j < start; j++) {
-                  path[start-j] = translate[(int)index.genome[gpos+j]];
-               }
-               poucet(pebble.sp, pebble.ep, wingsz, nwrow, start + 1, path, &arg);
-            }
-            // Map hits.
-            map_hits(hits, query.hitmap, &index, a, query.seqid);
-
-            start = trail;
-         }
-         fprintf(stderr, "mapping  ...  [%.3fms]\n", (clock()-tstart)*1000.0/CLOCKS_PER_SEC);
+         // Search subsequences.
+         poucet_search(subseqs, pebbles, hits, &trie, index, a, KMER_SIZE, KMER_SIZE, hmargs.verbose);
 
          // Reset the subsequence list. It will be filled up with the unmatched regions.
          subseqs->size = 0;
 
-         tstart = clock();
-
          // Sort all hitmaps
          long recompute = 0, matched = 0, totalnt = 0;
-         progress = 0.0;
+         // Reset verbose variables.
+         double progress = 0.0;
+         tstart = clock();
+         // Process reads.
          for (int i = 0 ; i < numseqs ; i++) {
-            if (i*100.0 / numseqs - progress > 0.1) {
+            // Verbose progress.
+            if (hmargs.verbose && i*100.0 / numseqs - progress > 0.1) {
                progress = i*100.0/numseqs;
                fprintf(stderr, "aligning ...  %.1f%%\r", progress);
             }
-
-
-            /**                                         **
-             **             HITMAP ANALYSIS             **
-             **                                         **/
 
             // Sequence length.
             int slen = strlen(seqs->seq[i].seq);
             totalnt += slen;
 
-            // Realloc sort buffer if necessary.
+            // Merge-sort loci.
+            // Realloc sort buffer first.
             if (sortbuf_size < hitmaps[i]->pos) {
                sortbuf = realloc(sortbuf, hitmaps[i]->pos * sizeof(long));
                if (sortbuf == NULL) return -1;
             }
-            // Merge-sort loci.
+            // Copy to buffer and sort.
             memcpy(sortbuf, hitmaps[i]->val, hitmaps[i]->pos * sizeof(long));
             mergesort_long(hitmaps[i]->val, sortbuf, hitmaps[i]->pos, 0);
 
-            // Debug.
-            // Find matching loci in hitmaps.
-            //            fprintf(stderr, "hitmap analysis: %ld hits.\n", hitmaps[i]->pos);
-            hitmap_analysis(hitmaps[i], matches, KMER_SIZE, slen);
-            //            fprintf(stderr, "hitmap analysis: %d alignments will be performed.\n", matches->pos);
-
-            /**                                         **
-             **           SEQUENCE ALIGNMENT            **
-             **                                         **/
+            // Process hitmap.
+            hitmap_analysis(hitmaps[i], seeds, KMER_SIZE, slen);
 
             // Smith-Waterman alignment.
-            int newdata = 0;
-            for(long k = 0; k < matches->pos; k++) {
-               // Get next match.
-               match_t * match = matches->match[k];
-               // Extend alignment.
-               align_t align_r, align_l;
-               char * read = (match->dir ? seqs->seq[i].rseq : seqs->seq[i].seq);
+            int newdata = align_seeds(seqs->seq[i], seeds, seqmatches + i, index);
 
-               // Will align both from the start point (backward from start, forward from start+1).
-               // The previously matched region will be aligned again,
-               // but it's the only way to know precisely the total identity of the read.
-               // Note that the genome is stored backwards so all signs are changed.
-               align_r = nw_align(read + match->read_s + 1, index.genome + match->ref_s - 1, slen - match->read_s - 1, ALIGN_FORWARD, ALIGN_BACKWARD);
-               align_l = nw_align(read + match->read_s, index.genome + match->ref_s, match->read_s + 1, ALIGN_BACKWARD, ALIGN_FORWARD);
-
-               match->score  = align_l.score + align_r.score;
-               match->ident  = 1.0 - (match->score*1.0)/(align_l.pathlen + align_r.pathlen);
-               match->ref_e  = index.gsize - match->ref_s + 1 + align_r.end; // Align.end is the genome breakpoint.
-               match->ref_s  = index.gsize - match->ref_s - align_l.end; // Align.end is the genome breakpoint.
-               match->read_e = match->read_s + 1 + align_r.start; // Align.start is the read breakpoint.
-               match->read_s = match->read_s - align_l.start;     // Align.start is the read breakpoint.
-
-               // Filter out matches that do not meet the minimum quality.
-               if ((match->ref_e - match->ref_s < SEQ_MINLEN) || (match->ident < SEQ_MINID)) {
-                  free(match->repeats);
-                  free(match);
-                  continue;
-               }
-            
-               // Correct read start and end points if we are matching the reverse complement.
-               if (match->dir) {
-                  long end = slen - match->read_s;
-                  match->read_s = slen - match->read_e;
-                  match->read_e = end;
-               }
-
-               // DEBUG.
-               /*
-               long g_start = match->ref_s;
-               long g_end   = match->ref_e;
-               int chrnum = bisect_search(0, chr->nchr-1, chr->start, g_start+1)-1;
-               fprintf(stdout, "%d\t%d (%.2f%%)\t%d-%d\t%s:%ld-%ld:%c (%ld)\tr=%d\n",
-                       match->hits,
-                       match->score,
-                       match->ident*100.0,
-                       match->read_s, match->read_e,
-                       chr->name[chrnum],
-                       g_start - chr->start[chrnum]+1,
-                       g_end - chr->start[chrnum]+1,
-                       match->dir ? '-' : '+',
-                       g_end - g_start + 1,
-                       match->repeats->pos);
-               */
-
-               // Add to significant matchlist.
-               newdata = 1;
-               matchlist_add(seqmatches+i, match);
-            }
-
-
-            /**                                         **
-             **              ASSEMBLE READ              **
-             **                                         **/
-            // DEBUG.
-            //            fprintf(stderr, "matches before read re-assembly %d\n", seqmatches[i]->pos);
-            if (newdata) {
+             if (newdata) {
                // Sort candidate matches by genome start position.
                mergesort_mt(seqmatches[i]->match, seqmatches[i]->pos, sizeof(match_t *), 0, 1, compar_refstart);
 
@@ -295,108 +123,19 @@ hitmap
             // Assemble read.
             matchlist_t * intervals = combine_matches(seqmatches[i]);
 
-            // Intervals: Feedback algorithm.
-            // Find gaps between intervals.
             if (a < maxtau) {
-               // First gap.
-               int firstgap = (intervals->pos > 0 ? intervals->match[0]->read_s : slen);
-               if (firstgap > SEQ_MINLEN) {
-                  recompute += firstgap;
-                  for (int j = 0; j <= firstgap - KMER_SIZE; j++) {
-                     sub_t sseq = (sub_t) {
-                        .seqid = (i << KMERID_BITS | (j*2 & KMERID_MASK)),
-                        .seq   = seqs->seq[i].seq + j,
-                        .hitmap = hitmaps + i 
-                     };
-                     subseqs->sub[subseqs->size++] = sseq;
-                     if (seqs->seq[i].rseq != NULL) {
-                        sseq.seqid = (i << KMERID_BITS | (((slen - j - KMER_SIZE)*2+1) & KMERID_MASK));
-                        sseq.seq = seqs->seq[i].rseq + slen - j - KMER_SIZE;
-                        subseqs->sub[subseqs->size++] = sseq;
-                     }
-                  }
-               }
-            
-
-               for (long k = 0; k < intervals->pos; k++) {
-                  match_t * match = intervals->match[k];
-                  if (match->repeats->pos > 1) {
-                     mergesort_mt(match->repeats->match, match->repeats->pos, sizeof(match_t *), 0, 1, compar_matchid);
-                     match = match->repeats->match[0];
-                  }
-
-                  // Find sequence gaps and feedback them to a sublist_t.
-                  // Both unmapped gaps and intervals with identity below
-                  // INTERVAL_MINID will be mapped again after increasing tau.
-                  int gapend = (k < intervals->pos - 1 ? intervals->match[k+1]->read_s : slen);
-                  if (gapend - match->read_e > SEQ_MINLEN || match->ident < INTERVAL_MINID) {
-                     int start = (match->ident < INTERVAL_MINID ? match->read_s : match->read_e);
-                     recompute += gapend - start + 1;
-                     for (int j = start; j <= gapend - KMER_SIZE; j++) {
-                        sub_t sseq = (sub_t) {
-                           .seqid = (i << KMERID_BITS | (j*2 & KMERID_MASK)),
-                           .seq   = seqs->seq[i].seq + j,
-                           .hitmap = hitmaps + i 
-                        };
-                        subseqs->sub[subseqs->size++] = sseq;
-                        if (seqs->seq[i].rseq != NULL) {
-                           sseq.seqid = (i << KMERID_BITS | (((slen- j - KMER_SIZE)*2+1) & KMERID_MASK));
-                           sseq.seq = seqs->seq[i].rseq + slen - j - KMER_SIZE;
-                           subseqs->sub[subseqs->size++] = sseq;
-                        }
-                     }
-                  }
-               }
+               // Feedback gaps between intervals and low identity matches.
+               recompute += feedback_gaps(KMER_SIZE, i, seqs->seq[i], intervals, subseqs, hitmaps + i);
             } 
-            // Print results if a == maxtau.
             else {
+               // Print results if a == maxtau.
                // Fill read gaps allowing greater overlap.
                fill_gaps(&intervals, seqmatches[i], CONTIGS_OVERLAP);
 
                // Print intervals.
-               int cnt = 0;
-               if (intervals->pos) fprintf(stdout, "%s\n", seqs->seq[s+i].tag);
-               for (long k = 0; k < intervals->pos; k++) {
-                  match_t * match = intervals->match[k];
-                  if (match->repeats->pos > 1) {
-                     mergesort_mt(match->repeats->match, match->repeats->pos, sizeof(match_t *), 0, 1, compar_matchid);
-                     fprintf(stdout, "[interval %d]\t*%d* significant loci\n", ++cnt, match->repeats->pos);
-                     for (int j = 0; j < hm_min(PRINT_REPEATS_NUM, match->repeats->pos); j++) {
-                        match_t * rmatch = match->repeats->match[j];
-                        int          dir = rmatch->dir;
-                        long     g_start = rmatch->ref_s;
-                        long       g_end = rmatch->ref_e;
-                        int chrnum = bisect_search(0, chr->nchr-1, chr->start, g_start+1)-1;
-                        fprintf(stdout, "\t\t(%d,%d)\t%s:%ld-%ld:%c\t(%.2f%%)\t%c%c\n",
-                                rmatch->read_s, rmatch->read_e,
-                                chr->name[chrnum],
-                                g_start - chr->start[chrnum]+1,
-                                g_end - chr->start[chrnum]+1,
-                                dir ? '-' : '+',
-                                rmatch->ident*100.0,
-                                (match->flags & WARNING_OVERLAP ? 'o' : '-'),
-                                (match->flags & FLAG_FUSED ? 'f' : '-'));
-
-                     }
-                     if (match->repeats->pos > PRINT_REPEATS_NUM) fprintf(stdout, "\t\t...\n");
-                  }
-                  else {
-                     int      dir = match->dir;
-                     long g_start = match->ref_s;
-                     long   g_end = match->ref_e;
-                     int   chrnum = bisect_search(0, chr->nchr-1, chr->start, g_start+1)-1;
-                     // Print results.
-                     fprintf(stdout, "[interval %d]\t(%d,%d)\t%s:%ld-%ld:%c\t(%.2f%%)\t%c%c\n",
-                             ++cnt,
-                             match->read_s, match->read_e,
-                             chr->name[chrnum],
-                             g_start - chr->start[chrnum]+1,
-                             g_end - chr->start[chrnum]+1,
-                             dir ? '-' : '+',
-                             match->ident*100.0,
-                             (match->flags & WARNING_OVERLAP ? 'o' : '-'),
-                             (match->flags & FLAG_FUSED ? 'f' : '-'));
-                  }
+               if (intervals->pos) {
+                  fprintf(stdout, "%s\n", seqs->seq[s+i].tag);
+                 print_intervals(intervals, chr, PRINT_REPEATS_NUM);
                }
             }
 
@@ -411,12 +150,116 @@ hitmap
 
             free(intervals);
          }
-         fprintf(stderr, "aligning ...  [%.3fms]\n", (clock()-tstart)*1000.0/CLOCKS_PER_SEC);
-         fprintf(stderr, "matched %ld out of %ld nt (%.1f%%), %ld nt will be queried again.\n", matched, totalnt, matched*100.0/totalnt, recompute);
+         if (hmargs.verbose) {
+            fprintf(stderr, "aligning ...  [%.3fms]\n", (clock()-tstart)*1000.0/CLOCKS_PER_SEC);
+            fprintf(stderr, "matched %ld out of %ld nt (%.1f%%), %ld nt will be queried again.\n", matched, totalnt, matched*100.0/totalnt, recompute);
+         }
       }
    }
    
 
+   return 0;
+}
+
+
+int
+poucet_search
+(
+ sublist_t * subseqs,
+ pstack_t ** pebbles,
+ pstack_t ** hits,
+ trie_t   ** trie,
+ index_t   * index,
+ int         tau,
+ int         kmer_size,
+ int         max_trail,
+ int         verbose
+ )
+{
+   // Translate alphabet.
+   char translate[256] = {[0 ... 255] = 4, ['@'] = 0,
+                          ['a'] = 1, ['c'] = 2, ['g'] = 3, ['n'] = 4, ['t'] = 5,
+                          ['A'] = 1, ['C'] = 2, ['G'] = 3, ['N'] = 4, ['T'] = 5 };
+
+   // Poucet variables.
+   int start = 0;
+   // Poucet algorithm over the k-mers.
+   clock_t tstart = clock();
+   double  progress = 0.0;
+   for (int i = 0; i < subseqs->size; i++) {
+      if (verbose && i*100.0/subseqs->size - progress > 0.1) {
+         progress = i*100.0/subseqs->size;
+         fprintf(stderr, "mapping  ...  %.1f%%\r", progress);
+      }
+      // Extract subseq.
+      sub_t query = subseqs->sub[i];
+      int    qlen = kmer_size;
+      int   trail = 0;
+      if (i < subseqs->size - 1) {
+         // Compute trail depth.
+         int k = 1;
+         while (i+k < subseqs->size && strcmp(query.seq, subseqs->sub[i+k].seq) == 0) k++;
+         if (i+k < subseqs->size) {
+            sub_t next = subseqs->sub[i+k];
+            while (query.seq[trail] == next.seq[trail]) trail++;
+         }
+      }
+      trail = min(max_trail, trail);
+
+      // Reset hits.
+      for (int j = 0; j <= tau; j++) hits[j]->pos = 0;
+
+      // Reset the pebbles that will be overwritten.
+      for (int j = start+1 ; j <= trail ; j++) pebbles[j]->pos = 0;
+
+      // Translate the query string. The first 'char' is kept to store
+      // the length of the query, which shifts the array by 1 position.
+      char translated[qlen+2];
+      translated[qlen+1] = EOS;
+      for (int j = 0 ; j < qlen ; j++) {
+         translated[j+1] = translate[(int) query.seq[j]];
+      }
+
+      // Set the search options.
+      struct arg_t arg = {
+         .query    = translated,
+         .tau      = tau,
+         .trail    = trail,
+         .qlen     = qlen,
+         .index    = index,
+         .triep    = trie,
+         .pebbles  = pebbles,
+         .hits     = hits
+      };
+
+      // Run recursive search from cached pebbles.
+      uint row[2*tau+3];
+      uint * nwrow = row + tau + 1;
+      char path[qlen+tau+1];
+
+      for (int p = 0 ; p < pebbles[start]->pos ; p++) {
+         // Next pebble.
+         pebble_t pebble = pebbles[start]->pebble[p];
+         // Compute current alignment from alignment trie.
+         int wingsz;
+         if (tau > 0) trie_getrow(*trie, pebble.rowid >> PATH_SCORE_BITS, pebble.rowid & PATH_SCORE_MASK, &wingsz, nwrow);
+         else {
+            wingsz = 0;
+            *nwrow = 0;
+         }
+         // Recover the current path.
+         long gpos = index->pos[pebble.sp];
+         for (int j = 0; j < start; j++) {
+            path[start-j] = translate[(int)index->genome[gpos+j]];
+         }
+         poucet(pebble.sp, pebble.ep, wingsz, nwrow, start + 1, path, &arg);
+      }
+      // Map hits.
+      map_hits(hits, query.hitmap, index, tau, query.seqid);
+
+      start = trail;
+   }
+   if (verbose) fprintf(stderr, "mapping  ...  [%.3fms]\n", (clock()-tstart)*1000.0/CLOCKS_PER_SEC);
    return 0;
 }
 
@@ -587,6 +430,170 @@ map_hits
       }
    }
    return 0;
+}
+
+int
+align_seeds
+(
+ seq_t          seq,
+ matchlist_t *  seeds,
+ matchlist_t ** seqmatches,
+ index_t     *  index
+ )
+{
+   int significant = 0;
+   int slen = strlen(seq.seq);
+   for(long k = 0; k < seeds->pos; k++) {
+      // Get next seed.
+      match_t * seed = seeds->match[k];
+      // Extend alignment.
+      align_t align_r, align_l;
+      char * read = (seed->dir ? seq.rseq : seq.seq);
+
+      // Will align both from the start point (backward from start, forward from start+1).
+      // The previously matched region will be aligned again,
+      // but it's the only way to know precisely the total identity of the read.
+      // Note that the genome is stored backwards so all signs are changed.
+      align_r = nw_align(read + seed->read_s + 1, index->genome + seed->ref_s - 1, slen - seed->read_s - 1, ALIGN_FORWARD, ALIGN_BACKWARD);
+      align_l = nw_align(read + seed->read_s, index->genome + seed->ref_s, seed->read_s + 1, ALIGN_BACKWARD, ALIGN_FORWARD);
+
+      seed->score  = align_l.score + align_r.score;
+      seed->ident  = 1.0 - (seed->score*1.0)/(align_l.pathlen + align_r.pathlen);
+      seed->ref_e  = index->gsize - seed->ref_s + 1 + align_r.end; // Align.end is the genome breakpoint.
+      seed->ref_s  = index->gsize - seed->ref_s - align_l.end; // Align.end is the genome breakpoint.
+      seed->read_e = seed->read_s + 1 + align_r.start; // Align.start is the read breakpoint.
+      seed->read_s = seed->read_s - align_l.start;     // Align.start is the read breakpoint.
+
+      // Filter out seeds that do not meet the minimum quality.
+      if ((seed->ref_e - seed->ref_s < SEQ_MINLEN) || (seed->ident < SEQ_MINID)) {
+         free(seed->repeats);
+         free(seed);
+         continue;
+      }
+            
+      // Correct read start and end points if we are aligning the reverse complement.
+      if (seed->dir) {
+         long end = slen - seed->read_s;
+         seed->read_s = slen - seed->read_e;
+         seed->read_e = end;
+      }
+
+      // Add to significant matchlist.
+      significant = 1;
+      matchlist_add(seqmatches, seed);
+   }
+
+   return significant;
+}
+
+int
+feedback_gaps
+(
+ int            kmer_size,
+ int            seqnum,
+ seq_t          seq,
+ matchlist_t  * intervals,
+ sublist_t    * subseqs,
+ vstack_t    ** hitmap
+)
+{
+   int slen = strlen(seq.seq);
+   int recompute = 0;
+   int gap_start = 0;
+
+   for (long k = 0; k <= intervals->pos; k++) {
+      int gap_end;
+      int next_start = 0;
+      if (k == intervals->pos) {
+         gap_end = slen - 1;
+      } else {
+         match_t * match = intervals->match[k];
+         // If maximum identity within repeats is not enough, feedback the whole interval.
+         if (match->repeats->pos > 1) {
+            mergesort_mt(match->repeats->match, match->repeats->pos, sizeof(match_t *), 0, 1, compar_matchid);
+            match = match->repeats->match[0];
+         }
+         if (match->ident < INTERVAL_MINID) continue;
+         // Check the gap length otherwise.
+         gap_end = match->read_s;
+         next_start = match->read_e;
+      }
+
+      // Find sequence gaps and feedback them to a sublist_t.
+      // Both unmapped gaps and intervals with identity below
+      // INTERVAL_MINID will be mapped again after increasing tau.
+      if (gap_end - gap_start > SEQ_MINLEN) {
+         recompute += gap_end - gap_start + 1;
+         for (int j = gap_start; j <= gap_end - kmer_size; j++) {
+            sub_t sseq = (sub_t) {
+               .seqid = (seqnum << KMERID_BITS | (j*2 & KMERID_MASK)),
+               .seq   = seq.seq + j,
+               .hitmap = hitmap 
+            };
+            subseqs->sub[subseqs->size++] = sseq;
+            if (seq.rseq != NULL) {
+               sseq.seqid = (seqnum << KMERID_BITS | (((slen- j - kmer_size)*2+1) & KMERID_MASK));
+               sseq.seq = seq.rseq + slen - j - kmer_size;
+               subseqs->sub[subseqs->size++] = sseq;
+            }
+         }
+      }
+      gap_start = next_start;
+   }
+   return recompute;
+}
+
+void
+print_intervals
+(
+ matchlist_t * intervals,
+ chr_t       * chr,
+ int           max_repeats
+)
+{
+   int cnt = 0;
+   for (long k = 0; k < intervals->pos; k++) {
+      match_t * match = intervals->match[k];
+      if (match->repeats->pos > 1) {
+         mergesort_mt(match->repeats->match, match->repeats->pos, sizeof(match_t *), 0, 1, compar_matchid);
+         fprintf(stdout, "[interval %d]\t*%d* significant loci\n", ++cnt, match->repeats->pos);
+         for (int j = 0; j < hm_min(max_repeats, match->repeats->pos); j++) {
+            match_t * rmatch = match->repeats->match[j];
+            int          dir = rmatch->dir;
+            long     g_start = rmatch->ref_s;
+            long       g_end = rmatch->ref_e;
+            int chrnum = bisect_search(0, chr->nchr-1, chr->start, g_start+1)-1;
+            fprintf(stdout, "\t\t(%d,%d)\t%s:%ld-%ld:%c\t(%.2f%%)\t%c%c\n",
+                    rmatch->read_s, rmatch->read_e,
+                    chr->name[chrnum],
+                    g_start - chr->start[chrnum]+1,
+                    g_end - chr->start[chrnum]+1,
+                    dir ? '-' : '+',
+                    rmatch->ident*100.0,
+                    (match->flags & WARNING_OVERLAP ? 'o' : '-'),
+                    (match->flags & FLAG_FUSED ? 'f' : '-'));
+
+         }
+         if (match->repeats->pos > max_repeats) fprintf(stdout, "\t\t...\n");
+      }
+      else {
+         int      dir = match->dir;
+         long g_start = match->ref_s;
+         long   g_end = match->ref_e;
+         int   chrnum = bisect_search(0, chr->nchr-1, chr->start, g_start+1)-1;
+         // Print results.
+         fprintf(stdout, "[interval %d]\t(%d,%d)\t%s:%ld-%ld:%c\t(%.2f%%)\t%c%c\n",
+                 ++cnt,
+                 match->read_s, match->read_e,
+                 chr->name[chrnum],
+                 g_start - chr->start[chrnum]+1,
+                 g_end - chr->start[chrnum]+1,
+                 dir ? '-' : '+',
+                 match->ident*100.0,
+                 (match->flags & WARNING_OVERLAP ? 'o' : '-'),
+                 (match->flags & FLAG_FUSED ? 'f' : '-'));
+      }
+   }
 }
 
 int
@@ -890,83 +897,6 @@ fill_gaps
 
    return 0;
 }
-
-void
-recursive_free
-(
- mnode_t * node
-)
-{
-   // Recursive call.
-   for (int i = 0; i < node->nlinks; i++) recursive_free(node->child[i]);
-   // Free current node.
-   free(node->child);
-   free(node);
-}
-
-
-mnode_t *
-recursive_build
-(
- mnode_t * node,
- match_t * match
-)
-{
-   int add = (node->nlinks == 0);
-   mnode_t * best = node;
-   for (int i = 0; i < node->nlinks; i++) {
-      mnode_t * child = node->child[i];
-      if (child->match->read_e - match->read_s < OVERLAP_THR) {
-         mnode_t * cmp = recursive_build(child, match);
-         if (cmp->matched > best->matched) best = cmp;
-      } else {
-         add = 1;
-      }
-   }      
-
-   if (add) {
-      mnode_t * newnode = mnode_new(MNODE_SIZE);
-      newnode->parent = node;
-      newnode->match = match;
-      newnode->matched = node->matched + (match->read_e - match->read_s) - hm_max(0, node->match->read_e - match->read_s);
-      // Inline function.
-      if (node->nlinks >= node->size) {
-         int newsize = node->size * 2;
-         node->child = realloc(node->child, newsize * sizeof(mnode_t *));
-         if (node->child == NULL) return NULL;
-         node->size = newsize;
-      }
-      // Add new child.
-      node->child[node->nlinks++] = newnode;
-      
-      // Check best combination.
-      if (newnode->matched > best->matched) best = newnode;
-   }
-
-   return best;
-}
-
-
-mnode_t *
-mnode_new
-(
- int children
-)
-{
-   if (children < 1) children = 1;
-   mnode_t * node = malloc(sizeof(mnode_t));
-   mnode_t ** child = malloc(children * sizeof(mnode_t *));
-   if (node == NULL) return NULL;
-   node->match = NULL;
-   node->parent = NULL;
-   node->size = children;
-   node->nlinks = 0;
-   node->matched = 0;
-   node->child = child;
-   
-   return node;
-}
-
 
 matchlist_t *
 matchlist_new

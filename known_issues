@@ -1,5 +1,6 @@
 OAK mapper known issues:
+- hitmap_analysis and fuse_matches have issues with reverse strand sequences.
+
 - The length of the alignment in align.c and the posterior assignments in hitmap.c may have offsets of 1.
 
-- In align_nw, if i reaches len_q it stops, but it may happen that the best path is still some nucleotides above. So it may
-  be worth to extend the matrix in a rectangular fashion.
+- In align_nw, if i reaches len_q it stops, but it may happen that the best path is still some nucleotides above. So it may  be worth to extend the matrix in a rectangular fashion.

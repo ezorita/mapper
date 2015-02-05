@@ -62,6 +62,7 @@ typedef struct match_t     match_t;
 typedef struct matchlist_t matchlist_t;
 typedef struct sublist_t   sublist_t;
 typedef struct mnode_t     mnode_t;
+typedef struct hmargs_t    hmargs_t;
 
 struct sub_t {
    long               seqid;
@@ -93,20 +94,17 @@ struct sublist_t {
    struct sub_t sub[];
 };
 
-struct mnode_t {
-   match_t  * match;
-   mnode_t  * parent;
-   int        matched;
-   int        nlinks;
-   int        size;
-   mnode_t ** child;
+struct hmargs_t {
+   int verbose;
 };
 
 
 
-int           hitmap           (int tau, index_t index, chr_t * chr, seqstack_t * seqs);
+int           hitmap           (int tau, index_t * index, chr_t * chr, seqstack_t * seqs, hmargs_t args);
+int           poucet_search    (sublist_t * subseqs, pstack_t ** pebbles, pstack_t ** hits, trie_t ** trie, index_t * index, int tau, int kmer_size, int max_trail, int verbose);
 int           hitmap_analysis  (vstack_t * hitmap, matchlist_t * loci, int kmer_size, int maxdist);
 int           map_hits         (pstack_t ** hits, vstack_t ** hitmap, index_t * index, int tau, int id);
+int           align_seeds      (seq_t seq, matchlist_t * seeds, matchlist_t ** seqmatches, index_t * index);
 int           hitmap_push      (vstack_t ** hitmap, index_t * index, long * fm_ptr, int id);
 sublist_t   * process_subseq   (seq_t * seqs, int numseqs, int k, vstack_t ** hitmaps);
 void          mergesort_match  (match_t * data, match_t * aux, int size, int b);
@@ -114,13 +112,13 @@ int           subseqsort       (sub_t * data, int numels, int slen, int thrmax);
 void          fuse_matches     (matchlist_t ** listp, int slen);
 int           find_repeats     (matchlist_t * list);
 matchlist_t * combine_matches  (matchlist_t * list);
+int           feedback_gaps    (int kmer_size, int seqnum, seq_t seq, matchlist_t * intervals, sublist_t * subseqs, vstack_t ** hitmap);
+void          print_intervals  (matchlist_t * intervals, chr_t * chr, int max_repeats);
 int           fill_gaps        (matchlist_t ** intervp, matchlist_t * matches, double contigs_overlap);
-mnode_t *     recursive_build  (mnode_t * node, match_t * match);
-void          recursive_free   (mnode_t * node);
-mnode_t *     mnode_new        (int children);
-int           mnode_add        (mnode_t * node, mnode_t * match);
 matchlist_t * matchlist_new    (int elements);
 int           matchlist_add    (matchlist_t ** listp, match_t * match);
+
+// mergesort_mt compar functions.
 int           compar_seqsort   (const void * a, const void * b, const int val);
 int           compar_matchlen  (const void * a, const void * b, const int param);
 int           compar_matchid   (const void * a, const void * b, const int param);

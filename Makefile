@@ -14,7 +14,7 @@ GSOURCES= $(addprefix $(SRC_DIR)/,$(GSOURCE_FILES))
 GHEADERS= $(addprefix $(INC_DIR)/,$(GHEADER_FILES))
 INCLUDES= $(addprefix -I, $(INC_DIR))
 
-CFLAGS= -std=c99 -g -Wall -O3
+CFLAGS= -std=c99 -g -Wall
 LDLIBS= -lpthread -lm
 CC= gcc
 
