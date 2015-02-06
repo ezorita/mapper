@@ -68,7 +68,7 @@ int main(int argc, char * argv[]) {
       }
 
       // Load index.
-      int mflags = MAP_PRIVATE;// | MAP_POPULATE;
+      int mflags = MAP_PRIVATE | MAP_POPULATE;
       long idxsize = lseek(fd, 0, SEEK_END);
       lseek(fd, 0, SEEK_SET);
       long * indexp = mmap(NULL, idxsize, PROT_READ, mflags, fd, 0);

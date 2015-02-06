@@ -348,6 +348,8 @@ hitmap_analysis
          match->dir    = refdir;
          match->ref_s  = streakloc;
          match->read_s = streakkmer;
+         // TODO:
+         // Nothing extra to do with reverse strand??
          match->hits   = streak;
          match->flags  = 0;
          match->score  = -1;
@@ -356,7 +358,7 @@ hitmap_analysis
          // Append if list not yet full, replace the minimum value otherwise.
          if (matchlist->pos < matchlist->size) {
             matchlist->match[matchlist->pos++] = match;
-            }
+         }
          else {
             match_t * match_min = matchlist->match[min];
             free(match_min->repeats);
@@ -375,9 +377,7 @@ hitmap_analysis
             }
          }
       }
-
    }
-
    return 0;
 }
 
@@ -456,13 +456,13 @@ align_seeds
 
       seed->score  = align_l.score + align_r.score;
       seed->ident  = 1.0 - (seed->score*1.0)/(align_l.pathlen + align_r.pathlen);
-      seed->ref_e  = index->gsize - seed->ref_s + 1 + align_r.end; // Align.end is the genome breakpoint.
-      seed->ref_s  = index->gsize - seed->ref_s - align_l.end; // Align.end is the genome breakpoint.
-      seed->read_e = seed->read_s + 1 + align_r.start; // Align.start is the read breakpoint.
+      seed->ref_e  = (index->gsize - seed->ref_s) + align_r.end + 2; // Align.end is the genome breakpoint.
+      seed->ref_s  = (index->gsize - seed->ref_s) - align_l.end; // Align.end is the genome breakpoint.
+      seed->read_e = seed->read_s + align_r.start + 2; // Align.start is the read breakpoint.
       seed->read_s = seed->read_s - align_l.start;     // Align.start is the read breakpoint.
 
       // Filter out seeds that do not meet the minimum quality.
-      if ((seed->ref_e - seed->ref_s + 1 < hmargs.match_min_len) || (seed->ident < hmargs.match_min_id)) {
+      if ((seed->ref_e - seed->ref_s < hmargs.match_min_len) || (seed->ident < hmargs.match_min_id)) {
          free(seed->repeats);
          free(seed);
          continue;
@@ -506,7 +506,7 @@ feedback_gaps
       int gap_end;
       int next_start = 0;
       if (k == intervals->pos) {
-         gap_end = slen - 1;
+         gap_end = slen;
       } else {
          match_t * match = intervals->match[k];
          // If maximum identity within repeats is not enough, feedback the whole interval.
@@ -520,9 +520,9 @@ feedback_gaps
          next_start = match->read_e;
       }
 
-      if (gap_end - gap_start > hmargs.match_min_len) {
-         recompute += gap_end - gap_start + 1;
-         for (int j = gap_start; j <= gap_end - kmer_size; j++) {
+      if (gap_end - gap_start >= hmargs.match_min_len) {
+         recompute += gap_end - gap_start;
+         for (int j = gap_start; j < gap_end - kmer_size; j++) {
             sub_t sseq = (sub_t) {
                .seqid = (seqnum << KMERID_BITS | (j*2 & KMERID_MASK)),
                .seq   = seq.seq + j,
@@ -559,10 +559,10 @@ print_intervals
             match_t * rmatch = match->repeats->match[j];
             int          dir = rmatch->dir;
             long     g_start = rmatch->ref_s;
-            long       g_end = rmatch->ref_e;
+            long       g_end = rmatch->ref_e - 1;
             int chrnum = bisect_search(0, chr->nchr-1, chr->start, g_start+1)-1;
             fprintf(stdout, "\t\t(%d,%d)\t%s:%ld-%ld:%c\t(%.2f%%)\t%c%c\n",
-                    rmatch->read_s, rmatch->read_e,
+                    rmatch->read_s, rmatch->read_e - 1,
                     chr->name[chrnum],
                     g_start - chr->start[chrnum]+1,
                     g_end - chr->start[chrnum]+1,
@@ -577,12 +577,12 @@ print_intervals
       else {
          int      dir = match->dir;
          long g_start = match->ref_s;
-         long   g_end = match->ref_e;
+         long   g_end = match->ref_e - 1;
          int   chrnum = bisect_search(0, chr->nchr-1, chr->start, g_start+1)-1;
          // Print results.
          fprintf(stdout, "[interval %d]\t(%d,%d)\t%s:%ld-%ld:%c\t(%.2f%%)\t%c%c\n",
                  ++cnt,
-                 match->read_s, match->read_e,
+                 match->read_s, match->read_e - 1,
                  chr->name[chrnum],
                  g_start - chr->start[chrnum]+1,
                  g_end - chr->start[chrnum]+1,
@@ -708,7 +708,7 @@ fuse_matches
          newmatch->ref_e  = match->ref_e;
          newmatch->dir    = match->dir;
          newmatch->flags  = FLAG_FUSED;
-         totalnt = match->read_e - match->read_s + 1;
+         totalnt = match->read_e - match->read_s;
          cmid += totalnt * match->ident;
 
          // Expand combination.
@@ -718,7 +718,7 @@ fuse_matches
             if (comb->ref_e > newmatch->ref_e) newmatch->ref_e = comb->ref_e;
             if (comb->read_e > newmatch->read_e) newmatch->read_e = comb->read_e;
             if (comb->read_s < newmatch->read_s) newmatch->read_s = comb->read_s;
-            int readspan = comb->read_e - comb->read_s + 1;
+            int readspan = comb->read_e - comb->read_s;
             totalnt += readspan;
             cmid += readspan * comb->ident;
          }
@@ -768,7 +768,7 @@ find_repeats
       // Add a feedback link. This will be helpful when sorting.
       matchlist_add(&(ref->repeats), ref);
       // Compute the position of the last nucleotide.
-      int last_nt = ref->read_s + (int)((ref->read_e - ref->read_s)*(1 - overlap)) + 1;
+      int last_nt = ref->read_s + (int)((ref->read_e - ref->read_s)*(1 - overlap));
       // Iterate over the other matches.
       for (int j = i+1; j < list->pos; j++) {
          match_t * cmp = list->match[j];
@@ -857,7 +857,7 @@ fill_gaps
    for (long i = 0, j = 0; i <= intervals->pos && j < matches->pos; i++) {
       int gap_end, right_size, next_start;
       if (i == intervals->pos) {
-         gap_end = seq_len-1;
+         gap_end = seq_len;
          right_size = 1;
          next_start = 0;
       } else {
@@ -870,7 +870,7 @@ fill_gaps
       // This overlap must be the minimum 50% between:
       // left: the gap and the previous match.
       // right: the gap and the next match.
-      int gap_size = gap_end - gap_start + 1;
+      int gap_size = gap_end - gap_start;
       if (gap_size >= match_minlen) {
          // Absolute maximum start and end positions.
          int max_end   = gap_end + (int)(right_size * max_overlap);
@@ -884,7 +884,7 @@ fill_gaps
             if (gap_overlap*1.0/gap_size < gap_coverage) continue;
 
             // 2. No more than max_overlap between contigs.
-            int match_size = cmpmatch->read_e - cmpmatch->read_s + 1;
+            int match_size = cmpmatch->read_e - cmpmatch->read_s;
             int ctg_overlap = hm_max(0, gap_start - cmpmatch->read_s);
             if (ctg_overlap*1.0/hm_min(left_size, match_size) > max_overlap) continue;
             ctg_overlap = hm_max(0, cmpmatch->read_e - gap_end);
