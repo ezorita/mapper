@@ -109,6 +109,7 @@ void          print_intervals  (matchlist_t * intervals, chr_t * chr, int max_re
 int           fill_gaps        (matchlist_t ** intervp, matchlist_t * matches, int seq_len, int seq_minlen, double gap_coverage, double max_overlap);
 matchlist_t * matchlist_new    (int elements);
 int           matchlist_add    (matchlist_t ** listp, match_t * match);
+void          free_match       (match_t * match);
 
 // mergesort_mt compar functions.
 int           compar_seqsort   (const void * a, const void * b, const int val);

@@ -361,8 +361,7 @@ hitmap_analysis
          }
          else {
             match_t * match_min = matchlist->match[min];
-            free(match_min->repeats);
-            free(match_min);
+            free_match(match_min);
             matchlist->match[min] = match;
          }
                
@@ -463,8 +462,7 @@ align_seeds
 
       // Filter out seeds that do not meet the minimum quality.
       if ((seed->ref_e - seed->ref_s < hmargs.match_min_len) || (seed->ident < hmargs.match_min_id)) {
-         free(seed->repeats);
-         free(seed);
+         free_match(seed);
          continue;
       }
             
@@ -854,7 +852,8 @@ fill_gaps
    mergesort_mt(matches->match, matches->pos, sizeof(match_t *), 0, 1, compar_readend);
    int gap_start = 0;
    int left_size = 0;
-   for (long i = 0, j = 0; i <= intervals->pos && j < matches->pos; i++) {
+   int nintervals = intervals->pos;
+   for (long i = 0, j = 0; i <= nintervals && j < matches->pos; i++) {
       int gap_end, right_size, next_start;
       if (i == intervals->pos) {
          gap_end = seq_len;
@@ -864,7 +863,7 @@ fill_gaps
          match_t * match = intervals->match[i];
          gap_end = match->read_s;
          next_start = match->read_e;
-         right_size = next_start - gap_end + 1;
+         right_size = next_start - gap_end;
       }
       // TODO:
       // This overlap must be the minimum 50% between:
@@ -968,7 +967,7 @@ compar_seqsort
    if ((compar = strncmp(seq_a->seq, seq_b->seq, val)) == 0) {
       compar = (seq_a->seqid > seq_b->seqid ? 1 : -1);
    } 
-   return compar;
+   return (compar < 0 ? -1 : 1);
 }
 
 int
@@ -1051,4 +1050,14 @@ compar_refstart
    if (ma->ref_s > mb->ref_s) return 1;
    else if (ma->ref_s < mb->ref_s) return -1;
    else return (ma->ref_e > mb->ref_e ? 1 : -1);
+}
+
+void
+free_match
+(
+ match_t * match
+ )
+{
+   free(match->repeats);
+   free(match);
 }
