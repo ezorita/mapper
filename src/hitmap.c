@@ -116,7 +116,7 @@ hitmap
 
             if (a < maxtau) {
                // Feedback gaps between intervals and low identity matches.
-               recompute += feedback_gaps(hmargs.kmer_size, i, seqs->seq[i], intervals, subseqs, hitmaps + i, hmargs);
+               recompute += feedback_gaps(i, seqs->seq[i], intervals, subseqs, hitmaps + i, hmargs);
             } 
             else {
                // Print results if a == maxtau.
@@ -484,7 +484,6 @@ align_seeds
 int
 feedback_gaps
 (
- int            kmer_size,
  int            seqnum,
  seq_t          seq,
  matchlist_t  * intervals,
@@ -520,7 +519,7 @@ feedback_gaps
 
       if (gap_end - gap_start >= hmargs.match_min_len) {
          recompute += gap_end - gap_start;
-         for (int j = gap_start; j < gap_end - kmer_size; j++) {
+         for (int j = gap_start; j <= gap_end - hmargs.kmer_size; j++) {
             sub_t sseq = (sub_t) {
                .seqid = (seqnum << KMERID_BITS | (j*2 & KMERID_MASK)),
                .seq   = seq.seq + j,
@@ -528,8 +527,8 @@ feedback_gaps
             };
             subseqs->sub[subseqs->size++] = sseq;
             if (seq.rseq != NULL) {
-               sseq.seqid = (seqnum << KMERID_BITS | (((slen- j - kmer_size)*2+1) & KMERID_MASK));
-               sseq.seq = seq.rseq + slen - j - kmer_size;
+               sseq.seqid = (seqnum << KMERID_BITS | (((slen- j - hmargs.kmer_size)*2+1) & KMERID_MASK));
+               sseq.seq = seq.rseq + slen - j - hmargs.kmer_size;
                subseqs->sub[subseqs->size++] = sseq;
             }
          }

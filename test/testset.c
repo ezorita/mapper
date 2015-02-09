@@ -79,6 +79,7 @@ unredirect_sderr
 
 // Declare test functions.
 // test-hitmap:
+void test_feedback_gaps(void);
 void test_fill_gaps(void);
 void test_matchlist_new(void);
 void test_matchlist_add(void);
@@ -90,18 +91,66 @@ void test_compar_matchspan(void);
 void test_compar_refstart(void);
 
 void
+test_feedback_gaps
+(void)
+// This function feeds the non-matched gaps back to the sub_t stack. The non-matched
+// nucleotides will be searched again with a higher tau.
+// Feedback conditions:
+//  - A non-matched region longer than 'match_min_len'.
+//  - A region matched with identity less than 'feedback_id_thr'.
+{
+   seq_t seq;
+   seq.seq  = "ATGACTCGACGATCGACTAGCACGATCGAC"; // len 30.
+   seq.rseq = "TACGATCGTACGACTGCTACGACGACTAGG"; // It's not true but it doesn't need to be.
+   int nsubs = 2*strlen(seq.seq);
+   
+   // Allocate structs.
+   hmargs_t args = {.kmer_size = 5, .feedback_id_thr = 0.7};
+   matchlist_t * intervals = matchlist_new(10);
+   sublist_t   * slist     = malloc(sizeof(sublist_t) + nsubs*sizeof(sub_t));
+   slist->size = 0;
+
+   // Add intervals.
+   match_t * match1 = malloc(sizeof(match_t));
+   match1->repeats = matchlist_new(2);
+   matchlist_add(&(match1->repeats), match1);
+   match1->read_s = 10;
+   match1->read_e = 25;
+   match1->ident  = 0.75;
+   matchlist_add(&intervals, match1);
+   
+   feedback_gaps(0, seq, intervals, slist, NULL, args);
+
+   // there must be (10-5+1 + 5-5+1) * 2 = 14 subsequences.
+   g_assert(slist->size == 14);
+   // Positions 0(+)-51(-), 2-49, 4-47, 6-45, 8-43, 10-11, 50-51.
+   for (int i = 0; i <= 5; i++) {
+      // Check forward.
+      g_assert(slist->sub[2*i].seqid == 2*i);
+      // Check reverse.
+      g_assert(slist->sub[2*i+1].seqid == (30 - args.kmer_size - i)*2 + 1);
+   }
+   g_assert(slist->sub[12].seqid == 50);
+   g_assert(slist->sub[13].seqid == 1);
+
+   free(match1);
+   free(intervals);
+   free(slist);
+
+}
+
+void
 test_fill_gaps
 (void)
+// Fills the gaps of the estimated read with greater overlap tolerance.
+// For instance...
+// [--*****************..........***************----] current estimate (intervals)
+//               *****************                    match
+//               ^^^^^^          ^                    overlap (< overlap_max_tolerance)
+//                     ^^^^^^^^^^                     gap coverage (> gap_min_coverage)
+// The match will be used to fill the middle gap, even though it overlaps with the other
+// reads. This is done once the search is finished.
 {
-   // Fills the gaps of the estimated read with greater overlap tolerance.
-   // For instance...
-   // [--*****************..........***************----] current estimate (intervals)
-   //               *****************                    match
-   //               ^^^^^^          ^                    overlap (< overlap_max_tolerance)
-   //                     ^^^^^^^^^^                     gap coverage (> 1-overlap_tolerance)
-   // The match will be used to fill the middle gap, even though it overlaps with the other
-   // reads. This is done once the search is finished.
-
    // Small example with a sequence of 100 nt, allowed gaps of 10 nt.
    double overlap_max_tolerance = 0.5;
    double gap_min_coverage      = 0.9;
@@ -553,6 +602,7 @@ main
 
    g_test_init(&argc, &argv, NULL);
    g_test_add_func("/hitmap/fill_gaps", test_fill_gaps);
+   g_test_add_func("/hitmap/test_feedback_gaps", test_feedback_gaps);
    g_test_add_func("/hitmap/matchlist_new", test_matchlist_new);
    g_test_add_func("/hitmap/matchlist_add", test_matchlist_add);
    g_test_add_func("/hitmap/test_compar_seqsort", test_compar_seqsort);
