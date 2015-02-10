@@ -431,9 +431,9 @@ int
 align_seeds
 (
  seq_t          seq,
- matchlist_t *  seeds,
+ matchlist_t  * seeds,
  matchlist_t ** seqmatches,
- index_t     *  index,
+ index_t      * index,
  hmargs_t       hmargs
  )
 {

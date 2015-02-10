@@ -79,6 +79,7 @@ unredirect_sderr
 
 // Declare test functions.
 // test-hitmap:
+void test_combine_matches(void);
 void test_feedback_gaps(void);
 void test_fill_gaps(void);
 void test_matchlist_new(void);
@@ -89,6 +90,231 @@ void test_compar_readstart(void);
 void test_compar_readend(void);
 void test_compar_matchspan(void);
 void test_compar_refstart(void);
+
+void
+test_fuse_matches
+(void)
+{
+   // Read of 500 nt.
+   int slen = 500;
+   hmargs_t args = {.read_ref_ratio = 2, .dist_accept = 10};
+   
+   matchlist_t * list = matchlist_new(5);
+   match_t * match1 = malloc(sizeof(match_t));
+   match_t * match2 = malloc(sizeof(match_t));
+   matchlist_add(&list, match1);
+   matchlist_add(&list, match2);
+
+   // TEST 1. Forward strand.
+   match1->read_s = 0;
+   match1->read_e = 100;
+   match1->ref_s  = 1000;
+   match1->ref_e  = 1115;
+   match1->dir    = 0;
+   match1->ident  = 0.8;
+
+   match2->read_s = 150;
+   match2->read_e = 300;
+   match2->ref_s  = 1170;
+   match2->ref_e  = 1350;
+   match2->dir    = 0;
+   match2->ident  = 0.8;
+
+   fuse_matches(&list, slen, args);
+
+   g_assert(list->pos == 1);
+   g_assert(list->match[0]->read_s == 0);
+   g_assert(list->match[0]->read_e == 300);
+   g_assert(list->match[0]->ref_s  == 1000);
+   g_assert(list->match[0]->ref_e  == 1350);
+   g_assert(list->match[0]->dir    == 0);
+   
+   //reset
+   free(list->match[0]);
+   list->pos = 0;
+   matchlist_add(&list, match1);
+   matchlist_add(&list, match2);
+
+   // TEST 2. Reverse strand.
+   match1->read_s = 100;
+   match1->read_e = 170;
+   match1->ref_s  = 1000;
+   match1->ref_e  = 1080;
+   match1->dir    = 1;
+
+   match2->read_s = 250;
+   match2->read_e = 350;
+   match2->ref_s  = 760;
+   match2->ref_e  = 920;
+   match2->dir    = 1;
+
+   fuse_matches(&list, slen, args);
+
+   g_assert(list->pos == 1);
+   g_assert(list->match[0]->read_s == 100);
+   g_assert(list->match[0]->read_e == 350);
+   g_assert(list->match[0]->ref_s  == 760);
+   g_assert(list->match[0]->ref_e  == 1080);
+   g_assert(list->match[0]->dir    == 1);
+
+   //reset
+   free(list->match[0]);
+   list->pos = 0;
+   matchlist_add(&list, match1);
+   matchlist_add(&list, match2);
+
+
+   // TEST 3. Different strands.
+   match1->dir = 0;
+
+   fuse_matches(&list, slen, args);
+
+   g_assert(list->pos == 2);
+
+   free(list);
+   free(match1);
+   free(match2);
+}
+
+void
+test_find_repeats
+(void)
+{
+   match_t * matches = malloc(5*sizeof(match_t));
+   for (int i = 0; i < 10; i++) matches[i].repeats = matchlist_new(5);
+   matchlist_t * list = matchlist_new(5);
+   
+   double overlap = 0.9;
+
+   // TEST 1.
+   // [0]-[1] overlap=95, span=105, 95/105 = 0.907
+   // [0]-[2] overlap=92, span=110, 92/110 = 0.83
+   // [1]-[2] overlap=97, span=105, 97/105 = 0.92
+   matches[0].read_s = 0;
+   matches[0].read_e = 100;
+   matches[1].read_s = 5;
+   matches[1].read_e = 105;
+   matches[2].read_s = 8;
+   matches[2].read_e = 110;
+   matchlist_add(&list, matches);
+   matchlist_add(&list, matches + 1);
+   matchlist_add(&list, matches + 2);
+
+   g_assert(find_repeats(list, overlap) == 0);
+   
+   g_assert(matches[0].repeats->pos == 2);
+   g_assert(matches[1].repeats->pos == 3);
+   g_assert(matches[2].repeats->pos == 2);
+
+   g_assert(matches[0].repeats->match[1] == matches + 1);
+   g_assert(matches[1].repeats->match[0] == matches);
+   g_assert(matches[1].repeats->match[2] == matches + 2);
+   g_assert(matches[2].repeats->match[0] == matches + 1);
+
+   // TEST 2.
+   // [3]-[4] 165/180 = 0.917
+   // [0]-[2] 100/110 = 0.909
+   // [1]-[2] 100/110 = 0.909
+   matches[3].read_s = 70;
+   matches[3].read_e = 250;
+   matches[4].read_s = 75;
+   matches[4].read_e = 240;
+   matches[2].read_s = 1;
+   matchlist_add(&list, matches + 3);
+   matchlist_add(&list, matches + 4);
+
+   g_assert(find_repeats(list, overlap) == 0);
+   
+   g_assert(matches[0].repeats->pos == 3);
+   g_assert(matches[1].repeats->pos == 3);
+   g_assert(matches[2].repeats->pos == 3);
+   g_assert(matches[3].repeats->pos == 2);
+   g_assert(matches[4].repeats->pos == 2);
+
+   g_assert(matches[0].repeats->match[1] == matches + 2);
+   g_assert(matches[0].repeats->match[2] == matches + 1);
+   g_assert(matches[1].repeats->match[0] == matches);
+   g_assert(matches[1].repeats->match[1] == matches + 2);
+   g_assert(matches[2].repeats->match[0] == matches);
+   g_assert(matches[2].repeats->match[2] == matches + 1); 
+   g_assert(matches[3].repeats->match[1] == matches + 4); 
+   g_assert(matches[4].repeats->match[0] == matches + 3); 
+
+   free(matches);
+   free(list);
+}
+
+void
+test_combine_matches
+(void)
+{
+   match_t * matches  = malloc(5*sizeof(match_t));
+   matchlist_t * list = matchlist_new(5);
+   matchlist_t * intervals;
+
+   double overlap_tolerance = 0.1;
+   
+   // TEST 1. Two intervals, overlapped but less than 10%.   
+   matches[0].read_s = 91; 
+   matches[0].read_e = 200;
+   matches[1].read_s = 0;
+   matches[1].read_e = 100; // match[1]-[2] overlap 9nt. 9% of [1], < 9% of [2]. 
+   matchlist_add(&list, matches);
+   matchlist_add(&list, matches + 1);
+
+   intervals = combine_matches(list, overlap_tolerance);
+   g_assert(intervals->pos == 2);
+   g_assert(intervals->match[0] == matches + 1);
+   g_assert(intervals->match[1] == matches);
+   free(intervals);
+
+   // TEST 2. Two intervals, overlapped more than 10% wrt the smallest.
+   matches[1].read_e = 102;
+
+   intervals = combine_matches(list, overlap_tolerance);
+   g_assert(intervals->pos == 1);
+   g_assert(intervals->match[0] == matches);
+   free(intervals);
+   
+   // TEST 3. Three intervals, 2 small overlapped with one big.
+   matches[0].read_s = 0;
+   matches[0].read_e = 100;
+   matches[1].read_s = 75;
+   matches[1].read_e = 125;
+   matches[2].read_s = 15;
+   matches[2].read_e = 70;
+   matchlist_add(&list, matches + 2);
+
+   intervals = combine_matches(list, overlap_tolerance);
+   g_assert(intervals->pos == 1);
+   g_assert(intervals->match[0] == matches);
+   free(intervals);
+
+   // TEST 4. Five intervals, some overlap.
+   matches[1].read_s = 97;
+   matches[1].read_e = 134;
+   matches[4].read_s = 136;
+   matches[4].read_e = 194;
+   matches[2].read_s = 190;
+   matches[2].read_e = 290;
+   matches[3].read_s = 282;
+   matches[3].read_e = 389;
+   matchlist_add(&list, matches + 3);
+   matchlist_add(&list, matches + 4);
+   
+   intervals = combine_matches(list, overlap_tolerance);
+   g_assert(intervals->pos == 5);
+   g_assert(intervals->match[0] == matches);
+   g_assert(intervals->match[1] == matches + 1);
+   g_assert(intervals->match[2] == matches + 4);
+   g_assert(intervals->match[3] == matches + 2);
+   g_assert(intervals->match[4] == matches + 3);
+   free(intervals);
+   
+   free(matches);
+   free(list);
+   
+}
 
 void
 test_feedback_gaps
@@ -105,7 +331,7 @@ test_feedback_gaps
    int nsubs = 2*strlen(seq.seq);
    
    // Allocate structs.
-   hmargs_t args = {.kmer_size = 5, .feedback_id_thr = 0.7};
+   hmargs_t args = {.kmer_size = 5, .feedback_id_thr = 0.7, .match_min_len = 5};
    matchlist_t * intervals = matchlist_new(10);
    sublist_t   * slist     = malloc(sizeof(sublist_t) + nsubs*sizeof(sub_t));
    slist->size = 0;
@@ -114,16 +340,18 @@ test_feedback_gaps
    match_t * match1 = malloc(sizeof(match_t));
    match1->repeats = matchlist_new(2);
    matchlist_add(&(match1->repeats), match1);
+   matchlist_add(&intervals, match1);
+
+   // TEST 1. Nucleotides 10 to 25 covered.
    match1->read_s = 10;
    match1->read_e = 25;
    match1->ident  = 0.75;
-   matchlist_add(&intervals, match1);
    
    feedback_gaps(0, seq, intervals, slist, NULL, args);
 
    // there must be (10-5+1 + 5-5+1) * 2 = 14 subsequences.
    g_assert(slist->size == 14);
-   // Positions 0(+)-51(-), 2-49, 4-47, 6-45, 8-43, 10-11, 50-51.
+   // Check subsequence positions.
    for (int i = 0; i <= 5; i++) {
       // Check forward.
       g_assert(slist->sub[2*i].seqid == 2*i);
@@ -133,7 +361,85 @@ test_feedback_gaps
    g_assert(slist->sub[12].seqid == 50);
    g_assert(slist->sub[13].seqid == 1);
 
+   // TEST 2. Both matches are long enough but match1 is below the id threshold.
+   slist->size = 0;
+   match_t * match2 = malloc(sizeof(match_t));
+   match2->repeats = matchlist_new(2);
+   matchlist_add(&(match2->repeats), match2);
+   matchlist_add(&intervals, match2);
+
+   match1->read_s = 5;
+   match1->read_e = 12;
+   match1->ident  = 0.68;
+   match2->read_s = 15;
+   match2->read_e = 26;
+   match2->ident  = 0.80;
+   
+   feedback_gaps(0, seq, intervals, slist, NULL, args);
+
+   // there must be (15-5+1) * 2 = 22 subsequences.
+   g_assert(slist->size == 22);
+   // Check subsequence positions.
+   for (int i = 0; i <= 10 ; i++) {
+      // Check forward.
+      g_assert(slist->sub[2*i].seqid == 2*i);
+      // Check reverse.
+      g_assert(slist->sub[2*i+1].seqid == (30 - args.kmer_size - i)*2 + 1);
+   }
+
+   // TEST 3. Same as before, but now match1 has a repeat with identity 90%.
+   slist->size = 0;
+   match_t * match3 = malloc(sizeof(match_t));
+   match3->repeats = matchlist_new(2);
+   matchlist_add(&(match3->repeats), match3);
+   matchlist_add(&(match3->repeats), match1);
+   matchlist_add(&(match1->repeats), match3);
+
+   match3->read_s = 5;
+   match3->read_e = 13;
+   match3->ident  = 0.9;
+
+   feedback_gaps(0, seq, intervals, slist, NULL, args);
+
+   // there must be (5-5+1) * 2 = 2 subsequences.
+   g_assert(slist->size == 2);
+   g_assert(slist->sub[0].seqid == 0);
+   g_assert(slist->sub[1].seqid == 51);
+
+   // TEST 4. Now the repeat is not long enough and triggers a subseq feedback between match3 and match2.
+   slist->size = 0;
+   match3->read_s = 4;
+   match3->read_e = 10;
+   
+   feedback_gaps(0, seq, intervals, slist, NULL, args);
+
+   // there must be ((15-10)-5+1) * 2 = 2 subsequences.
+   g_assert(slist->size == 2);
+   g_assert(slist->sub[0].seqid == 20);
+   g_assert(slist->sub[1].seqid == 31);
+
+   // TEST 5. Match 1 and 2 overlap, and match 1 is below id_thr, the feedback should stop where match2 starts.
+   slist->size = 0;
+   match1->repeats->pos = 1;
+   match1->read_e = 19;
+   match1->ident  = 0.69;
+
+   feedback_gaps(0, seq, intervals, slist, NULL, args);
+
+   // there must be (15-5+1) * 2 = 22 subsequences.
+   g_assert(slist->size == 22);
+   // Check subsequence positions.
+   for (int i = 0; i <= 10 ; i++) {
+      // Check forward.
+      g_assert(slist->sub[2*i].seqid == 2*i);
+      // Check reverse.
+      g_assert(slist->sub[2*i+1].seqid == (30 - args.kmer_size - i)*2 + 1);
+   }
+
+   // Free memory.
    free(match1);
+   free(match2);
+   free(match3);
    free(intervals);
    free(slist);
 
@@ -601,6 +907,9 @@ main
    BACKUP_STDOUT = dup(STDOUT_FILENO);
 
    g_test_init(&argc, &argv, NULL);
+   g_test_add_func("/hitmap/fuse_matches", test_fuse_matches);
+   g_test_add_func("/hitmap/find_repeats", test_find_repeats);
+   g_test_add_func("/hitmap/combine_matches", test_combine_matches);
    g_test_add_func("/hitmap/fill_gaps", test_fill_gaps);
    g_test_add_func("/hitmap/test_feedback_gaps", test_feedback_gaps);
    g_test_add_func("/hitmap/matchlist_new", test_matchlist_new);
