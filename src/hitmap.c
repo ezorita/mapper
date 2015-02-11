@@ -10,9 +10,6 @@ hitmap
  )
 {
    int maxtau = hmargs.maxtau;
-   // Buffer for mergesort_long.
-   long   sortbuf_size = SORTBUF_SIZE;
-   long * sortbuf      = malloc(sortbuf_size * sizeof(long));
 
    // Poucet score trie.
    trie_t * trie = trie_new(TRIE_SIZE);
@@ -87,16 +84,6 @@ hitmap
             // Sequence length.
             int slen = strlen(seqs->seq[i].seq);
             totalnt += slen;
-
-            // Merge-sort loci.
-            // Realloc sort buffer first.
-            if (sortbuf_size < hitmaps[i]->pos) {
-               sortbuf = realloc(sortbuf, hitmaps[i]->pos * sizeof(long));
-               if (sortbuf == NULL) return -1;
-            }
-            // Copy to buffer and sort.
-            memcpy(sortbuf, hitmaps[i]->val, hitmaps[i]->pos * sizeof(long));
-            mergesort_long(hitmaps[i]->val, sortbuf, hitmaps[i]->pos, 0);
 
             // Process hitmap.
             hitmap_analysis(hitmaps[i], seeds, hmargs.kmer_size, slen, hmargs);
@@ -268,6 +255,14 @@ hitmap_analysis
  )
 {
    if (matchlist->size < 1) return -1;
+
+   // Merge-sort loci.
+   // Copy to buffer and sort.
+   long * sortbuf = malloc(hitmap->pos * sizeof(long));
+   memcpy(sortbuf, hitmap->val, hitmap->pos * sizeof(long));
+   mergesort_long(hitmap->val, sortbuf, hitmap->pos, 0);
+   free(sortbuf);
+
    long minv = 0;
    int  min  = 0;
    int  rg_ratio = hmargs.read_ref_ratio;
@@ -286,7 +281,7 @@ hitmap_analysis
       long refloc = hitmap->val[ref] >> KMERID_BITS;
       long refkmer = (hitmap->val[ref] & KMERID_MASK) >> 1;
       long refdir = hitmap->val[ref] & 1;
-      long refend = refloc + (refdir ? (readlen - refkmer) : (refkmer))  * rg_ratio;
+      long refend = refloc + refkmer * rg_ratio;
 
       // Mark subseq as used.
       hitmap->val[ref] *= -1;
@@ -388,7 +383,7 @@ map_hits
  vstack_t ** hitmap,
  index_t   * index,
  int         tau,
- int         id,
+ long        id,
  int         max_loci
  )
 {
@@ -419,7 +414,7 @@ map_hits
             // Copy hits.
             for (long i = hit.sp; i <= hit.ep ; i++) {
                // Delay offset to match the beginning of the sequence. Offset contains the alignment length.
-               hmap->val[hmap->pos++] = ((index->pos[i] + offset) << KMERID_BITS) | idstamp;
+               hmap->val[hmap->pos++] = ((long)(index->pos[i] + offset) << KMERID_BITS) | idstamp;
             }
          }
       }
@@ -619,7 +614,10 @@ process_subseq
       int subs = slen - k + 1;
       
       // Convert to uppercase.
-      for (int k = 0; k < slen; k++) if (s.seq[k] > 90) s.seq[k] -= 32;
+      for (int k = 0; k < slen; k++)
+         if (s.seq[k] > 90) s.seq[k] -= 32;
+      if (rev) for (int k = 0; k < slen; k++)
+                  if (s.rseq[k] > 90) s.rseq[k] -= 32;
 
       for (int j = 0; j < subs; j++) {
          // Realloc full list.

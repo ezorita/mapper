@@ -79,6 +79,11 @@ unredirect_sderr
 
 // Declare test functions.
 // test-hitmap:
+void test_hitmap_analysis(void);
+void test_map_hits(void);
+void test_process_subseq(void);
+void test_fuse_matches(void);
+void test_find_repeats(void);
 void test_combine_matches(void);
 void test_feedback_gaps(void);
 void test_fill_gaps(void);
@@ -90,6 +95,299 @@ void test_compar_readstart(void);
 void test_compar_readend(void);
 void test_compar_matchspan(void);
 void test_compar_refstart(void);
+
+void
+test_hitmap_analysis
+(void)
+{
+   int kmer_size = 10;
+   int readlen = 300;
+   hmargs_t args = {.read_ref_ratio = 2, .dist_accept = 10};
+   matchlist_t * matchlist = matchlist_new(100);
+   // Simple test: 1 seed - 1 locus.
+   // Read will have 3 genome regions:
+   // 0:100   maps to 1000:1110 reverse strand
+   // 100:250 maps to 500:675   forward strand
+   // 250:300 maps to 3050:3105 reverse strand
+   // Let's generate many seeds for each region, with only one associated locus.
+   // Recall that the genome is stored backwards!
+   vstack_t * hitmap = new_stack(20);
+   // k = 280(-), locus = 1087.
+   push(&hitmap, ((long)(1110-87) << KMERID_BITS) | (280*2+1));
+   // k = 245(-), locus = 1049.
+   push(&hitmap, ((long)(1110-49) << KMERID_BITS) | (245*2+1));
+   // k = 210(-), locus = 1010.
+   push(&hitmap, ((long)(1110-10) << KMERID_BITS) | (210*2+1));
+
+   // k = 110(+), locus = 512.
+   push(&hitmap, ((long)(675-12) << KMERID_BITS) | (110*2));
+   // k = 196(+), locus = 602.
+   push(&hitmap, ((long)(675-102) << KMERID_BITS) | (196*2));
+   // k = 197(+), locus = 603.
+   push(&hitmap, ((long)(675-103) << KMERID_BITS) | (197*2));
+   // k = 198(+), locus = 606. // This one has a higher read to genome ratio but lies within accept dist.
+   push(&hitmap, ((long)(675-106) << KMERID_BITS) | (198*2));
+   // k = 227(+), locus = 640.
+   push(&hitmap, ((long)(675-140) << KMERID_BITS) | (227*2));
+   // k = 239(+), locus = 653.
+   push(&hitmap, ((long)(675-153) << KMERID_BITS) | (239*2));
+
+   // k = 2(-), locus = 3053.
+   push(&hitmap, ((long)(3105-3) << KMERID_BITS) | (2*2+1));
+   // k = 32(-), locus = 3085.
+   push(&hitmap, ((long)(3105-35) << KMERID_BITS) | (32*2+1));
+
+   g_assert(hitmap_analysis(hitmap, matchlist, kmer_size, readlen, args) == 0);
+   
+   g_assert(matchlist->pos == 3);
+   // match[0]
+   g_assert(matchlist->match[0]->ref_e == 675-153);
+   g_assert(matchlist->match[0]->ref_s == 675-12);
+   g_assert(matchlist->match[0]->dir == 0);
+   g_assert(matchlist->match[0]->hits == 6);
+   g_assert(matchlist->match[0]->read_s == 110);
+   g_assert(matchlist->match[0]->read_e == 239);
+   //match[1]
+   g_assert(matchlist->match[1]->ref_e == 1110-87);
+   g_assert(matchlist->match[1]->ref_s == 1110-10);
+   g_assert(matchlist->match[1]->dir == 1);
+   g_assert(matchlist->match[1]->hits == 3);
+   g_assert(matchlist->match[1]->read_s == 210);
+   g_assert(matchlist->match[1]->read_e == 280);
+   //match[2]
+   g_assert(matchlist->match[2]->ref_e == 3105-35);
+   g_assert(matchlist->match[2]->ref_s == 3105-3);
+   g_assert(matchlist->match[2]->dir == 1);
+   g_assert(matchlist->match[2]->hits == 2);
+   g_assert(matchlist->match[2]->read_s == 2);
+   g_assert(matchlist->match[2]->read_e == 32);
+
+   // Free generated matches.
+   for (int i = 0; i < matchlist->pos; i++)
+      free(matchlist->match[i]);
+   for (int i = 0; i < hitmap->pos; i++)
+      if (hitmap->val[i] < 0) hitmap->val[i] *= -1;
+   
+   // Add an additional region and other loci.
+   // Read will have 4 genome regions:
+   // 0:100   maps to 1000:1110 reverse strand
+   // 100:250 maps to 500:675   forward strand
+   // 250:300 maps to 3050:3105 reverse strand
+   // 300:400 maps to 800:900   forward strand
+   // Let's generate many seeds for each region, with only one associated locus.
+   // Recall that the genome is stored backwards!
+   // k = 110(+), locus = 512.
+   push(&hitmap, ((long)(800-16) << KMERID_BITS) | (316*2));
+   // k = 196(+), locus = 602.
+   push(&hitmap, ((long)(800-29) << KMERID_BITS) | (329*2));
+   // k = 197(+), locus = 603.
+   push(&hitmap, ((long)(800-55) << KMERID_BITS) | (355*2));
+   // k = 198(+), locus = 606. // This one has a higher read to genome ratio but lies within accept dist.
+   push(&hitmap, ((long)(800-78) << KMERID_BITS) | (378*2));
+   // k = 227(+), locus = 640.
+   push(&hitmap, ((long)(800-89) << KMERID_BITS) | (389*2));
+   // Add other hits pointing to random places in the genome.
+   push(&hitmap, ((long)(55323) << KMERID_BITS) | (389*2));
+   push(&hitmap, ((long)(17) << KMERID_BITS)   | (227*2));
+   push(&hitmap, ((long)(3544) << KMERID_BITS) | (154*2+1));
+   push(&hitmap, ((long)(946) << KMERID_BITS) | (321*2));
+
+   g_assert(hitmap_analysis(hitmap, matchlist, kmer_size, readlen, args) == 0);
+   
+   g_assert(matchlist->pos == 4+4); // 4 combined plus other loci   
+   // match[0]
+   g_assert(matchlist->match[0]->ref_e == 17);
+   g_assert(matchlist->match[0]->ref_s == 17);
+   g_assert(matchlist->match[0]->dir == 0);
+   g_assert(matchlist->match[0]->hits == 1);
+   g_assert(matchlist->match[0]->read_s == 227);
+   g_assert(matchlist->match[0]->read_e == 227);
+   // match[1]
+   g_assert(matchlist->match[1]->ref_e == 675-153);
+   g_assert(matchlist->match[1]->ref_s == 675-12);
+   g_assert(matchlist->match[1]->dir == 0);
+   g_assert(matchlist->match[1]->hits == 6);
+   g_assert(matchlist->match[1]->read_s == 110);
+   g_assert(matchlist->match[1]->read_e == 239);
+   // match[2]
+   g_assert(matchlist->match[2]->ref_e == 800-89);
+   g_assert(matchlist->match[2]->ref_s == 800-16);
+   g_assert(matchlist->match[2]->dir == 0);
+   g_assert(matchlist->match[2]->hits == 5);
+   g_assert(matchlist->match[2]->read_s == 316);
+   g_assert(matchlist->match[2]->read_e == 389);
+   //match[3]
+   g_assert(matchlist->match[3]->ref_e == 946);
+   g_assert(matchlist->match[3]->ref_s == 946);
+   g_assert(matchlist->match[3]->dir == 0);
+   g_assert(matchlist->match[3]->hits == 1);
+   g_assert(matchlist->match[3]->read_s == 321);
+   g_assert(matchlist->match[3]->read_e == 321);
+   //match[4]
+   g_assert(matchlist->match[4]->ref_e == 1110-87);
+   g_assert(matchlist->match[4]->ref_s == 1110-10);
+   g_assert(matchlist->match[4]->dir == 1);
+   g_assert(matchlist->match[4]->hits == 3);
+   g_assert(matchlist->match[4]->read_s == 210);
+   g_assert(matchlist->match[4]->read_e == 280);
+   //match[5]
+   g_assert(matchlist->match[5]->ref_e == 3105-35);
+   g_assert(matchlist->match[5]->ref_s == 3105-3);
+   g_assert(matchlist->match[5]->dir == 1);
+   g_assert(matchlist->match[5]->hits == 2);
+   g_assert(matchlist->match[5]->read_s == 2);
+   g_assert(matchlist->match[5]->read_e == 32);
+   //match[6]
+   g_assert(matchlist->match[6]->ref_e == 3544);
+   g_assert(matchlist->match[6]->ref_s == 3544);
+   g_assert(matchlist->match[6]->dir == 1);
+   g_assert(matchlist->match[6]->hits == 1);
+   g_assert(matchlist->match[6]->read_s == 154);
+   g_assert(matchlist->match[6]->read_e == 154);
+   //match[7]
+   g_assert(matchlist->match[7]->ref_e == 55323);
+   g_assert(matchlist->match[7]->ref_s == 55323);
+   g_assert(matchlist->match[7]->dir == 0);
+   g_assert(matchlist->match[7]->hits == 1);
+   g_assert(matchlist->match[7]->read_s == 389);
+   g_assert(matchlist->match[7]->read_e == 389);
+
+   // Free memory.
+   for (int i = 0; i < matchlist->pos; i++)
+      free(matchlist->match[i]);
+   free(hitmap);
+   free(matchlist);
+
+}
+
+void
+test_map_hits
+(void)
+{
+   int max_loci = 10;
+   // Fake BW transform.
+   index_t index;
+   index.pos = malloc(1000*sizeof(long));
+   for (int i = 0 ; i < 1000; i++) index.pos[i] = 999 - i;
+   
+   // Generate some hits (tau = 0,1).
+   pstack_t ** stackp = malloc(2*sizeof(pstack_t *));
+   stackp[0] = new_pstack(50);
+   stackp[1] = new_pstack(50);
+   
+   // Alloc hitmap.
+   vstack_t * hitmap = new_stack(50);
+
+   pebble_t p;   
+   // hits for tau = 0:
+   p.sp = 1; p.ep = 1; p.rowid = 0; // 1 locus.
+   ppush(stackp, p);
+   p.sp = 25; p.ep = 25; p.rowid = 1; // 1 locus.
+   ppush(stackp, p);
+   p.sp = 240; p.ep = 252; p.rowid = 2; // Exceeds max_loci.
+   ppush(stackp, p);
+   p.sp = 520; p.ep = 520; p.rowid = 5; // 1 locus.
+   ppush(stackp, p);
+   p.sp = 985; p.ep = 988; p.rowid = 10; // 4 loci.
+   ppush(stackp, p);
+
+   // hits for tau = 1;
+   p.sp = 45; p.ep = 50; p.rowid = 10; // 6 loci.
+   ppush(stackp + 1, p);
+   p.sp = 345; p.ep = 375; p.rowid = 10; // Exceeds max_loci.
+   ppush(stackp + 1, p);
+   p.sp = 777; p.ep = 780; p.rowid = 10; // 4 loci.
+   ppush(stackp + 1, p);
+
+   // Map hits for a subsequence, say seqid = 3.
+   long id = 65464674687643;
+   g_assert(map_hits(stackp, &hitmap, &index, 1, id, max_loci) == 0);
+   
+   // Let's check what the hitmap looks like.
+   g_assert(hitmap->pos == 17);
+   g_assert(hitmap->val[0] == (((long)(index.pos[1] + 0) << KMERID_BITS) | (id & KMERID_MASK)));
+   g_assert(hitmap->val[1] == (((long)(index.pos[25] + 1) << KMERID_BITS) | (id & KMERID_MASK)));
+   g_assert(hitmap->val[2] == (((long)(index.pos[520] + 5) << KMERID_BITS) | (id & KMERID_MASK)));
+   for (int i = 0; i <= 3; i++)
+      g_assert(hitmap->val[3 + i] == (((long)(index.pos[985+i] + 10) << KMERID_BITS) | (id & KMERID_MASK)));
+   for (int i = 0; i <= 5; i++)
+      g_assert(hitmap->val[7 + i] == (((long)(index.pos[45+i] + 10) << KMERID_BITS) | (id & KMERID_MASK)));
+   for (int i = 0; i <= 3; i++)
+      g_assert(hitmap->val[13 + i] == (((long)(index.pos[777+i] + 10) << KMERID_BITS) | (id & KMERID_MASK)));
+
+   free(index.pos);
+   free(stackp[0]);
+   free(stackp[1]);
+   free(stackp);
+   free(hitmap);
+   
+}
+
+void
+test_process_subseq
+(void)
+{
+   int kmer_size = 5;
+
+   seq_t * seqs = malloc(2*sizeof(seq_t));
+   seqs[0].seq  = malloc(8); strcpy(seqs[0].seq,"TTaaAAA");
+   seqs[0].rseq = malloc(8); strcpy(seqs[0].rseq,"TTTttAA");
+   seqs[0].tag  = "seq0";
+   seqs[1].seq  = malloc(8); strcpy(seqs[1].seq,"GgCCccC");
+   seqs[1].rseq = malloc(8); strcpy(seqs[1].rseq,"GggGGcC");
+   seqs[1].tag  = "seq1";
+
+   sublist_t * subseqs = process_subseq(seqs, 2, kmer_size, (vstack_t **) 0);
+   mergesort_mt(subseqs->sub, subseqs->size, sizeof(sub_t), kmer_size, 1, compar_seqsort);
+
+   // Sorted list:
+   // (0+ 2) AAAAA, (1+ 2) CCCCC, (1+ 1) GCCCC, (1+ 0) GGCCC, (1- 2) GGGCC, (1- 1) GGGGC
+   // (1- 0) GGGGG, (0+ 1) TAAAA, (0+ 0) TTAAA, (0- 2) TTTAA, (0- 1) TTTTA, (0- 0) TTTTT
+   g_assert(subseqs->size == 12);
+   g_assert(subseqs->sub[0].seq == seqs[0].seq + 2);
+   g_assert(subseqs->sub[0].seqid == ((0 << KMERID_BITS) | (2*2)));
+   g_assert(subseqs->sub[0].hitmap == ((vstack_t **) 0) + 0);
+   g_assert(subseqs->sub[1].seq == seqs[1].seq + 2);
+   g_assert(subseqs->sub[1].seqid == ((1 << KMERID_BITS) | (2*2)));
+   g_assert(subseqs->sub[1].hitmap == ((vstack_t **) 0) + 1);
+   g_assert(subseqs->sub[2].seq == seqs[1].seq + 1);
+   g_assert(subseqs->sub[2].seqid == ((1 << KMERID_BITS) | (1*2)));
+   g_assert(subseqs->sub[2].hitmap == ((vstack_t **) 0) + 1);
+   g_assert(subseqs->sub[3].seq == seqs[1].seq + 0);
+   g_assert(subseqs->sub[3].seqid == ((1 << KMERID_BITS) | (0*2)));
+   g_assert(subseqs->sub[3].hitmap == ((vstack_t **) 0) + 1);
+   g_assert(subseqs->sub[4].seq == seqs[1].rseq + 2);
+   g_assert(subseqs->sub[4].seqid == ((1 << KMERID_BITS) | (2*2+1)));
+   g_assert(subseqs->sub[4].hitmap == ((vstack_t **) 0) + 1);
+   g_assert(subseqs->sub[5].seq == seqs[1].rseq + 1);
+   g_assert(subseqs->sub[5].seqid == ((1 << KMERID_BITS) | (1*2+1)));
+   g_assert(subseqs->sub[5].hitmap == ((vstack_t **) 0) + 1);
+   g_assert(subseqs->sub[6].seq == seqs[1].rseq + 0);
+   g_assert(subseqs->sub[6].seqid == ((1 << KMERID_BITS) | (0*2+1)));
+   g_assert(subseqs->sub[6].hitmap == ((vstack_t **) 0) + 1);
+   g_assert(subseqs->sub[7].seq == seqs[0].seq + 1);
+   g_assert(subseqs->sub[7].seqid == ((0 << KMERID_BITS) | (1*2)));
+   g_assert(subseqs->sub[7].hitmap == ((vstack_t **) 0) + 0);
+   g_assert(subseqs->sub[8].seq == seqs[0].seq + 0);
+   g_assert(subseqs->sub[8].seqid == ((0 << KMERID_BITS) | (0*2)));
+   g_assert(subseqs->sub[8].hitmap == ((vstack_t **) 0) + 0);
+   g_assert(subseqs->sub[9].seq == seqs[0].rseq + 2);
+   g_assert(subseqs->sub[9].seqid == ((0 << KMERID_BITS) | (2*2+1)));
+   g_assert(subseqs->sub[9].hitmap == ((vstack_t **) 0) + 0);
+   g_assert(subseqs->sub[10].seq == seqs[0].rseq + 1);
+   g_assert(subseqs->sub[10].seqid == ((0 << KMERID_BITS) | (1*2+1)));
+   g_assert(subseqs->sub[10].hitmap == ((vstack_t **) 0) + 0);
+   g_assert(subseqs->sub[11].seq == seqs[0].rseq + 0);
+   g_assert(subseqs->sub[11].seqid == ((0 << KMERID_BITS) | (0*2+1)));
+   g_assert(subseqs->sub[11].hitmap == ((vstack_t **) 0) + 0);
+
+   free(subseqs);
+   free(seqs[0].seq);
+   free(seqs[0].rseq);
+   free(seqs[1].seq);
+   free(seqs[1].rseq);
+   free(seqs);
+}
 
 void
 test_fuse_matches
@@ -907,6 +1205,9 @@ main
    BACKUP_STDOUT = dup(STDOUT_FILENO);
 
    g_test_init(&argc, &argv, NULL);
+   g_test_add_func("/hitmap/hitmap_analysis", test_hitmap_analysis);
+   g_test_add_func("/hitmap/map_hits", test_map_hits);
+   g_test_add_func("/hitmap/process_subseq", test_process_subseq);
    g_test_add_func("/hitmap/fuse_matches", test_fuse_matches);
    g_test_add_func("/hitmap/find_repeats", test_find_repeats);
    g_test_add_func("/hitmap/combine_matches", test_combine_matches);

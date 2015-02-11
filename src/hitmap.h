@@ -96,11 +96,9 @@ struct hmargs_t {
 int           hitmap           (index_t * index, chr_t * chr, seqstack_t * seqs, hmargs_t args);
 int           poucet_search    (sublist_t * subseqs, pstack_t ** pebbles, pstack_t ** hits, trie_t ** trie, index_t * index, int tau, int kmer_size, int max_trail, int max_loci_per_hit, int verbose);
 int           hitmap_analysis  (vstack_t * hitmap, matchlist_t * loci, int kmer_size, int maxdist, hmargs_t hmargs);
-int           map_hits         (pstack_t ** hits, vstack_t ** hitmap, index_t * index, int tau, int id, int max_loci);
+int           map_hits         (pstack_t ** hits, vstack_t ** hitmap, index_t * index, int tau, long id, int max_loci);
 int           align_seeds      (seq_t seq, matchlist_t * seeds, matchlist_t ** seqmatches, index_t * index, hmargs_t hmargs);
 sublist_t   * process_subseq   (seq_t * seqs, int numseqs, int k, vstack_t ** hitmaps);
-void          mergesort_match  (match_t * data, match_t * aux, int size, int b);
-int           subseqsort       (sub_t * data, int numels, int slen, int thrmax);
 void          fuse_matches     (matchlist_t ** listp, int slen, hmargs_t hmargs);
 int           find_repeats     (matchlist_t * list, double overlap);
 matchlist_t * combine_matches  (matchlist_t * list, double overlap_tolerance);
