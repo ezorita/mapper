@@ -1,6 +1,9 @@
 #include <glib.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 #include "faultymalloc.h"
 #include "bwmapper.h"
 
@@ -78,26 +81,172 @@ unredirect_sderr
 }
 
 // Declare test functions.
-// test-hitmap:
-void test_hitmap_analysis(void);
-void test_map_hits(void);
-void test_process_subseq(void);
-void test_fuse_matches(void);
-void test_find_repeats(void);
-void test_combine_matches(void);
-void test_feedback_gaps(void);
-void test_fill_gaps(void);
-void test_matchlist_new(void);
-void test_matchlist_add(void);
-void test_compar_seqsort(void);
-void test_compar_matchid(void);
-void test_compar_readstart(void);
-void test_compar_readend(void);
-void test_compar_matchspan(void);
-void test_compar_refstart(void);
+
+// test-dc3:
 
 void
-test_hitmap_analysis
+test_dc3_radixSort
+(void)
+{
+   long values[15] = {6854, 54, 3574, 87, 531, 684, 321, 35, 846, 47, 874601, 4145, 184, 546, 212};
+   //                    0   1     2   3    4    5    6   7    8   9      10    11   12   13   14
+   long indices[15] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14};
+   long sorted_indices[15];
+   // The sorted indices based on their pointed value are:
+   // 7, 9, 1, 3, 12, 14, 6, 4, 13, 5, 8, 2, 11, 0, 10
+   long expected[15] = {7, 9, 1, 3, 12, 14, 6, 4, 13, 5, 8, 2, 11, 0, 10};
+
+   radixSort(indices, sorted_indices, values, 15, 874601, 0);
+
+   for (int i = 0; i < 15; i++) g_assert(sorted_indices[i] == expected[i]);
+
+   // Now we'll assume that if numbers are equal, they are sorted based on the index.
+   long values2[15] = {5, 2, 4, 3, 0, 2, 1, 4, 3, 2, 0, 2, 3, 1, 0};
+   //                  0  1  2  3  4  5  6  7  8  9 10 11 12 13 14
+   long indices2[15] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14};
+   long expected2[15] = {4, 10, 14, 6, 13, 1, 5, 9, 11, 3, 8, 12, 2, 7, 0};
+
+   radixSort(indices2, sorted_indices, values2, 15, 5, 0);
+   
+   for (int i = 0; i < 15; i++) g_assert(sorted_indices[i] == expected2[i]);
+}
+
+void
+test_dc3_suffixArray
+(void)
+{
+   long sa[15];
+   long values[15] = {13, 84, 76, 17, 39, 26, 36, 76, 28, 2, 73, 54, 39, 46, 98};
+   //                  0   1   2   3   4   5   6   7   8  9  10  11  12  13  14
+   // The suffix array of the series is:
+   // 9, 0, 3, 5, 8, 6, 4, 12, 13, 11, 10, 2, 7, 1, 14
+   long expected_sa[17] = {9, 0, 3, 5, 8, 6, 4, 12, 13, 11, 10, 2, 7, 1, 14, 0, 0};
+
+   suffixArray(values, sa, 15, 100);
+
+   for (int i = 0; i < 15; i++) g_assert(sa[i] == expected_sa[i]);
+
+   // One a bit more complicated the algorithm.
+   // This series will trigger a second recursive call since not all the triplets
+   // can be solved in the first one.
+   long values2[17] = {1, 2, 1, 0, 2, 1, 2, 1, 2, 0, 1, 2, 1, 2, 1, 0, 0};
+   //                  0  1  2  3  4  5  6  7  8  9 10 11 12 13 14
+   // The suffix array is:
+   // 9, 3, 14, 2, 7, 12, 0, 5, 10, 8, 13, 1, 6, 11, 4
+   long expected_sa2[15] = {9, 3, 14, 2, 7, 12, 0, 5, 10, 8, 13, 1, 6, 11, 4};
+   
+   suffixArray(values2, sa, 15, 3);
+   
+   for (int i = 0; i < 15; i++) g_assert(sa[i] == expected_sa2[i]);
+}
+
+void
+test_dc3_dc3
+(void)
+{
+   char * seq = "ACCGACTGACGAAAGCAA";
+   // Sequence:
+   // A  C  C  G  A  C  T  G  A  C  G  A  A  A  G  C  A  A
+   // 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17
+   // Suffix array:
+   // 17, 16, 11, 12, 0, 8, 4, 13, 15, 1, 9, 2, 5, 10, 7, 3, 14, 6
+   long expected[18] = {17, 16, 11, 12, 0, 8, 4, 13, 15, 1, 9, 2, 5, 10, 7, 3, 14, 6};
+   
+   long * sa = dc3(seq);
+
+   for (int i = 0; i < 18; i++) g_assert(sa[i] == expected[i]);
+
+   free(sa);
+}
+
+
+// test-mapper:
+
+void
+test_mapper_compact_genome
+(void)
+{
+   long gsize = 0;
+   char * ref = "TACGACCTAGCCTCGCGCGAATAGCTAGCATCGACCGCGACTCGATCGATAGCTAGCACACGACTGACTACGACGCGACTCACTGCATGCCATCAACTCAGCTTGCACGCATCGCGCACGTCCCGTCATGCAGTCATGCTGCTGATCGCTTCTCATCTGCGACATCAGTCTCGCGTACGCTCGatAGCGACACTGCatcgatcacgctacgctacgatcgacTCcCGACTGCACTCGACTACGCTACACAACTACGACTCCGCACTACGCCGcatcgaattacgatcactacacgactactacgatcgacactcagcTCGACATCATCCGCTACCGACTCGACGGCTACCCGGACTCGCGCTAGCCATCGCGTCGTACTACGACGTCTGCTAGCATCGGA";
+   char * indexref = "1\tchr1\n101\tchr2\n351\tchr_contig\n";
+   int indexsize = strlen(indexref);
+   // Compute genome size and reverse genome.
+   long sizeref = strlen(ref);
+   char * reverse = malloc(sizeref + 2);
+   for (int i = 0; i < sizeref; i++)
+      reverse[sizeref - i - 1] = ref[i];
+
+   reverse[sizeref] = '@';
+   reverse[sizeref+1] = 0;
+
+   char * genome = compact_genome("testgenome.fasta", &gsize);
+   
+   g_assert(gsize == sizeref + 1);
+   g_assert(strcmp(genome,reverse) == 0);
+   
+   int fd = open("testgenome.fasta.index", O_RDONLY);
+   
+   g_assert(fd >= 0);
+   
+   char * indexcontent = malloc(indexsize+1);
+   int bytes = read(fd, indexcontent, indexsize);
+   g_assert(bytes == indexsize);
+   indexcontent[indexsize] = 0;
+   
+   g_assert(strcmp(indexcontent, indexref) == 0);
+   
+   close(fd);
+
+   free(genome);
+   free(indexcontent);
+   free(reverse);
+}
+
+void
+test_mapper_read_CHRindex
+(void)
+{
+   chr_t * chrindex = read_CHRindex("testgenome.fasta.index");
+
+   g_assert(chrindex->nchr == 3);
+   g_assert(chrindex->start[0] == 1);
+   g_assert(chrindex->start[1] == 101);
+   g_assert(chrindex->start[2] == 351);
+   g_assert(strcmp(chrindex->name[0], "chr1") == 0);
+   g_assert(strcmp(chrindex->name[1], "chr2") == 0);
+   g_assert(strcmp(chrindex->name[2], "chr_contig") == 0);
+
+   free(chrindex);
+}
+
+// test-hitmap:
+void test_hitmap_hitmap_analysis(void);
+void test_hitmap_map_hits(void);
+void test_hitmap_process_subseq(void);
+void test_hitmap_fuse_matches(void);
+void test_hitmap_find_repeats(void);
+void test_hitmap_combine_matches(void);
+void test_hitmap_feedback_gaps(void);
+void test_hitmap_fill_gaps(void);
+void test_hitmap_matchlist_new(void);
+void test_hitmap_matchlist_add(void);
+void test_hitmap_compar_seqsort(void);
+void test_hitmap_compar_matchid(void);
+void test_hitmap_compar_readstart(void);
+void test_hitmap_compar_readend(void);
+void test_hitmap_compar_matchspan(void);
+void test_hitmap_compar_refstart(void);
+
+
+void
+test_poucet_search
+(void)
+{
+   
+}
+
+void
+test_hitmap_hitmap_analysis
 (void)
 {
    int kmer_size = 10;
@@ -261,7 +410,7 @@ test_hitmap_analysis
 }
 
 void
-test_map_hits
+test_hitmap_map_hits
 (void)
 {
    int max_loci = 10;
@@ -324,7 +473,7 @@ test_map_hits
 }
 
 void
-test_process_subseq
+test_hitmap_process_subseq
 (void)
 {
    int kmer_size = 5;
@@ -390,7 +539,7 @@ test_process_subseq
 }
 
 void
-test_fuse_matches
+test_hitmap_fuse_matches
 (void)
 {
    // Read of 500 nt.
@@ -475,7 +624,7 @@ test_fuse_matches
 }
 
 void
-test_find_repeats
+test_hitmap_find_repeats
 (void)
 {
    match_t * matches = malloc(5*sizeof(match_t));
@@ -543,7 +692,7 @@ test_find_repeats
 }
 
 void
-test_combine_matches
+test_hitmap_combine_matches
 (void)
 {
    match_t * matches  = malloc(5*sizeof(match_t));
@@ -615,7 +764,7 @@ test_combine_matches
 }
 
 void
-test_feedback_gaps
+test_hitmap_feedback_gaps
 (void)
 // This function feeds the non-matched gaps back to the sub_t stack. The non-matched
 // nucleotides will be searched again with a higher tau.
@@ -744,7 +893,7 @@ test_feedback_gaps
 }
 
 void
-test_fill_gaps
+test_hitmap_fill_gaps
 (void)
 // Fills the gaps of the estimated read with greater overlap tolerance.
 // For instance...
@@ -899,7 +1048,7 @@ test_fill_gaps
 }
 
 void
-test_matchlist_new
+test_hitmap_matchlist_new
 (void)
 {
    matchlist_t * ml;
@@ -920,7 +1069,7 @@ test_matchlist_new
 }
 
 void
-test_matchlist_add
+test_hitmap_matchlist_add
 (void)
 {
    matchlist_t * ml = matchlist_new(2);
@@ -958,7 +1107,7 @@ test_matchlist_add
 //int           compar_refstart  (const void * a, const void * b, const int param);
 
 void
-test_compar_seqsort
+test_hitmap_compar_seqsort
 (void)
 {
    // Alphabetical comparison of the first K nucleotides of two subsequences.
@@ -998,7 +1147,7 @@ test_compar_seqsort
 }
 
 void
-test_compar_matchid
+test_hitmap_compar_matchid
 (void)
 {
    // This funcrion compares a pair of matches based on their identity:
@@ -1026,7 +1175,7 @@ test_compar_matchid
 
 
 void
-test_compar_readstart
+test_hitmap_compar_readstart
 (void)
 {
    // This funcrion compares a pair of matches based on their read start position:
@@ -1066,7 +1215,7 @@ test_compar_readstart
 }
 
 void
-test_compar_readend
+test_hitmap_compar_readend
 (void)
 {
    // This funcrion compares a pair of matches based on their read end position:
@@ -1108,7 +1257,7 @@ test_compar_readend
 }
 
 void
-test_compar_matchspan
+test_hitmap_compar_matchspan
 (void)
 {
    // This function compares a pair of matches based on their read span.
@@ -1151,7 +1300,7 @@ test_compar_matchspan
 }
 
 void
-test_compar_refstart
+test_hitmap_compar_refstart
 (void)
 {
    // This funcrion compares a pair of matches based on their reference (genome) start position:
@@ -1205,21 +1354,26 @@ main
    BACKUP_STDOUT = dup(STDOUT_FILENO);
 
    g_test_init(&argc, &argv, NULL);
-   g_test_add_func("/hitmap/hitmap_analysis", test_hitmap_analysis);
-   g_test_add_func("/hitmap/map_hits", test_map_hits);
-   g_test_add_func("/hitmap/process_subseq", test_process_subseq);
-   g_test_add_func("/hitmap/fuse_matches", test_fuse_matches);
-   g_test_add_func("/hitmap/find_repeats", test_find_repeats);
-   g_test_add_func("/hitmap/combine_matches", test_combine_matches);
-   g_test_add_func("/hitmap/fill_gaps", test_fill_gaps);
-   g_test_add_func("/hitmap/test_feedback_gaps", test_feedback_gaps);
-   g_test_add_func("/hitmap/matchlist_new", test_matchlist_new);
-   g_test_add_func("/hitmap/matchlist_add", test_matchlist_add);
-   g_test_add_func("/hitmap/test_compar_seqsort", test_compar_seqsort);
-   g_test_add_func("/hitmap/test_compar_matchid", test_compar_matchid);
-   g_test_add_func("/hitmap/test_compar_readstart", test_compar_readstart);
-   g_test_add_func("/hitmap/test_compar_readend", test_compar_readend);
-   g_test_add_func("/hitmap/test_compar_matchspan", test_compar_matchspan);
-   g_test_add_func("/hitmap/test_compar_refstart", test_compar_refstart);
+   g_test_add_func("/mapper/compact_genome", test_mapper_compact_genome);
+   g_test_add_func("/mapper/read_CHRindex", test_mapper_read_CHRindex);
+   g_test_add_func("/dc3/radixSort", test_dc3_radixSort);   
+   g_test_add_func("/dc3/suffixArray", test_dc3_suffixArray);
+   g_test_add_func("/dc3/dc3", test_dc3_dc3);
+   g_test_add_func("/hitmap/hitmap_analysis", test_hitmap_hitmap_analysis);
+   g_test_add_func("/hitmap/map_hits", test_hitmap_map_hits);
+   g_test_add_func("/hitmap/process_subseq", test_hitmap_process_subseq);
+   g_test_add_func("/hitmap/fuse_matches", test_hitmap_fuse_matches);
+   g_test_add_func("/hitmap/find_repeats", test_hitmap_find_repeats);
+   g_test_add_func("/hitmap/combine_matches", test_hitmap_combine_matches);
+   g_test_add_func("/hitmap/fill_gaps", test_hitmap_fill_gaps);
+   g_test_add_func("/hitmap/test_feedback_gaps", test_hitmap_feedback_gaps);
+   g_test_add_func("/hitmap/matchlist_new", test_hitmap_matchlist_new);
+   g_test_add_func("/hitmap/matchlist_add", test_hitmap_matchlist_add);
+   g_test_add_func("/hitmap/test_compar_seqsort", test_hitmap_compar_seqsort);
+   g_test_add_func("/hitmap/test_compar_matchid", test_hitmap_compar_matchid);
+   g_test_add_func("/hitmap/test_compar_readstart", test_hitmap_compar_readstart);
+   g_test_add_func("/hitmap/test_compar_readend", test_hitmap_compar_readend);
+   g_test_add_func("/hitmap/test_compar_matchspan", test_hitmap_compar_matchspan);
+   g_test_add_func("/hitmap/test_compar_refstart", test_hitmap_compar_refstart);
    return g_test_run();
 }

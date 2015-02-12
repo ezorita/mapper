@@ -5,8 +5,8 @@ vpath %.h ../src
 P= testset
 
 #OBJECTS= bwmapper.o
-SOURCES= hitmap.c algs.c poucet.c align.c dc3.c
-COVERAGE= bwmapper.gcno
+SOURCES= bwmapper.c hitmap.c algs.c poucet.c align.c dc3.c
+COVERAGE= bwmapper.gcno hitmap.gcno algs.gcno poucet.gcno align.gcno dc3.gcno
 
 CFLAGS= -I../src `pkg-config --cflags glib-2.0` -g -Wall -std=gnu99 \
 	-fprofile-arcs -ftest-coverage -O0
