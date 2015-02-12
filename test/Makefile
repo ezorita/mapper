@@ -15,7 +15,7 @@ LDLIBS= -L`pwd` -Wl,-rpath=`pwd` `pkg-config --libs glib-2.0` \
 $(P): $(SOURCES) libfaultymalloc.so
 
 clean:
-	rm -f testset *.o *.so *.gcda *.gcno *.gcov gmon.out analysis.txt
+	rm -f testset *.o *.so *.gcda *.gcno *.gcov gmon.out analysis.txt *.fmi *.index
 
 libfaultymalloc.so: faultymalloc.c
 	$(CC) -fPIC -shared $(CFLAGS) -o libfaultymalloc.so faultymalloc.c

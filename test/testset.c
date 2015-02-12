@@ -203,6 +203,86 @@ test_mapper_compact_genome
 }
 
 void
+test_mapper_bwt_index
+(void)
+{
+   char * genome = "AACTgactAGACCGTCAGTC@";
+   long gsize = strlen(genome);
+   // BWT index.
+   // Suffix array:
+   // 20, 0, 10, 5, 1, 8, 16, 19, 15, 11, 12. 6, 2, 9, 4, 17, 13, 7, 18, 14, 3
+   long pos_ref[21] = {20, 0, 10, 5, 1, 8, 16, 19, 15, 11, 12, 6, 2, 9, 4, 17, 13, 7, 18, 14, 3};
+   long occ_ref[6][6] = {{1,0,0,0,0,0},{4,9,11,12,13,15},{0,6,10,16,17,20},{2,3,18,19,0,0},{0,0,0,0,0,0},{5,7,8,14,0,0}};
+   
+   long * pos;
+   vstack_t ** occ = malloc(NUM_BASES*sizeof(vstack_t *));
+
+   bwt_index(genome, gsize, &pos, occ);
+   
+   for (int i = 0; i < 21; i++) g_assert(pos[i] == pos_ref[i]);
+   for (int i = 0; i < NUM_BASES; i++) {
+      for (int j = 0; j < occ[i]->pos; j++) g_assert(occ[i]->val[j] == occ_ref[i][j]);
+   }
+
+   for (int i = 0; i < NUM_BASES; i++) free(occ[i]);
+   free(occ);
+   free(pos);
+}
+
+
+void
+test_mapper_write_index
+(void)
+{
+   char genome_ref[22] = "AACTgactaGACCGtcaGTC@";
+   long C_ref[7] = {0, 1, 7, 13, 17, 17, 21};
+   long data_ref[48] = {20,0,10,5,1,8,16,19,15,11,12,6,2,9,4,17,13,7,18,14,3,1,1,6,4,9,11,12,13,15,6,0,6,10,16,17,20,4,2,3,18,19,0,4,5,7,8,14};
+
+   g_assert(write_index("testgenome2.fasta") == 6*8+8+21+21*8+(8+8*1)+(8+8*6)+(8+8*6)+(8+8*4)+(8+8*0)+(8+8*4));
+   
+   int fd = open("testgenome2.fasta.fmi", O_RDONLY);
+
+   long * C = malloc(7*sizeof(long));   
+   char * genome = malloc(22);
+   long * data = malloc(48*sizeof(long));
+
+   read(fd, C, 7*sizeof(long));
+   read(fd, genome, 21);
+   read(fd, data, 48*sizeof(long));
+
+   for (int i = 0; i < 7; i++) g_assert(C[i] == C_ref[i]);
+   for (int i = 0; i < 21; i++) g_assert(genome[i] == genome_ref[i]);
+   for (int i = 0; i < 48; i++) g_assert(data[i] == data_ref[i]);
+
+   close(fd);
+   
+   free(genome);
+   free(C);
+   free(data);
+}                
+
+
+void
+test_mapper_compute_c
+(void)
+{
+   char * genome = "ACTTGCGACTGAGCCANTCGATNCATCGCTACTCGATCGCNNATCGNATCAC@";
+   // 1  @
+   // 11 A
+   // 16 C
+   // 9  G
+   // 5  N
+   // 11 T
+   // C = 0, 1, 12, 28, 37, 42, 53
+   int gsize = strlen(genome);
+   long cref[6] = {0, 1, 12, 28, 37, 42};
+   long * c = compute_c(genome, gsize);
+   for (int i = 0; i < NUM_BASES; i++) g_assert(c[i] == cref[i]);
+
+   free(c);
+}
+
+void
 test_mapper_read_CHRindex
 (void)
 {
@@ -217,6 +297,101 @@ test_mapper_read_CHRindex
    g_assert(strcmp(chrindex->name[2], "chr_contig") == 0);
 
    free(chrindex);
+}
+
+void
+test_mapper_format_FMindex
+(void)
+{
+   int fd = open("testgenome2.fasta.fmi", O_RDONLY);
+   long idxsize = lseek(fd, 0, SEEK_END);
+   lseek(fd, 0, SEEK_SET);
+   long * indexp = mmap(NULL, idxsize, PROT_READ, MAP_PRIVATE, fd, 0);
+   index_t index;
+
+   g_assert(format_FMindex(indexp, &index) == 0);
+
+   char genome_ref[22] = "AACTgactaGACCGtcaGTC@";
+   long C_ref[7] = {0, 1, 7, 13, 17, 17, 21};
+   long data_ref[48] = {20,0,10,5,1,8,16,19,15,11,12,6,2,9,4,17,13,7,18,14,3,1,1,6,4,9,11,12,13,15,6,0,6,10,16,17,20,4,2,3,18,19,0,4,5,7,8,14};
+
+
+   g_assert(index.gsize == 21);
+   for (int i = 0; i < 21; i++)
+      g_assert(index.genome[i] == genome_ref[i]);
+   for (int i = 0; i < 7; i++) g_assert(index.c[i] == C_ref[i]);
+   int i = 0;
+   for (; i < 21; i++) g_assert(index.pos[i] == data_ref[i]);
+   for (int k = 0; k < NUM_BASES; k++) {
+      g_assert(index.occ[k].max == data_ref[i++]);
+      for (int j = 0; j < index.occ[k].max; j++) g_assert(index.occ[k].val[j] == data_ref[i++]);
+   }
+}
+
+void
+test_mapper_read_file
+(void)
+{
+   char *  sequence[4] = {"ACTGGTCAGTCGATCTGAGCT","ACTGAGTCGTCAGTCCGACGC","CATGTCTGACGACGTCGTATG","CATGCGACGTACGTACGTCGT"};
+   char *   reverse[4] = {"AGCTCAGATCGACTGACCAGT","GCGTCGGACTGACGACTCAGT","CATACGACGTCGTCAGACATG","ACGACGTACGTACGTCGCATG"};
+   char * labels[4] = {"sequence1", "sequence2", "sequence3", "sequence4"};
+
+   // Text
+   FILE * fin = fopen("inputfile.txt", "r");
+   seqstack_t * seqs = read_file(fin, 1);
+
+   g_assert(seqs->pos == 4);
+   for (int i = 0; i < 4; i++) {
+      g_assert(strcmp(seqs->seq[i].seq,sequence[i]) == 0);
+      g_assert(strcmp(seqs->seq[i].rseq,reverse[i]) == 0);
+      g_assert(strcmp(seqs->seq[i].tag,sequence[i]) == 0);
+   }
+
+   for (int i = 0; i < seqs->pos; i++) {
+      free(seqs->seq[i].seq);
+      free(seqs->seq[i].rseq);
+      free(seqs->seq[i].tag);
+   }
+   free(seqs);
+   fclose(fin);
+
+   // FASTA
+   fin = fopen("inputfile.fasta", "r");
+   seqs = read_file(fin, 1);
+
+   g_assert(seqs->pos == 4);
+   for (int i = 0; i < 4; i++) {
+      g_assert(strcmp(seqs->seq[i].seq,sequence[i]) == 0);
+      g_assert(strcmp(seqs->seq[i].rseq,reverse[i]) == 0);
+      g_assert(strcmp(seqs->seq[i].tag+1,labels[i]) == 0);
+   }
+
+   for (int i = 0; i < seqs->pos; i++) {
+      free(seqs->seq[i].seq);
+      free(seqs->seq[i].rseq);
+      free(seqs->seq[i].tag);
+   }
+   free(seqs);
+   fclose(fin);
+
+   // FASTQ
+   fin = fopen("inputfile.fastq", "r");
+   seqs = read_file(fin, 1);
+
+   g_assert(seqs->pos == 4);
+   for (int i = 0; i < 4; i++) {
+      g_assert(strcmp(seqs->seq[i].seq,sequence[i]) == 0);
+      g_assert(strcmp(seqs->seq[i].rseq,reverse[i]) == 0);
+      g_assert(strcmp(seqs->seq[i].tag+1,labels[i]) == 0);
+   }
+
+   for (int i = 0; i < seqs->pos; i++) {
+      free(seqs->seq[i].seq);
+      free(seqs->seq[i].rseq);
+      free(seqs->seq[i].tag);
+   }
+   free(seqs);
+   fclose(fin);
 }
 
 // test-hitmap:
@@ -628,7 +803,7 @@ test_hitmap_find_repeats
 (void)
 {
    match_t * matches = malloc(5*sizeof(match_t));
-   for (int i = 0; i < 10; i++) matches[i].repeats = matchlist_new(5);
+   for (int i = 0; i < 5; i++) matches[i].repeats = matchlist_new(5);
    matchlist_t * list = matchlist_new(5);
    
    double overlap = 0.9;
@@ -687,6 +862,7 @@ test_hitmap_find_repeats
    g_assert(matches[3].repeats->match[1] == matches + 4); 
    g_assert(matches[4].repeats->match[0] == matches + 3); 
 
+   for (int i = 0; i < 5; i++) free(matches[i].repeats);
    free(matches);
    free(list);
 }
@@ -1355,7 +1531,12 @@ main
 
    g_test_init(&argc, &argv, NULL);
    g_test_add_func("/mapper/compact_genome", test_mapper_compact_genome);
+   g_test_add_func("/mapper/bwt_index", test_mapper_bwt_index);
+   g_test_add_func("/mapper/write_index", test_mapper_write_index);
+   g_test_add_func("/mapper/compute_c", test_mapper_compute_c);
    g_test_add_func("/mapper/read_CHRindex", test_mapper_read_CHRindex);
+   g_test_add_func("/mapper/format_FMindex", test_mapper_format_FMindex);
+   g_test_add_func("/mapper/read_file", test_mapper_read_file);
    g_test_add_func("/dc3/radixSort", test_dc3_radixSort);   
    g_test_add_func("/dc3/suffixArray", test_dc3_suffixArray);
    g_test_add_func("/dc3/dc3", test_dc3_dc3);

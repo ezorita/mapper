@@ -155,10 +155,8 @@ write_index
    vstack_t ** occ = malloc(NUM_BASES * sizeof(vstack_t *));
 
    // Parse genome and convert to integers. (0..NBASES-1)
-   fprintf(stdout, "compacting genome...\n");
    char * genome = compact_genome(filename, &gsize);
    C = compute_c(genome, gsize);
-   fprintf(stdout, "done\n");
 
    // Output files.
    char * fmfile = malloc(strlen(filename)+5);
@@ -175,25 +173,28 @@ write_index
    bwt_index(genome, gsize, &pos, occ);
 
    // Write index.
-   size_t s = 0;
+   size_t s = 0, stot = 0;
    while (s < NUM_BASES*sizeof(long)) s += write(fd, C + s/sizeof(long), NUM_BASES*sizeof(long) - s);
+   stot += s;
    s = 0;
    while (s < sizeof(long)) s += write(fd, &gsize, sizeof(long));
+   stot += s;
    s = 0;
    while (s < gsize*sizeof(char)) s += write(fd, genome + s/sizeof(char), gsize*sizeof(char) - s);
+   stot += s;
    s = 0;
    while (s < gsize*sizeof(long)) s += write(fd, pos + s/sizeof(long), gsize*sizeof(long) - s);
+   stot += s;
    for (int i = 0; i < NUM_BASES; i++) {
-      fprintf(stdout, "occ[%d] size = %ld (%ld bytes).\n", i, occ[i]->pos, occ[i]->pos*sizeof(long));
-      s = 0;
+       s = 0;
       while (s < sizeof(long)) s += write(fd, &(occ[i]->pos), sizeof(long));
-      fprintf(stdout, "occ[%d]->pos: written %ld bytes.\n", i, s);
-      s = 0;
+      stot += s;
+       s = 0;
       while (s < occ[i]->pos * sizeof(long)) s += write(fd,((long*) &(occ[i]->val[0])) + s/sizeof(long), occ[i]->pos*sizeof(long) - s);
-      fprintf(stdout, "occ[%d]->val: written %ld bytes.\n", i, s);
-   }
+      stot += s;
+    }
 
-   return s;
+   return stot;
 }
 
 
@@ -283,8 +284,7 @@ bwt_index
  vstack_t ** occ
 )
 {
-   // Sort prefixes (will reuse stacks[i] to compute C)
-   fprintf(stdout,"suffix sort...\n");
+   // Sort prefixes
    long * values = malloc((gsize+3)*sizeof(long));
    for (long i = 0; i < gsize; i++) values[i] = (long)translate[(int)genome[i]];
    values[gsize] = values[gsize+1] = values[gsize+2] = 0;
@@ -292,7 +292,6 @@ bwt_index
    suffixArray(values, sa, gsize, NUM_BASES-1);
    free(values);
    //   long * sa = dc3(genome);
-   fprintf(stdout,"done.\n");
 
    // Fill compacted occ.
    vstack_t * stacks[NUM_BASES];
@@ -302,8 +301,7 @@ bwt_index
    
    // Save stacks to output.
    *pos = sa;
-   
-   fprintf(stdout, "saving occ structures...\n");
+
    for (int i = 0; i < NUM_BASES; i++) {
       stacks[i] = realloc(stacks[i], sizeof(vstack_t) + stacks[i]->pos*sizeof(long));
       if (stacks[i] == NULL) {
@@ -313,7 +311,6 @@ bwt_index
       stacks[i]->size = stacks[i]->pos;
       occ[i] = stacks[i];
    }
-   fprintf(stdout, "done\n");
 }
 
 
