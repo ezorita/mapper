@@ -70,62 +70,6 @@ seq_push
    return 0;
 }
 
-int
-query_index
-(
- char  * query,
- long    gsize,
- long  * ptr,
- long  * c,
- list_t * occs
-)
-{
-   long sp, ep;
-   int slen = strlen(query);
-   int qval[slen];
-   translate_query(query, qval, slen);
-   int i = 0;
-   // Initialize range.
-   sp = c[qval[0]];
-   ep = c[qval[0] + 1] - 1;
-
-   // Iterate over FM-index.
-   for (i = 1; i < strlen(query) && sp <= ep; i++) {
-      int nt = qval[i];
-      long occsp = bisect_search(0, occs[nt].max-1, occs[nt].val, sp-1);
-      long occep = bisect_search(0, occs[nt].max-1, occs[nt].val, ep);
-      sp = c[nt] + (occs[nt].max ? occsp : 0);
-      ep = c[nt] + (occs[nt].max ? occep : 0 ) - 1;
-   }
-   if (ep < sp) {
-      return 0;
-   }
-
-   // Return hits.
-   ptr[0] = sp;
-   ptr[1] = ep;
-   
-   return ep-sp+1;
-}
-
-
-void
-translate_query
-(
- char * query,
- int  * qval,
- int    qlen
-)
-{
-   char translate[256] = {[0 ... 255] = 4, ['@'] = 0,
-                           ['a'] = 1, ['c'] = 2, ['g'] = 3, ['n'] = 4, ['t'] = 5,
-                           ['A'] = 1, ['C'] = 2, ['G'] = 3, ['N'] = 4, ['T'] = 5 };
-
-   // Converts to int and reverses query.
-   for (int i = 0; i < qlen; i++) qval[i] = translate[(int)query[i]];
-}
-
-
 seqstack_t *
 new_seqstack
 (
@@ -156,7 +100,7 @@ new_stack
  long size
 )
 {
-   if (size < 2) size = 2;
+   if (size < 1) size = 1;
    vstack_t * stack = malloc(sizeof(vstack_t) + size * sizeof(long));
    if (stack == NULL) return NULL;
    stack->pos  = 0;
@@ -593,67 +537,9 @@ _mergesort
 }
 
 void
-mergesort_long
-(
- long * data,
- long * aux,
- int    size,
- int    b
- )
-// SYNOPSIS:
-//   Recursive part of 'seqsort'.
-//
-// ARGUMENTS:
-//   args: a sortargs_t struct.
-//
-// RETURN:
-//   
-//
-// SIDE EFFECTS:
-//   Sorts the array of 'seq_t' specified in 'args'.
-{
-   if (size < 2) return;
-
-   // Next level params.
-   int newsize = size/2;
-   int newsize2 = newsize + size%2;
-   long * data2 = data + newsize;
-   long * aux2 = aux + newsize;
-   mergesort_long(data, aux, newsize, (b+1)%2);
-   mergesort_long(data2, aux2, newsize2, (b+1)%2);
-
-
-   // Separate data and buffer (b specifies which is buffer).
-   long * l = (b ? data : aux);
-   long * r = (b ? data2 : aux2);
-   long * buf = (b ? aux : data);
-
-   int i = 0;
-   int j = 0;
-   int idx = 0;
-
-   // Merge sets
-   while (idx < size) {
-      // Right buffer is exhausted. Copy left buffer...
-      if (j == newsize2) {
-         memcpy(buf+idx, l+i, (newsize-i) * sizeof(long));
-         break;
-      }
-      // ... or vice versa.
-      if (i == newsize) {
-         memcpy(buf+idx, r+j, (newsize2-j) * sizeof(long));
-         break;
-      }
-      // Do the comparison.
-      if (l[i] < r[j]) buf[idx++] = l[i++];
-      else             buf[idx++] = r[j++];
-   }
-}
-
-void
 radix_sort
 (
- long * a,      // Indices to sort. (may be modified)
+ long * a,      // Values to sort.
  long * b,      // Aux buffer.
  long   n,      // Length of a.
  long   maxval  // Maximum value in a.

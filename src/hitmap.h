@@ -111,6 +111,7 @@ void          free_match       (match_t * match);
 
 // mergesort_mt compar functions.
 int           compar_seqsort   (const void * a, const void * b, const int val);
+int           compar_long      (const void * a, const void * b, const int param);
 int           compar_matchid   (const void * a, const void * b, const int param);
 int           compar_readstart (const void * a, const void * b, const int param);
 int           compar_readend   (const void * a, const void * b, const int param);

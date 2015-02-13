@@ -125,13 +125,12 @@ struct sortargs_t {
 // Sorting algorithms.
 int           mergesort_mt     (void * data, int numels, size_t elmsize, int param, int thrmax, int (*compar)(const void*, const void*, const int));
 void        * _mergesort       (void * args);
-void          mergesort_long   (long * data, long * aux, int size, int b);
 void          radix_sort       (long * a, long * b, long n, long maxval);
 
 // General algorithms.
 long          bisect_search    (long start, long end, long* set, long value);
-int           query_index      (char* query, long gsize, long* ptr, long* c, list_t* occs);
-void          translate_query  (char* query, int* qval, int qlen);
+//int           query_index      (char* query, long gsize, long* ptr, long* c, list_t* occs);
+//void          translate_query  (char* query, int* qval, int qlen);
 
 // Stack functions.
 vstack_t    * new_stack        (long size);

@@ -82,6 +82,126 @@ unredirect_sderr
 
 // Declare test functions.
 
+// test-algs:
+
+int sort_str (const void * a, const void * b, const int p) {return strcmp(*(char **)a, *(char **)b) > 0 ? 1 : -1;}
+
+void
+test_algs_mergesort_mt
+(void)
+{
+   // Sort long integers.
+   long values[20] = {213,545,13,51,187,6874,684,54,898,7849,85,489,312,46,48,899,32,5,87,3};
+   long sorted[20] = {3,5,13,32,46,48,51,54,85,87,187,213,312,489,545,684,898,899,6874,7849};
+   mergesort_mt(values, 20, sizeof(long), 0, 1, compar_long);
+   for (int i = 0 ; i < 20 ; i++) g_assert(values[i] == sorted[i]);
+   // Now with 4 threads.
+   long values2[20] = {213,545,13,51,187,6874,684,54,898,7849,85,489,312,46,48,899,32,5,87,3};
+   mergesort_mt(values2, 20, sizeof(long), 0, 4, compar_long);
+   for (int i = 0 ; i < 20 ; i++) g_assert(values2[i] == sorted[i]);
+
+   // Sort strings.
+   char * strings[10] = {"AACGT","GATCGA","TGCATG","AAACTG","GTAAC","CATG","ATGCAC","TACGA","ACCATG","ACGGA"};
+   char * sorted2[10] = {"AAACTG","AACGT","ACCATG","ACGGA","ATGCAC","CATG","GATCGA","GTAAC","TACGA","TGCATG"};
+   mergesort_mt(strings, 10, sizeof(char *), 0, 1, sort_str);
+   for (int i = 0 ; i < 10 ; i++) g_assert(strcmp(strings[i], sorted2[i]) == 0);
+   // Now with 4 threads.
+   char * strings2[10] = {"AACGT","GATCGA","TGCATG","AAACTG","GTAAC","CATG","ATGCAC","TACGA","ACCATG","ACGGA"};
+   mergesort_mt(strings2, 10, sizeof(char *), 0, 4, sort_str);
+   for (int i = 0 ; i < 10 ; i++) g_assert(strcmp(strings2[i], sorted2[i]) == 0);
+   
+}
+
+void
+test_algs_radix_sort
+(void)
+{
+   long buffer[20];
+   long values[20] = {654,45,9871,6879,54,6878879,34858,4,671,357,523,6199,714,2178,72,874,1891417,8,1,987};
+   long sorted[20] = {1,4,8,45,54,72,357,523,654,671,714,874,987,2178,6199,6879,9871,34858,1891417,6878879};
+   radix_sort(values, buffer, 20, 6878879);
+   for (int i = 0; i < 20; i++) g_assert(sorted[i] == values[i]);
+
+   long values2[20] = {213,545,13,51,187,6874,684,54,898,7849,85,489,312,46,48,899,32,5,87,3};
+   long sorted2[20] = {3,5,13,32,46,48,51,54,85,87,187,213,312,489,545,684,898,899,6874,7849};
+   radix_sort(values2, buffer, 20, 7849);
+   for (int i = 0; i < 20; i++) g_assert(sorted2[i] == values2[i]);
+}
+
+void
+test_algs_bisect_search
+(void)
+{
+   long sorted[20] = {1,4,8,45,54,72,357,523,654,671,714,874,987,2178,6199,6879,9871,34858,1891417,6878879};
+   //                 1 2 3  4  5  6   7   8   9  10  11  12  13   14   15   16   17    18      19      20
+   g_assert(bisect_search(0, 19, sorted, 456) == 7);
+   g_assert(bisect_search(0, 19, sorted, 6874) == 15);
+   g_assert(bisect_search(0, 19, sorted, 0) == 0);
+   g_assert(bisect_search(0, 19, sorted, 1) == 1);
+   g_assert(bisect_search(0, 19, sorted, 2) == 1);
+   g_assert(bisect_search(0, 19, sorted, 4) == 2);
+   g_assert(bisect_search(0, 19, sorted, 6815158916) == 20);
+   g_assert(bisect_search(0, 19, sorted, 987) == 13);
+}
+
+void
+test_algs_new_stack
+(void)
+{
+   vstack_t * stack = new_stack(1000);
+   g_assert(stack != NULL);
+   g_assert(stack->pos == 0);
+   g_assert(stack->size == 1000);
+   free(stack);
+   
+   stack = new_stack(0);
+   g_assert(stack != NULL);
+   g_assert(stack->pos == 0);
+   g_assert(stack->size == 1);
+   free(stack);
+
+   stack = new_stack(-40);
+   g_assert(stack != NULL);
+   g_assert(stack->pos == 0);
+   g_assert(stack->size == 1);
+   free(stack);
+}
+
+
+void
+test_algs_push
+(void)
+{
+   vstack_t * stack = new_stack(10);
+   g_assert(stack != NULL);
+   g_assert(stack->pos == 0);
+   g_assert(stack->size == 10);
+   g_assert(push(&stack, 243) == 0);
+   g_assert(stack->pos == 1);
+   g_assert(stack->val[0] == 243);
+   g_assert(push(&stack, 193) == 0);
+   g_assert(stack->pos == 2);
+   g_assert(stack->val[1] == 193);
+   g_assert(stack->size == 10);
+   free(stack);
+
+   stack = new_stack(2);
+   g_assert(stack != NULL);
+   g_assert(stack->pos == 0);
+   g_assert(stack->size == 2);
+   g_assert(push(&stack, 1241) == 0);
+   g_assert(stack->pos == 1);
+   g_assert(stack->val[0] == 1241);
+   g_assert(push(&stack, 4133) == 0);
+   g_assert(stack->pos == 2);
+   g_assert(stack->val[1] == 4133);
+   g_assert(stack->size == 2);
+   g_assert(push(&stack, 34) == 0);
+   g_assert(stack->pos == 3);
+   g_assert(stack->val[2] == 34);
+   g_assert(stack->size == 4);
+   free(stack);   
+}
 // test-dc3:
 
 void
@@ -1530,6 +1650,11 @@ main
    BACKUP_STDOUT = dup(STDOUT_FILENO);
 
    g_test_init(&argc, &argv, NULL);
+   g_test_add_func("/algs/mergesort_mt", test_algs_mergesort_mt);
+   g_test_add_func("/algs/radix_sort", test_algs_radix_sort);
+   g_test_add_func("/algs/bisect_search", test_algs_bisect_search);
+   g_test_add_func("/algs/new_stack", test_algs_new_stack);
+   g_test_add_func("/algs/push", test_algs_push);
    g_test_add_func("/mapper/compact_genome", test_mapper_compact_genome);
    g_test_add_func("/mapper/bwt_index", test_mapper_bwt_index);
    g_test_add_func("/mapper/write_index", test_mapper_write_index);

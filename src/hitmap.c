@@ -257,11 +257,7 @@ hitmap_analysis
    if (matchlist->size < 1) return -1;
 
    // Merge-sort loci.
-   // Copy to buffer and sort.
-   long * sortbuf = malloc(hitmap->pos * sizeof(long));
-   memcpy(sortbuf, hitmap->val, hitmap->pos * sizeof(long));
-   mergesort_long(hitmap->val, sortbuf, hitmap->pos, 0);
-   free(sortbuf);
+   mergesort_mt(hitmap->val, hitmap->pos, sizeof(long), 0, 1, compar_long);
 
    long minv = 0;
    int  min  = 0;
@@ -945,6 +941,17 @@ matchlist_add
    list->match[list->pos++] = match;
 
    return 0;
+}
+
+int
+compar_long
+(
+ const void * a,
+ const void * b,
+ const int param
+)
+{
+   return *(long *)a > *(long *)b ? 1 : -1;
 }
 
 
