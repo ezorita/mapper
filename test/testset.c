@@ -202,6 +202,392 @@ test_algs_push
    g_assert(stack->size == 4);
    free(stack);   
 }
+
+
+void
+test_algs_pushvec
+(void)
+{
+   long vector[11] = {65,52,654,8,746,89,345,867,879,654,987};
+   vstack_t * stack = new_stack(10);
+   g_assert(stack != NULL);
+   g_assert(stack->pos == 0);
+   g_assert(stack->size == 10);
+   g_assert(pushvec(&stack, vector, 11) == 0);
+   g_assert(stack->pos == 11);
+   g_assert(stack->size == 20);
+   g_assert(stack->val[4] == 746);
+   free(stack);
+
+   stack = new_stack(-5646);
+   g_assert(stack != NULL);
+   g_assert(stack->pos == 0);
+   g_assert(stack->size == 1);
+   g_assert(pushvec(&stack, vector, 11) == 0);
+   g_assert(stack->pos == 11);
+   g_assert(stack->size == 16);
+   g_assert(stack->val[6] == 345);
+   free(stack);
+}
+
+void
+test_algs_new_pstack
+(void)
+{
+   pstack_t * stack = new_pstack(10);
+   g_assert(stack != NULL);
+   g_assert(stack->pos == 0);
+   g_assert(stack->size == 10);
+   free(stack);
+
+   stack = new_pstack(-1);
+   g_assert(stack != NULL);
+   g_assert(stack->pos == 0);
+   g_assert(stack->size == 1);
+   free(stack);
+
+   stack = new_pstack(0);
+   g_assert(stack != NULL);
+   g_assert(stack->pos == 0);
+   g_assert(stack->size == 1);
+   free(stack);
+}
+
+void
+test_algs_ppush
+(void)
+{
+   pstack_t * stack = new_pstack(-1);
+   g_assert(stack != NULL);
+   g_assert(stack->pos == 0);
+   g_assert(stack->size == 1);
+
+   pebble_t p = {.sp = 10, .ep = 1294, .rowid = 2};
+   g_assert(ppush(&stack, p) == 0);
+   g_assert(stack->pos == 1);
+   g_assert(stack->size == 1);
+
+   p.ep = 35;
+   g_assert(ppush(&stack, p) == 0);
+   g_assert(stack->pos == 2);
+   g_assert(stack->size == 2);
+   g_assert(stack->pebble[0].ep == 1294);
+   g_assert(stack->pebble[1].ep == 35);
+   free(stack);
+}
+
+void
+test_algs_new_seqstack
+(void)
+{
+   seqstack_t * stack = new_seqstack(100);
+   g_assert(stack != NULL);
+   g_assert(stack->pos == 0);
+   g_assert(stack->size == 100);
+   free(stack);
+   
+   stack = new_seqstack(0);
+   g_assert(stack != NULL);
+   g_assert(stack->pos == 0);
+   g_assert(stack->size == 1);
+   free(stack);
+
+   stack = new_seqstack(-54);
+   g_assert(stack != NULL);
+   g_assert(stack->pos == 0);
+   g_assert(stack->size == 1);
+   free(stack);
+}
+
+void
+test_algs_seq_push
+(void)
+{
+   seqstack_t * stack = new_seqstack(-54);
+   g_assert(stack != NULL);
+   g_assert(stack->pos == 0);
+   g_assert(stack->size == 1);
+
+   char * tag1 = ">seq1";
+   char * seq1 = "ACTGCA";
+   g_assert(seq_push(&stack, tag1, seq1, 1) == 0);
+   g_assert(stack->pos == 1);
+   g_assert(stack->size == 1);
+   g_assert(strcmp(stack->seq[0].tag, tag1) == 0);
+   g_assert(strcmp(stack->seq[0].seq, seq1) == 0);
+   g_assert(strcmp(stack->seq[0].rseq, "TGCAGT") == 0);
+
+   char * tag2 = "$hello";
+   char * seq2 = "GCTAGC";
+   g_assert(seq_push(&stack, tag2, seq2, 1) == 0);
+   g_assert(stack->pos == 2);
+   g_assert(stack->size == 2);
+   g_assert(strcmp(stack->seq[1].tag, tag2) == 0);
+   g_assert(strcmp(stack->seq[1].seq, seq2) == 0);
+   g_assert(strcmp(stack->seq[1].rseq, "GCTAGC") == 0);
+   free(stack);
+}
+
+void
+test_algs_trie_new
+(void)
+{
+
+   for (int j = 1 ; j < 100 ; j++) {
+      trie_t *trie = trie_new(j*100);
+      g_assert(trie != NULL);
+      g_assert_cmpint(trie->pos, ==, 1);
+      g_assert_cmpint(trie->size, ==, j*100);
+      g_assert_cmpint(trie->nodes[0].parent, ==, 0);
+      for (int k = 0; k < TRIE_CHILDREN; k++)
+         g_assert_cmpint(trie->nodes[0].child[k], ==, 0);
+      free(trie);
+   }
+
+   for (int j = 0 ; j > -100 ; j--) {
+      trie_t *trie = trie_new(j*100);
+      g_assert(trie != NULL);
+      g_assert_cmpint(trie->pos, ==, 1);
+      g_assert_cmpint(trie->size, ==, 1);
+      g_assert_cmpint(trie->nodes[0].parent, ==, 0);
+      for (int k = 0; k < TRIE_CHILDREN; k++)
+         g_assert_cmpint(trie->nodes[0].child[k], ==, 0);
+      free(trie);
+   }
+
+   return;
+
+}
+
+
+void
+test_algs_trie_insert
+(void)
+{
+
+   trie_t *trie = trie_new(2);
+   g_assert(trie != NULL);
+   uint id;
+
+   // Insert leftmost branch in the trie.
+   id = trie_insert(&trie, "\0\0\0\0\0\0\0\0\0\0", 10);
+   g_assert_cmpint(id, ==, 10);
+   g_assert_cmpint(trie->pos, ==, 11);
+   g_assert_cmpint(trie->size, ==, 16);
+   for (int i = 0 ; i < 10 ; i++) {
+      node_t node = trie->nodes[i];
+      g_assert_cmpint(node.parent, ==, (i-1 < 0 ? 0 : i-1));
+      g_assert_cmpint(node.child[0], ==, i+1);
+      for (int k = 1; k < TRIE_CHILDREN; k++) {
+         g_assert_cmpint(node.child[k], ==, 0);
+      }
+   }
+   node_t node = trie->nodes[10];
+   g_assert_cmpint(node.child[0], ==, 0);
+   g_assert_cmpint(node.child[1], ==, 0);
+   g_assert_cmpint(node.child[2], ==, 0);
+
+   // Insert center branch in the trie.
+   id = trie_insert(&trie, "\1\1\1\1\1\1\1\1\1\1", 10);
+   g_assert_cmpint(id, ==, 20);
+   g_assert_cmpint(trie->pos, ==, 21);
+   g_assert_cmpint(trie->size, ==, 32);
+   for (int i = 1 ; i < 10 ; i++) {
+      node_t node = trie->nodes[i];
+      g_assert_cmpint(node.parent, ==, i-1);
+      g_assert_cmpint(node.child[0], ==, i+1);
+      for (int k = 1; k < TRIE_CHILDREN; k++) {
+         g_assert_cmpint(node.child[k], ==, 0);
+      }
+   }
+   for (int i = 11 ; i < 20 ; i++) {
+      node_t node = trie->nodes[i];
+      g_assert_cmpint(node.parent, ==, (i == 11 ? 0 : i-1));
+      g_assert_cmpint(node.child[1], ==, i+1);
+      for (int k = 0; k < TRIE_CHILDREN; k++) {
+         if (k != 1) g_assert_cmpint(node.child[k], ==, 0);
+      }
+   }
+   node = trie->nodes[0];
+   g_assert_cmpint(node.child[0], ==, 1);
+   g_assert_cmpint(node.child[1], ==, 11);
+   g_assert_cmpint(node.child[2], ==, 0);
+   node = trie->nodes[10];
+   g_assert_cmpint(node.parent, ==, 9);
+   g_assert_cmpint(node.child[0], ==, 0);
+   g_assert_cmpint(node.child[1], ==, 0);
+   g_assert_cmpint(node.child[2], ==, 0);
+   node = trie->nodes[20];
+   g_assert_cmpint(node.parent, ==, 19);
+   g_assert_cmpint(node.child[0], ==, 0);
+   g_assert_cmpint(node.child[1], ==, 0);
+   g_assert_cmpint(node.child[2], ==, 0);
+
+   // Insert middle branch in the trie.
+   id = trie_insert(&trie, "\1\0\1\0\1\0\1\0\1\0", 10);
+   g_assert_cmpint(id, ==, 29);
+   g_assert_cmpint(trie->pos, ==, 30);
+   g_assert_cmpint(trie->size, ==, 32);
+   for (int i = 1 ; i < 10 ; i++) {
+      node_t node = trie->nodes[i];
+      g_assert_cmpint(node.parent, ==, i-1);
+      g_assert_cmpint(node.child[0], ==, i+1);
+      for (int k = 1; k < TRIE_CHILDREN; k++) {
+         g_assert_cmpint(node.child[k], ==, 0);
+      }
+   }
+   for (int i = 12 ; i < 20 ; i++) {
+      node_t node = trie->nodes[i];
+      g_assert_cmpint(node.parent, ==, i-1);
+      g_assert_cmpint(node.child[1], ==, i+1);
+      for (int k = 0; k < TRIE_CHILDREN; k++) {
+         if (k != 1) g_assert_cmpint(node.child[k], ==, 0);
+      }
+   }
+
+   for (int i = 21 ; i < 29 ; i++) {
+      node_t node = trie->nodes[i];
+      for (int k = 0; k < TRIE_CHILDREN; k++) {
+         if (k != i%2) g_assert_cmpint(node.child[k], ==, 0);
+         else g_assert_cmpint(node.child[k], ==, i+1);
+      }
+      g_assert_cmpint(node.parent, ==, (i==21 ? 11 : i-1));
+   }
+
+   node = trie->nodes[0];
+   g_assert_cmpint(node.child[0], ==, 1);
+   g_assert_cmpint(node.child[1], ==, 11);
+   g_assert_cmpint(node.child[2], ==, 0);
+   node = trie->nodes[10];
+   g_assert_cmpint(node.parent, ==, 9);
+   g_assert_cmpint(node.child[0], ==, 0);
+   g_assert_cmpint(node.child[1], ==, 0);
+   g_assert_cmpint(node.child[2], ==, 0);
+   node = trie->nodes[11];
+   g_assert_cmpint(node.parent, ==, 0);
+   g_assert_cmpint(node.child[0], ==, 21);
+   g_assert_cmpint(node.child[1], ==, 12);
+   g_assert_cmpint(node.child[2], ==, 0);
+   node = trie->nodes[20];
+   g_assert_cmpint(node.parent, ==, 19);
+   g_assert_cmpint(node.child[0], ==, 0);
+   g_assert_cmpint(node.child[1], ==, 0);
+   g_assert_cmpint(node.child[2], ==, 0);
+   node = trie->nodes[29];
+   g_assert_cmpint(node.parent, ==, 28);
+   g_assert_cmpint(node.child[0], ==, 0);
+   g_assert_cmpint(node.child[1], ==, 0);
+   g_assert_cmpint(node.child[2], ==, 0);
+
+   // Bad insertion.
+   uint pos = trie->pos;
+   id = trie_insert(&trie, "\1\0\0\0\0\1\2\0\3\0", 10);
+   g_assert_cmpint(id, ==, (uint)-1);
+   g_assert_cmpint(trie->pos, ==, pos);
+
+   free(trie);
+
+   return;
+
+}
+
+
+void
+test_algs_trie_getrow
+(void)
+{
+
+   trie_t *trie = trie_new(10);
+   g_assert(trie != NULL);
+
+   // Insert first known path.
+   trie_insert(&trie, "\2\0\1\2\2\2\0\0\1\0", 10);
+   char path[10] = {0};
+   // Insert random paths and search them.
+   srand48(123);
+   for (int i = 0 ; i < 10000 ; i++) {
+      for (int j = 0 ; j < 10 ; j++) {
+         path[j] = (lrand48() % TRIE_CHILDREN);
+      }
+      uint value = (uint) lrand48();
+      int wingsz;
+      uint id = trie_insert(&trie, path, 10);
+      uint nwrow[15];
+      g_assert(trie_getrow(trie, id, value, &wingsz, nwrow) == 0);
+      g_assert_cmpint(wingsz, ==, 5);
+      g_assert_cmpint(nwrow[wingsz], ==, value);
+      for (int i = 2*wingsz; i >= 0; i--) {
+         value += (path[i] == 0) - (path[i] == 2);
+         g_assert_cmpint(nwrow[i-wingsz], ==, value);
+      }
+   }
+
+   int wingsz;
+   uint nwrow[10];
+   g_assert(trie_getrow(trie, 4, 4, &wingsz, nwrow) == 0);
+   g_assert(wingsz == 2);
+   g_assert_cmpint(nwrow[-2], ==, 3);
+   g_assert_cmpint(nwrow[-1], ==, 4);
+   g_assert_cmpint(nwrow[0], ==, 3);
+   g_assert_cmpint(nwrow[1], ==, 3);
+   g_assert_cmpint(nwrow[2], ==, 4);
+
+   g_assert(trie_getrow(trie, 6, 3, &wingsz, nwrow) == 0);
+   g_assert(wingsz == 3);
+   g_assert_cmpint(nwrow[-3], ==, 0);
+   g_assert_cmpint(nwrow[-2], ==, 1);
+   g_assert_cmpint(nwrow[-1], ==, 0);
+   g_assert_cmpint(nwrow[0], ==, 0);
+   g_assert_cmpint(nwrow[1], ==, 1);
+   g_assert_cmpint(nwrow[2], ==, 2);
+   g_assert_cmpint(nwrow[3], ==, 3);
+
+   free(trie);
+
+   return;
+}
+
+void
+test_algs_trie_reset
+(void)
+{
+
+   trie_t *trie = trie_new(0);
+   g_assert(trie != NULL);
+
+   // Insert leftmost branch in the trie.
+   trie_insert(&trie, "\0\0\0\0\0\0\0\0\0\0", 10);
+   g_assert_cmpint(trie->pos, ==, 11);
+   g_assert_cmpint(trie->size, ==, 16);
+   for (int i = 0 ; i < 10 ; i++) {
+      node_t node = trie->nodes[i];
+      g_assert_cmpint(node.child[0], ==, i+1);
+   }
+   node_t node = trie->nodes[0];
+   g_assert_cmpint(node.child[0], ==, 1);
+   g_assert_cmpint(node.child[1], ==, 0);
+   g_assert_cmpint(node.child[2], ==, 0);
+   node = trie->nodes[10];
+   g_assert_cmpint(node.parent, ==, 9);
+   g_assert_cmpint(node.child[0], ==, 0);
+   g_assert_cmpint(node.child[1], ==, 0);
+   g_assert_cmpint(node.child[2], ==, 0);
+
+   trie_reset(trie);
+   g_assert(trie != NULL);
+   g_assert_cmpint(trie->pos, ==, 1);
+   g_assert_cmpint(trie->size, ==, 16);
+   node = trie->nodes[0];
+   for (int k = 0; k < TRIE_CHILDREN; k++) {
+      g_assert_cmpint(node.child[k], ==, 0);
+   }
+
+   free(trie);
+
+   return;
+
+}
+
 // test-dc3:
 
 void
@@ -1655,6 +2041,15 @@ main
    g_test_add_func("/algs/bisect_search", test_algs_bisect_search);
    g_test_add_func("/algs/new_stack", test_algs_new_stack);
    g_test_add_func("/algs/push", test_algs_push);
+   g_test_add_func("/algs/pushvec", test_algs_pushvec);
+   g_test_add_func("/algs/new_pstack", test_algs_new_pstack);
+   g_test_add_func("/algs/ppush", test_algs_ppush);
+   g_test_add_func("/algs/new_seqstack", test_algs_new_seqstack);
+   g_test_add_func("/algs/seq_push", test_algs_seq_push);
+   g_test_add_func("/algs/trie_new", test_algs_trie_new);
+   g_test_add_func("/algs/trie_insert", test_algs_trie_insert);
+   g_test_add_func("/algs/trie_getrow", test_algs_trie_getrow);
+   g_test_add_func("/algs/trie_reset", test_algs_trie_reset);
    g_test_add_func("/mapper/compact_genome", test_mapper_compact_genome);
    g_test_add_func("/mapper/bwt_index", test_mapper_bwt_index);
    g_test_add_func("/mapper/write_index", test_mapper_write_index);

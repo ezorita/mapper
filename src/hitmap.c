@@ -221,8 +221,9 @@ poucet_search
          pebble_t pebble = pebbles[start]->pebble[p];
          // Compute current alignment from alignment trie.
          int wingsz;
-         if (tau > 0) trie_getrow(*trie, pebble.rowid >> PATH_SCORE_BITS, pebble.rowid & PATH_SCORE_MASK, &wingsz, nwrow);
-         else {
+         if (tau > 0) {
+            trie_getrow(*trie, pebble.rowid >> PATH_SCORE_BITS, pebble.rowid & PATH_SCORE_MASK, &wingsz, nwrow);
+         } else {
             wingsz = 0;
             *nwrow = 0;
          }

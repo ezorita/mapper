@@ -129,15 +129,13 @@ void          radix_sort       (long * a, long * b, long n, long maxval);
 
 // General algorithms.
 long          bisect_search    (long start, long end, long* set, long value);
-//int           query_index      (char* query, long gsize, long* ptr, long* c, list_t* occs);
-//void          translate_query  (char* query, int* qval, int qlen);
 
 // Stack functions.
 vstack_t    * new_stack        (long size);
 int           push             (vstack_t ** stackp, long value);
 int           pushvec          (vstack_t ** stackp, long * vector, int vecsize);
 pstack_t    * new_pstack       (long size);
-void          ppush            (pstack_t ** stackp, pebble_t pebble);
+int           ppush            (pstack_t ** stackp, pebble_t pebble);
 seqstack_t  * new_seqstack     (int size);
 int           seq_push         (seqstack_t ** stackp, const char* tag, const char* seq, const int reverse);
 

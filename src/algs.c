@@ -164,7 +164,7 @@ new_pstack
  long size
  )
 {
-   if (size < 2) size = 2;
+   if (size < 1) size = 1;
    pstack_t * stack = malloc(sizeof(pstack_t) + size * sizeof(pebble_t));
    if (stack == NULL) return NULL;
    stack->pos  = 0;
@@ -173,7 +173,7 @@ new_pstack
    return stack;
 }
 
-void
+int
 ppush
 (
  pstack_t ** stackp,
@@ -186,12 +186,13 @@ ppush
       *stackp = stack = realloc(stack, sizeof(pstack_t) + newsize * sizeof(pebble_t));
       if (stack == NULL) {
          fprintf(stderr, "error in 'ppush' (realloc): %s\n", strerror(errno));
-         exit(EXIT_FAILURE);
+         return -1;
       }
       stack->size = newsize;
    }
 
    stack->pebble[stack->pos++] = pebble;
+   return 0;
 }
 
 /*********************/
@@ -280,7 +281,7 @@ trie_getrow
    uint     parent = nodeid;
    int      height = 1;   
    while ((parent = nodes[parent].parent) != 0) height++;
-   *wingsz = (height-1)/2;
+   *wingsz = height/2;
 
    // Match value.
    int i = *wingsz;
@@ -394,7 +395,7 @@ trie_reset
 // SIDE EFFECTS:
 //   None.
 {
-   trie->pos = 0;
+   trie->pos = 1;
    memset(&(trie->nodes[0]), 0, sizeof(node_t));
 }
 

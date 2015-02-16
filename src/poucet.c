@@ -98,7 +98,7 @@ poucet
          char nwpath[2*wsz];
          long rowid = row[wsz];
          for (int i = 2*wsz; i > 0 ; i--)
-            nwpath[i-1] = 1 + (row[i] > row[i-1]) - (row[i] < row[i-1]);
+            nwpath[i-1] = 1 + (row[i-wsz] > row[i-wsz-1]) - (row[i-wsz] < row[i-wsz-1]);
 
          // Insert path into path trie.
          unsigned long nodeid = trie_insert(arg->triep, nwpath, 2*wsz);

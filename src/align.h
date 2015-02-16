@@ -40,6 +40,6 @@ struct align_t {
 };
 
 align_t      nw_align         (const char * query, const char * ref, const int len_q, const int dir_q, const int dir_r, const double likelihood_thr, const double read_match_prob, const double rand_match_prob);
-align_t      sw_align         (char * read, int rdlen, char * ref, int rflen);
+//align_t      sw_align         (char * read, int rdlen, char * ref, int rflen);
 
 #endif

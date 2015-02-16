@@ -429,7 +429,7 @@ nw_align
    return align;
 }
 */
-
+/*
 align_t
 sw_align
 (
@@ -524,3 +524,4 @@ sw_align
 
    return align;
 }
+*/
