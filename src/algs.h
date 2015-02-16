@@ -26,7 +26,6 @@ typedef struct pstack_t   pstack_t;
 #define TRIE_SIZE     1024
 #define TRIE_CHILDREN  3
 
-
 // Data types
 typedef unsigned int uint;
 
@@ -53,7 +52,8 @@ struct chr_t {
 struct pebble_t {
    long sp;
    long ep;
-   long rowid; // [bits 63..16] node id. [bits 15..0] score.
+   //   long rowid; // [bits 63..16] node id. [bits 15..0] score.
+   char nwrow[2*MAXTAU+3];
 };
 
 struct index_t {
@@ -103,7 +103,6 @@ struct arg_t {
    int                trail;
    int                qlen;
    struct index_t   * index;
-   struct trie_t   ** triep;
    struct pstack_t ** pebbles;
    struct pstack_t ** hits;
 };

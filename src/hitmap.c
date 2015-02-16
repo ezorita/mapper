@@ -11,9 +11,6 @@ hitmap
 {
    int maxtau = hmargs.maxtau;
 
-   // Poucet score trie.
-   trie_t * trie = trie_new(TRIE_SIZE);
-
    // Initialize pebble and hit stacks.
    pstack_t ** pebbles = malloc((MAX_TRAIL+1)*sizeof(pstack_t *));
    pstack_t ** hits    = malloc((maxtau+1) * sizeof(pstack_t *));
@@ -21,7 +18,10 @@ hitmap
    for (int i = 0 ; i <= maxtau ; i++)    hits[i]    = new_pstack(HITSTACK_SIZE);
 
    // Push root node.
-   pebble_t root = {.sp = 0, .ep = index->gsize-1, .rowid = 0};
+   pebble_t root = {.sp = 0, .ep = index->gsize-1};
+   for (int i = 0; i < MAXTAU + 2; i++)
+      root.nwrow[i] = root.nwrow[2*MAXTAU+2-i] = MAXTAU + 1 - i;
+
    ppush(pebbles, root);
 
    // Define number of seqs that will be mixed in each poucet search.
@@ -63,7 +63,7 @@ hitmap
          for (int i = 0 ; i < numseqs ; i++) hitmaps[i]->pos = 0;
 
          // Search subsequences.
-         poucet_search(subseqs, pebbles, hits, &trie, index, a, hmargs.kmer_size, hmargs.kmer_size, hmargs.seed_max_loci, hmargs.verbose);
+         poucet_search(subseqs, pebbles, hits, index, a, hmargs.kmer_size, hmargs.kmer_size, hmargs.seed_max_loci, hmargs.verbose);
 
          // Reset the subsequence list. It will be filled up with the unmatched regions.
          subseqs->size = 0;
@@ -146,7 +146,6 @@ poucet_search
  sublist_t * subseqs,
  pstack_t ** pebbles,
  pstack_t ** hits,
- trie_t   ** trie,
  index_t   * index,
  int         tau,
  int         kmer_size,
@@ -206,33 +205,33 @@ poucet_search
          .trail    = trail,
          .qlen     = qlen,
          .index    = index,
-         .triep    = trie,
          .pebbles  = pebbles,
          .hits     = hits
       };
 
       // Run recursive search from cached pebbles.
-      uint row[2*tau+3];
-      uint * nwrow = row + tau + 1;
       char path[qlen+tau+1];
 
       for (int p = 0 ; p < pebbles[start]->pos ; p++) {
          // Next pebble.
          pebble_t pebble = pebbles[start]->pebble[p];
          // Compute current alignment from alignment trie.
+         /*
          int wingsz;
          if (tau > 0) {
-            trie_getrow(*trie, pebble.rowid >> PATH_SCORE_BITS, pebble.rowid & PATH_SCORE_MASK, &wingsz, nwrow);
+             trie_getrow(*trie, pebble.rowid >> PATH_SCORE_BITS, pebble.rowid & PATH_SCORE_MASK, &wingsz, nwrow);
          } else {
             wingsz = 0;
             *nwrow = 0;
          }
+         */
+         char * nwrow = pebble.nwrow + MAXTAU + 1;
          // Recover the current path.
          long gpos = index->pos[pebble.sp];
          for (int j = 0; j < start; j++) {
             path[start-j] = translate[(int)index->genome[gpos+j]];
          }
-         poucet(pebble.sp, pebble.ep, wingsz, nwrow, start + 1, path, &arg);
+         poucet(pebble.sp, pebble.ep, nwrow, start + 1, path, &arg);
       }
       // Map hits.
       map_hits(hits, query.hitmap, index, tau, query.seqid, max_loci_per_hit);
@@ -394,7 +393,7 @@ map_hits
          long     n_hits = hit.ep - hit.sp + 1;
          // The offset between the genome start and end points in the alignment has
          // been stored in rowid during the poucet search.
-         long     offset = hit.rowid;
+         long     offset = hit.nwrow[0];
          // Filter out too abundant sequences. (To speed up the sorting).
          if (n_hits <= max_loci) {
             // Realloc hitmap if needed.

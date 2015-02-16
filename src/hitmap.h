@@ -94,7 +94,7 @@ struct hmargs_t {
 
 
 int           hitmap           (index_t * index, chr_t * chr, seqstack_t * seqs, hmargs_t args);
-int           poucet_search    (sublist_t * subseqs, pstack_t ** pebbles, pstack_t ** hits, trie_t ** trie, index_t * index, int tau, int kmer_size, int max_trail, int max_loci_per_hit, int verbose);
+int           poucet_search    (sublist_t * subseqs, pstack_t ** pebbles, pstack_t ** hits, index_t * index, int tau, int kmer_size, int max_trail, int max_loci_per_hit, int verbose);
 int           hitmap_analysis  (vstack_t * hitmap, matchlist_t * loci, int kmer_size, int maxdist, hmargs_t hmargs);
 int           map_hits         (pstack_t ** hits, vstack_t ** hitmap, index_t * index, int tau, long id, int max_loci);
 int           align_seeds      (seq_t seq, matchlist_t * seeds, matchlist_t ** seqmatches, index_t * index, hmargs_t hmargs);

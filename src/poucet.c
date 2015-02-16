@@ -5,8 +5,7 @@ poucet
 (
  const long   sp,
  const long   ep,
- const int    wingsz,
- const uint * prow,
+ const char * prow,
  const int    depth,
  char *       path,
  arg_t      * arg
@@ -23,20 +22,18 @@ poucet
    uint score;
 
    // Part of the cache that is shared between all the children.
-   uint r[tau*2+3];
-   uint * row = r + tau + 1;
-   // Initialize wing ends.
-   row[wingsz+1]  = prow[wingsz]  + 1;
-   row[-wingsz-1] = prow[-wingsz] + 1;
+   char r[2*MAXTAU+3];
+   for (int i = 0; i < MAXTAU + 2; i++)
+      r[i] = r[2*MAXTAU+2-i] = MAXTAU + 1 - i;
+   char * row = r + MAXTAU + 1;
 
    // Upper arm of the L (need the path).
-   if (wingsz > 0) {
-      for (int a = wingsz ; a > 0 ; a--) {
-         mmatch = prow[a] + (path[depth-a] != arg->query[depth]);
-         shift = min(prow[a-1], row[a+1]) + 1;
-         row[a] = min(mmatch, shift);
-      }
+   for (int a = tau ; a > 0 ; a--) {
+      mmatch = prow[a] + (path[depth-a] != arg->query[depth]);
+      shift = min(prow[a-1], row[a+1]) + 1;
+      row[a] = min(mmatch, shift);
    }
+
 
    // start at base=1 ('@' is never going to be queried).
    for (int nt = 1 ; nt < NUM_BASES ; nt++) {
@@ -50,13 +47,12 @@ poucet
       if (newep < newsp) continue;
 
       // Horizontal arm of the L (need previous characters).
-      if (wingsz > 0) {
-         for (int i = wingsz ; i > 0 ; i--) {
-            mmatch = prow[-i] + (nt != arg->query[depth-i]);
-            shift = min(prow[1-i], row[-i-1]) + 1;
-            row[-i] = min(mmatch, shift);
-         }
+      for (int i = tau ; i > 0 ; i--) {
+         mmatch = prow[-i] + (nt != arg->query[depth-i]);
+         shift = min(prow[1-i], row[-i-1]) + 1;
+         row[-i] = min(mmatch, shift);
       }
+
 
       // Center cell (need both arms to be computed).
       mmatch = prow[0] + (nt != arg->query[depth]);
@@ -65,7 +61,7 @@ poucet
 
       int g_offset = 0;
       score = tau+1;
-      for (int i = -wingsz ; i <= wingsz; i++) {
+      for (int i = -tau ; i <= tau; i++) {
          if (row[i] <= score) {
             score = row[i];
             g_offset = max(0, i);
@@ -82,31 +78,19 @@ poucet
          pebble_t hit = {
             .sp = newsp,
             .ep = newep,
-            .rowid = arg->qlen - g_offset - 1
+            .nwrow[0] = arg->qlen - g_offset - 1
          };
          ppush(arg->hits + score, hit);
          continue;
       }
 
-      // Extend wings.
-      int wsz = wingsz;
-      if (score > wingsz) wsz++;
-         
       // Cache nodes in pebbles when trailing.
       if (depth <= arg->trail) {
-         // Compute differential path.
-         char nwpath[2*wsz];
-         long rowid = row[wsz];
-         for (int i = 2*wsz; i > 0 ; i--)
-            nwpath[i-1] = 1 + (row[i-wsz] > row[i-wsz-1]) - (row[i-wsz] < row[i-wsz-1]);
-
-         // Insert path into path trie.
-         unsigned long nodeid = trie_insert(arg->triep, nwpath, 2*wsz);
          pebble_t pebble = {
             .sp    = newsp,
-            .ep    = newep,
-            .rowid = (rowid & PATH_SCORE_MASK) | (nodeid << PATH_SCORE_BITS)
+            .ep    = newep
          };
+         memcpy(&(pebble.nwrow), r, 2*MAXTAU+3);
          ppush(arg->pebbles + depth, pebble);
       }
 
@@ -115,7 +99,7 @@ poucet
 
       // Dash path if mismatches exhausted.
       if (depth > arg->trail && score == arg->tau) {
-         for (int i = -wingsz; i <= wingsz; i++) {
+         for (int i = -tau; i <= tau; i++) {
             if (row[i] == score) {
                dash(newsp, newep, depth+1, i, path, arg);
             }
@@ -124,7 +108,7 @@ poucet
       }
 
       // Recursive call.
-      poucet(newsp, newep, wsz, row, depth+1, path, arg);
+      poucet(newsp, newep, row, depth+1, path, arg);
    }
 
    return 0;
@@ -185,7 +169,7 @@ dash
    pebble_t hit = {
       .sp = sp,
       .ep = ep,
-      .rowid = i - 1 - max(align, 0)
+      .nwrow[0] = i - 1 - max(align, 0)
    };
    ppush(arg->hits + arg->tau, hit);
 }

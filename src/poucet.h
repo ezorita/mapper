@@ -10,7 +10,7 @@
 
 
 // Poucet function headers.
-int           poucet           (const long sp, const long ep, const int wingsz, const uint* prow, const int depth, char* path, arg_t * arg);
+int           poucet           (const long sp, const long ep, const char* prow, const int depth, char* path, arg_t * arg);
 void          dash             (long sp, long ep, const int depth, const int align, const char* path, const arg_t* arg);
 
 #endif
