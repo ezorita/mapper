@@ -78,12 +78,18 @@ int main(int argc, char * argv[]) {
       // Hitmap.
       // Default arguments.
 
+      int rounds = 4;
+      int kmers[6] = {22,20,18,22};
+      int tau[6] = {0,0,0,1};
+
       hmargs_t hmargs = {
-         .maxtau  = 2,
-         .verbose = opt_verbose,
+         .verbose = 1,
+         .search_rounds = rounds,
+         .tau = tau,
+         .kmer_size = kmers,
          .repeat_print_num = 5,
-         .kmer_size = 22,
          .seed_max_loci = 20,
+         .seed_abs_max_loci = 10000,
          .read_ref_ratio = 2,
          .dist_accept = 10,
          .max_align_per_read = 10000,

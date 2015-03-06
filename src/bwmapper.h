@@ -25,11 +25,6 @@
 #define SEQSTACK_SIZE 1024
 #define DSTACK_SIZE   16
 
-// Query read buffers
-#define QUERYBUF_SIZE  100
-#define MAXHEADER_SIZE 100
-#define MINIMUM_STREAK 10
-
 // Input types.
 
 typedef enum {

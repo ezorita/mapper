@@ -9,7 +9,8 @@ hitmap
  hmargs_t     hmargs
  )
 {
-   int maxtau = hmargs.maxtau;
+   int maxtau = 0;
+   for (int i = 0; i < hmargs.search_rounds; i++) if (hmargs.tau[i] > maxtau) maxtau = hmargs.tau[i];
 
    // Initialize pebble and hit stacks.
    pstack_t ** pebbles = malloc((MAX_TRAIL+1)*sizeof(pstack_t *));
@@ -44,18 +45,20 @@ hitmap
 
       // Pre-process sequence block: chunk in subsequences and sort.
       int         numseqs = (seq_block < seqs->pos - s ? seq_block : seqs->pos - s);
-      sublist_t * subseqs = process_subseq(seqs->seq+s, numseqs, hmargs.kmer_size, hitmaps);
+      sublist_t * subseqs = process_subseq(seqs->seq+s, numseqs, hmargs.kmer_size[0], hitmaps);
 
       // Verbose processed blocks.
       if(hmargs.verbose) fprintf(stderr, "processing reads from %d to %d\n", s+1, s+numseqs);
 
       // Iterate over increasing mismatch tolerance.
-      for (int a = 0; a <= maxtau; a++) {
+      for (int a = 0; a < hmargs.search_rounds; a++) {
+         int tau = hmargs.tau[a];
+         int kmer = hmargs.kmer_size[a];
          // Verbose sorting.
-         if(hmargs.verbose) fprintf(stderr, "[tau=%d] %d subsequences\nsorting  ...", a, subseqs->size);
+         if(hmargs.verbose) fprintf(stderr, "[%d,%d] %d subsequences\nsorting  ...", kmer, tau, subseqs->size);
          clock_t tstart = clock();
          // Sort subsequences.
-         mergesort_mt(subseqs->sub, subseqs->size, sizeof(sub_t), hmargs.kmer_size, 1, compar_seqsort);
+         mergesort_mt(subseqs->sub, subseqs->size, sizeof(sub_t), kmer, 1, compar_seqsort);
          // Verbose sort time.
          if(hmargs.verbose) fprintf(stderr, "  [%.3fms]\n", (clock()-tstart)*1000.0/CLOCKS_PER_SEC);
 
@@ -63,7 +66,7 @@ hitmap
          for (int i = 0 ; i < numseqs ; i++) hitmaps[i]->pos = 0;
 
          // Search subsequences.
-         poucet_search(subseqs, pebbles, hits, index, a, hmargs.kmer_size, hmargs.kmer_size, hmargs.seed_max_loci, hmargs.verbose);
+         poucet_search(subseqs, pebbles, hits, index, tau, kmer, kmer, hmargs.seed_max_loci, hmargs.seed_abs_max_loci, hmargs.verbose);
 
          // Reset the subsequence list. It will be filled up with the unmatched regions.
          subseqs->size = 0;
@@ -73,6 +76,9 @@ hitmap
          // Reset verbose variables.
          double progress = 0.0;
          tstart = clock();
+         clock_t himap_time = 0;
+         clock_t align_time = 0;
+         long    num_aligns = 0;
          // Process reads.
          for (int i = 0 ; i < numseqs ; i++) {
             // Verbose progress.
@@ -86,11 +92,14 @@ hitmap
             totalnt += slen;
 
             // Process hitmap.
-            hitmap_analysis(hitmaps[i], seeds, hmargs.kmer_size, slen, hmargs);
-
+            clock_t tmp = clock();
+            hitmap_analysis(hitmaps[i], seeds, kmer, slen, hmargs);
+            himap_time += clock() - tmp;
+            num_aligns += seeds->pos;
             // Smith-Waterman alignment.
+            tmp = clock();
             int newdata = align_seeds(seqs->seq[i], seeds, seqmatches + i, index, hmargs);
-
+            align_time += clock() - tmp;
              if (newdata) {
                // Fuse matches.
                fuse_matches(seqmatches+i, slen, hmargs);
@@ -101,9 +110,9 @@ hitmap
             // Assemble read.
              matchlist_t * intervals = combine_matches(seqmatches[i], hmargs.overlap_tolerance);
 
-            if (a < maxtau) {
+            if (a < hmargs.search_rounds - 1) {
                // Feedback gaps between intervals and low identity matches.
-               recompute += feedback_gaps(i, seqs->seq[i], intervals, subseqs, hitmaps + i, hmargs);
+               recompute += feedback_gaps(i, seqs->seq[i], intervals, subseqs, hitmaps + i, hmargs, hmargs.kmer_size[a+1]);
             } 
             else {
                // Print results if a == maxtau.
@@ -130,6 +139,7 @@ hitmap
          }
          if (hmargs.verbose) {
             fprintf(stderr, "aligning ...  [%.3fms]\n", (clock()-tstart)*1000.0/CLOCKS_PER_SEC);
+            fprintf(stderr, "hitmap analysis: [%.3fms], %ld alignments in [%.3fms]\n", himap_time*1000.0/CLOCKS_PER_SEC, num_aligns, align_time*1000.0/CLOCKS_PER_SEC);
             fprintf(stderr, "matched %ld out of %ld nt (%.1f%%), %ld nt will be queried again.\n", matched, totalnt, matched*100.0/totalnt, recompute);
          }
       }
@@ -151,6 +161,7 @@ poucet_search
  int         kmer_size,
  int         max_trail,
  int         max_loci_per_hit,
+ int         abs_max_loci_per_hit,
  int         verbose
  )
 {
@@ -234,7 +245,7 @@ poucet_search
          poucet(pebble.sp, pebble.ep, nwrow, start + 1, path, &arg);
       }
       // Map hits.
-      map_hits(hits, query.hitmap, index, tau, query.seqid, max_loci_per_hit);
+      map_hits(hits, query.hitmap, index, tau, query.seqid, max_loci_per_hit, abs_max_loci_per_hit);
 
       start = trail;
    }
@@ -275,15 +286,17 @@ hitmap_analysis
    while (ref >= 0) {
       // Reference position.
       long refloc = hitmap->val[ref] >> KMERID_BITS;
-      long refkmer = (hitmap->val[ref] & KMERID_MASK) >> 1;
-      long refdir = hitmap->val[ref] & 1;
+      long refkmer = (hitmap->val[ref] & KMERID_MASK) >> 2;
+      long refdir = (hitmap->val[ref] >> 1) & 1;
       long refend = refloc + refkmer * rg_ratio;
+      int  non_significant = hitmap->val[ref] & 1;
 
       // Mark subseq as used.
       hitmap->val[ref] *= -1;
 
       // Start streak.
       int streak = 1;
+      int sgnf_streak = non_significant;
 
       // Explore hitmap.
       long i = ref;
@@ -300,8 +313,9 @@ hitmap_analysis
 
          // Get next subsequence.
          long loc = hitmap->val[i] >> KMERID_BITS;
-         long kmer = (hitmap->val[i] & KMERID_MASK) >> 1;
-         long dir = hitmap->val[i] & 1;
+         long kmer = (hitmap->val[i] & KMERID_MASK) >> 2;
+         long dir = (hitmap->val[i] >> 1) & 1;
+         int  sgnf = hitmap->val[i] & 1;
 
          // Distances.
          long r_dist = refkmer - kmer;
@@ -322,6 +336,7 @@ hitmap_analysis
             streakkmer = kmer;
             streakloc = loc;
             streak++;
+            if (sgnf) sgnf_streak++;
             // Mark the subsequence as used.
             hitmap->val[i] *= -1;
          }
@@ -331,7 +346,8 @@ hitmap_analysis
       }
 
       // Save streak.
-      if (streak > minv) {
+      // Single non-significant loci will not be saved.
+      if (streak > minv && (sgnf_streak < streak)) {
          // Allocate match.
          match_t * match = malloc(sizeof(match_t));
          match->ref_e  = refloc;
@@ -380,11 +396,12 @@ map_hits
  index_t   * index,
  int         tau,
  long        id,
- int         max_loci
+ int         max_loci,
+ int         abs_max_loci
  )
 {
    vstack_t * hmap    = *hitmap;
-   long       idstamp = id & KMERID_MASK;
+   long       idstamp = 2*(id & KMERID_MASK);
 
    // Push hits to hitmap.
    for (int a = 0 ; a <= tau ; a++) {
@@ -395,7 +412,7 @@ map_hits
          // been stored in rowid during the poucet search.
          long     offset = hit.nwrow[0];
          // Filter out too abundant sequences. (To speed up the sorting).
-         if (n_hits <= max_loci) {
+         if (n_hits <= abs_max_loci) {
             // Realloc hitmap if needed.
             if (hmap->pos + n_hits >= hmap->size) {
                long newsize = hmap->size + n_hits + 1;
@@ -410,7 +427,7 @@ map_hits
             // Copy hits.
             for (long i = hit.sp; i <= hit.ep ; i++) {
                // Delay offset to match the beginning of the sequence. Offset contains the alignment length.
-               hmap->val[hmap->pos++] = ((long)(index->pos[i] + offset) << KMERID_BITS) | idstamp;
+               hmap->val[hmap->pos++] = ((long)(index->pos[i] + offset) << KMERID_BITS) | (idstamp + (n_hits > max_loci));
             }
          }
       }
@@ -480,7 +497,8 @@ feedback_gaps
  matchlist_t  * intervals,
  sublist_t    * subseqs,
  vstack_t    ** hitmap,
- hmargs_t       hmargs
+ hmargs_t       hmargs,
+ int            next_kmer_size
 )
 // Find sequence gaps and feedback them to a sublist_t.
 // Both unmapped gaps and intervals with identity below
@@ -510,7 +528,7 @@ feedback_gaps
 
       if (gap_end - gap_start >= hmargs.match_min_len) {
          recompute += gap_end - gap_start;
-         for (int j = gap_start; j <= gap_end - hmargs.kmer_size; j++) {
+         for (int j = gap_start; j <= gap_end - next_kmer_size; j++) {
             sub_t sseq = (sub_t) {
                .seqid = (seqnum << KMERID_BITS | (j*2 & KMERID_MASK)),
                .seq   = seq.seq + j,
@@ -518,8 +536,8 @@ feedback_gaps
             };
             subseqs->sub[subseqs->size++] = sseq;
             if (seq.rseq != NULL) {
-               sseq.seqid = (seqnum << KMERID_BITS | (((slen- j - hmargs.kmer_size)*2+1) & KMERID_MASK));
-               sseq.seq = seq.rseq + slen - j - hmargs.kmer_size;
+               sseq.seqid = (seqnum << KMERID_BITS | (((slen- j - next_kmer_size)*2+1) & KMERID_MASK));
+               sseq.seq = seq.rseq + slen - j - next_kmer_size;
                subseqs->sub[subseqs->size++] = sseq;
             }
          }
