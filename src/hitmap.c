@@ -483,6 +483,7 @@ align_seeds
 
       // Add to significant matchlist.
       significant = 1;
+      
       matchlist_add(seqmatches, seed);
    }
 
@@ -561,6 +562,7 @@ print_intervals
       if (match->repeats->pos > 1) {
          mergesort_mt(match->repeats->match, match->repeats->pos, sizeof(match_t *), 0, 1, compar_matchid);
          fprintf(stdout, "[interval %d]\t*%d* significant loci\n", ++cnt, match->repeats->pos);
+         /*
          for (int j = 0; j < hm_min(max_repeats, match->repeats->pos); j++) {
             match_t * rmatch = match->repeats->match[j];
             int          dir = rmatch->dir;
@@ -578,7 +580,8 @@ print_intervals
                     (match->flags & FLAG_FUSED ? 'f' : '-'));
 
          }
-         if (match->repeats->pos > max_repeats) fprintf(stdout, "\t\t...\n");
+         */
+         //         if (match->repeats->pos > max_repeats) fprintf(stdout, "\t\t...\n");
       }
       else {
          int      dir = match->dir;
@@ -694,6 +697,13 @@ fuse_matches
          if (match->dir) read_d = -read_d;
          // Break if we're already outside of the read scope.
          if (ref_d > max_distance) break;
+         // Fusion coverage. At least fuse_min_spanratio of the fusion candidates
+         // must have been aligned. (This is to avoid short random sequences to
+         // be fused together spanning big regions of the read).
+         long align_span = cmpar->ref_e - cmpar->ref_s + match->ref_e - match->ref_s;
+         long read_span  = cmpar->ref_e - match->ref_s;
+         double span_ratio = align_span * 1.0 / read_span;
+         if (span_ratio < hmargs.fuse_min_spanratio) break;
          // If distances are comparable, fuse matches.
          if (ref_d <= read_d * hmargs.read_ref_ratio || (read_d < hmargs.dist_accept && ref_d < hmargs.dist_accept)) {
             matchlist_add(&to_combine, cmpar);

@@ -100,6 +100,7 @@ int main(int argc, char * argv[]) {
          .overlap_tolerance = 0.1,
          .overlap_max_tolerance = 0.5,
          .align_likelihood_thr = 5.0,
+         .fuse_min_spanratio = 0.5,
          .read_match_prob = 0.85,
          .rand_match_prob = 0.5
       };

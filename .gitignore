@@ -9,3 +9,5 @@ tmp/*
 genomes/*
 *.o
 input/*
+doc/*
+*.txt

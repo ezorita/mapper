@@ -89,6 +89,7 @@ struct hmargs_t {
    double overlap_tolerance;
    double overlap_max_tolerance;
    double align_likelihood_thr;
+   double fuse_min_spanratio;
    double read_match_prob;
    double rand_match_prob;
 };
