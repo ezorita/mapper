@@ -14,12 +14,9 @@
 #define ALIGN_FORWARD   1
 #define ALIGN_BACKWARD -1
 
-#define ALIGN_WIDTH         100
-#define MIN_ALIGNMENT_LEN   1
-
 // Breakpoint detection parameters
-#define BREAKPOINT_THR   5.0
-#define READ_MATCH_PROB  0.85
+#define BREAKPOINT_THR   10.0
+#define READ_MATCH_PROB  0.75
 #define RAND_MATCH_PROB  0.50
 #define READ_ERROR_PROB  (1.0 - READ_MATCH_PROB)
 #define RAND_ERROR_PROB  (1.0 - RAND_MATCH_PROB)
@@ -31,7 +28,7 @@
 #define align_min(a,b) ((a) < (b) ? (a) : (b))
 
 typedef struct align_t align_t;
-
+typedef struct alignopt_t alignopt_t;
 struct align_t {
    long start;
    long end;
@@ -39,7 +36,19 @@ struct align_t {
    long pathlen;
 };
 
-align_t      nw_align         (const char * query, const char * ref, const int len_q, const int dir_q, const int dir_r, const double likelihood_thr, const double read_match_prob, const double rand_match_prob);
-//align_t      sw_align         (char * read, int rdlen, char * ref, int rflen);
+struct alignopt_t {
+   double border_slope;
+   double border_y0;
+   double bp_thr;
+   int    bp_period;
+   int    bp_repeats;
+   double read_error;
+   double rand_error;
+   double read_subst;
+   double rand_subst;
+
+};
+
+align_t nw_align (const char * query, const char * ref, const int len_q, const int dir_q, const int dir_r, const alignopt_t opt);
 
 #endif
