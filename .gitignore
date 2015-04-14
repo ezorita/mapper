@@ -5,6 +5,7 @@
 *.index
 bwmapper
 gbrowser
+aligner
 tmp/*
 genomes/*
 *.o
