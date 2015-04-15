@@ -6,7 +6,7 @@ nw_align
  const char * query,
  const char * ref,
  const int len_q,
- const int align_min,
+ int align_min,
  const int dir_q,
  const int dir_r,
  const alignopt_t opt
@@ -52,7 +52,6 @@ nw_align
 
    // Allocate path and alignment matrix.
    int allocated = align_min(len_q + align_max + 1, ALLOC_BLOCK_SIZE);
-   int cells = 0;
    cell_t ** Ls = malloc((len_q + align_max + 1) * sizeof(cell_t*));
    cell_t ** path = malloc(max_plen * sizeof(cell_t*));
 
@@ -248,7 +247,7 @@ nw_align
             if (Js > maxJs) { maxJs = Js; bs = b; }
          }
 
-         fprintf(stdout, "ML algorithm {pos = %d, be = %d (Je = %.2f), bs = %d (Js = %.2f)}\n", path_len, be, maxJe, bs, maxJs);
+         //         fprintf(stdout, "ML algorithm {pos = %d, be = %d (Je = %.2f), bs = %d (Js = %.2f)}\n", path_len, be, maxJe, bs, maxJs);
          
          if (maxJs > opt.bp_thr && maxJe > opt.bp_thr) {
             if (bs == lastbs && be == lastbe) bp_count++;

@@ -49,6 +49,6 @@ struct alignopt_t {
 
 };
 
-align_t nw_align (const char * query, const char * ref, const int len_q, const int dir_q, const int dir_r, const alignopt_t opt);
+align_t nw_align (const char * query, const char * ref, const int len_q, const int dir_q, int align_min, const int dir_r, const alignopt_t opt);
 
 #endif
