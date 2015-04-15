@@ -431,12 +431,12 @@ read_file
          break;
       }
 
-      size_t seqlen = strlen(seq);
+      /*size_t seqlen = strlen(seq);
       if (seqlen > MAXSEQLEN) {
          fprintf(stderr, "max sequence length exceeded (%d)\n", MAXSEQLEN);
          fprintf(stderr, "offending sequence:\n%s\n", seq);
          continue;
-      }
+         }*/
       
       
       if (seq_push(&seqstack, tag, seq, reverse)) return NULL;

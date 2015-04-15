@@ -101,8 +101,17 @@ int main(int argc, char * argv[]) {
          .overlap_max_tolerance = 0.5,
          .align_likelihood_thr = 5.0,
          .fuse_min_spanratio = 0.5,
-         .read_match_prob = 0.85,
-         .rand_match_prob = 0.5
+         .align = (alignopt_t) {
+            .border_slope = 0.168,
+            .border_y0    = 26,
+            .bp_thr       = 5,
+            .bp_period    = 20,
+            .bp_repeats   = 3,
+            .read_error   = 0.85,
+            .rand_error   = 0.5,
+            .read_subst   = 0.05,
+            .rand_subst   = 0.3
+         }
       };
       clock_t tstart = clock();
       hitmap(&index, chr, seqs, hmargs);

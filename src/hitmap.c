@@ -94,6 +94,18 @@ hitmap
             // Process hitmap.
             clock_t tmp = clock();
             hitmap_analysis(hitmaps[i], seeds, kmer, slen, hmargs);
+            /*
+            // DEBUG.
+            for (int i = 0; i < seeds->pos; i++) {
+               match_t * match = seeds->match[i];
+               long     g_start = index->gsize - match->ref_e;
+               long       g_end = index->gsize - match->ref_s - 1;
+               int chrnum = bisect_search(0, chr->nchr-1, chr->start, g_start+1)-1;
+               fprintf(stdout, "%d\t%s:%ld-%ld\t%d-%d\n", match->hits, chr->name[chrnum],g_start-chr->start[chrnum], g_end-chr->start[chrnum], match->read_s, match->read_e);
+            }
+            fprintf(stdout, "SEED LIST END\n");
+            */
+
             himap_time += clock() - tmp;
             num_aligns += seeds->pos;
             // Smith-Waterman alignment.
@@ -458,8 +470,8 @@ align_seeds
       // The previously matched region will be aligned again,
       // but it's the only way to know precisely the total identity of the read.
       // Note that the genome is stored backwards so all signs are changed.
-      align_r = nw_align(read + seed->read_s + 1, index->genome + seed->ref_s - 1, slen - seed->read_s - 1, ALIGN_FORWARD, ALIGN_BACKWARD, hmargs.align_likelihood_thr, hmargs.read_match_prob, hmargs.rand_match_prob);
-      align_l = nw_align(read + seed->read_s, index->genome + seed->ref_s, seed->read_s + 1, ALIGN_BACKWARD, ALIGN_FORWARD, hmargs.align_likelihood_thr, hmargs.read_match_prob, hmargs.rand_match_prob);
+      align_r = nw_align(read + seed->read_s + 1, index->genome + seed->ref_s - 1, slen - seed->read_s - 1, seed->read_e - seed->read_s + 1, ALIGN_FORWARD, ALIGN_BACKWARD, hmargs.align); 
+      align_l = nw_align(read + seed->read_s, index->genome + seed->ref_s, seed->read_s + 1, 1, ALIGN_BACKWARD, ALIGN_FORWARD, hmargs.align);
 
       seed->score  = align_l.score + align_r.score;
       seed->ident  = 1.0 - (seed->score*1.0)/(align_l.pathlen + align_r.pathlen);
@@ -562,7 +574,6 @@ print_intervals
       if (match->repeats->pos > 1) {
          mergesort_mt(match->repeats->match, match->repeats->pos, sizeof(match_t *), 0, 1, compar_matchid);
          fprintf(stdout, "[interval %d]\t*%d* significant loci\n", ++cnt, match->repeats->pos);
-         /*
          for (int j = 0; j < hm_min(max_repeats, match->repeats->pos); j++) {
             match_t * rmatch = match->repeats->match[j];
             int          dir = rmatch->dir;
@@ -580,7 +591,7 @@ print_intervals
                     (match->flags & FLAG_FUSED ? 'f' : '-'));
 
          }
-         */
+
          //         if (match->repeats->pos > max_repeats) fprintf(stdout, "\t\t...\n");
       }
       else {
