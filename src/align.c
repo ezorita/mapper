@@ -6,6 +6,7 @@ nw_align
  const char * query,
  const char * ref,
  const int len_q,
+ const int align_min,
  const int dir_q,
  const int dir_r,
  const alignopt_t opt
@@ -51,6 +52,7 @@ nw_align
 
    // Allocate path and alignment matrix.
    int allocated = align_min(len_q + align_max + 1, ALLOC_BLOCK_SIZE);
+   int cells = 0;
    cell_t ** Ls = malloc((len_q + align_max + 1) * sizeof(cell_t*));
    cell_t ** path = malloc(max_plen * sizeof(cell_t*));
 
@@ -229,7 +231,7 @@ nw_align
       }
 
       // Breakpoint detection.
-      if (i % opt.bp_period == 0) {
+      if (i % opt.bp_period == 0 && i >= align_min) {
          double maxJe, maxJs;
          // Compute breakpoint statistics.
          maxJe = maxJs = -INFINITY;

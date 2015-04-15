@@ -30,7 +30,7 @@ int main(int argc, char *argv[])
 
    // Align.
    alignopt_t opt = {0.168, 26, 5, 20, 3, 0.15, 0.50, 0.05, 0.30};
-   nw_align(sa, sb, alen, 1, 1, opt);
+   nw_align(sa, sb, alen, 1, 1, 1, opt);
    
    return 0;
 }
