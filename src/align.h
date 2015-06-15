@@ -5,6 +5,10 @@
 #ifndef _ALIGN_H
 #define _ALIGN_H
 
+// BF-alignment
+#define WORD_SIZE 64
+#define MASK_MSB 0x8000000000000000
+
 // SW-alignment
 #define SCORE_MATCH    1
 #define SCORE_DELETE   -1
@@ -37,9 +41,9 @@ struct align_t {
 };
 
 struct alignopt_t {
-   double border_slope;
-   double border_y0;
-   double bp_thr;
+   int    align_width;
+   double bp_max_thr;
+   double bp_min_thr;
    int    bp_period;
    int    bp_repeats;
    double read_error;
@@ -49,6 +53,6 @@ struct alignopt_t {
 
 };
 
-align_t nw_align (const char * query, const char * ref, const int len_q, const int dir_q, int align_min, const int dir_r, const alignopt_t opt);
+align_t nw_align (const char * query, const char * ref, const int len_q, int min_len, const int dir_q, const int dir_r, const alignopt_t opt);
 
 #endif

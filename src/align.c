@@ -1,12 +1,298 @@
 #include "align.h"
 
+void
+update
+(
+ uint64_t   Eq,
+ uint64_t * Pv,
+ uint64_t * Mv,
+ uint8_t  * Phin,
+ uint8_t  * Mhin
+ )
+{
+   uint64_t Xv, Xh, Ph, Mh;
+   // Get current match sequence.
+   Eq |= *Mhin;
+
+   // Compute output of Xh blocks (Mh, Ph).
+   Xh = (((Eq & *Pv) + *Pv) ^ *Pv) | Eq;
+   Ph = *Mv | ~(Xh | *Pv);
+   Mh = *Pv & Xh;
+
+   // Save hout.
+   uint8_t Phout = (Ph & MASK_MSB) > 0;
+   uint8_t Mhout = (Mh & MASK_MSB) > 0;
+
+   // Feed Ph, Mh to Xv blocks.
+   Xv = Eq | *Mv;
+   Ph = (Ph << 1) | *Phin;
+   Mh = (Mh << 1) | *Mhin;
+   *Pv = Mh | ~(Xv | Ph);
+   *Mv = Ph & Xv;
+   *Phin = Phout;
+   *Mhin = Mhout;
+}
+
+uint64_t **
+precompute_eq
+(
+ int        len,
+ uint8_t  * text,
+ uint32_t * words
+)
+{
+   uint32_t w = (len + WORD_SIZE-1)/WORD_SIZE;
+   uint64_t ** Peq = malloc((w+1)*sizeof(uint64_t*));
+   for (int i = 0; i <= w; i++) Peq[i] = calloc(4, sizeof(uint64_t));
+   for (int i = 0; i < w; i++)
+      for (int b = 0; b < WORD_SIZE && i*WORD_SIZE+b < len; b++)
+         Peq[i][translate[text[i*WORD_SIZE+b]]] |= ((uint64_t)1) << b;
+   if (words != NULL) *words = w;
+   return Peq;
+}
+
+void
+free_eq
+(
+ uint64_t ** Eq,
+ int         words
+)
+{
+   for (int i = 0; i < words; i++) free(Eq[i]);
+   free(Eq);
+}
+
+
+align_t
+mbf_align
+(
+ int         qlen,
+ uint8_t   * qry,
+ int         rlen,
+ uint8_t   * ref,
+ int         dir_ref,
+ int         align_w,
+ alignopt_t  opt
+ )
+{
+   // Precompute query eq values.
+   uint32_t qwords;
+   uint64_t ** Peq = precompute_eq(qlen, qry, &qwords);
+
+   // Reduce width if align_w is bigger than the available query words.
+   uint32_t awords = align_min(qwords, (align_w + WORD_SIZE - 1)/WORD_SIZE);
+   if (awords * WORD_SIZE <= rlen) align_w = awords * WORD_SIZE;
+   else align_w = rlen;
+
+   // Initialize
+   // Right bitfield.
+   uint64_t * Mr = calloc(awords, sizeof(uint64_t));
+   uint64_t * Pr = malloc(awords * sizeof(uint64_t));
+   memset(Pr, 0xFF, awords * sizeof(uint64_t));
+   // Bottom bitfield.
+   uint64_t * Pb = calloc(awords, sizeof(uint64_t));
+   uint64_t * Mb = calloc(awords, sizeof(uint64_t));
+   // Score cache / breakpoint detection.
+   uint32_t   c_ptr = 0;
+   uint32_t * c_scr = malloc((align_max(rlen, qlen)/bp_period + 1)*sizeof(uint32_t));
+   uint32_t * c_pos = malloc((align_max(rlen, qlen)/bp_period + 1)*sizeof(uint32_t));
+   double logAe = log(opt.rand_error) - log(opt.read_error);
+   double logBe = log(1-opt.rand_error) - log(1-opt.read_error);
+   uint32_t bp  = 0, bp_count = 0;
+   c_scr[c_ptr] = 0;
+   c_pos[c_ptr++] = 0;
+
+   // Square block.
+   int last_bit = (awords * WORD_SIZE > qlen ? WORD_SIZE - (((qlen-1) % WORD_SIZE) + 1) : 0);
+   uint32_t score;
+   for (int i = 0; i < align_w; i++) {
+      uint32_t c = translate[ref[i]];
+
+      // Update bitfields vertically.
+      uint8_t  Phin = 1, Mhin = 0;
+      for (int j = 0; j < awords; j++)
+         update(Peq[j][c], Pr+j, Mr+j, &Phin, &Mhin);
+
+      // Update Mb, Pb. (Bottom bitfield).
+      uint64_t mask = ((uint64_t)1) << (i%WORD_SIZE);
+      if      (Phin) Pb[i/WORD_SIZE] |= mask;
+      else if (Mhin) Mb[i/WORD_SIZE] |= mask;
+      
+      // BP detection.
+      if (i % opt.bp_period == 0 && i > 0) {
+         score = c_scr[c_ptr] = i;
+         int j = 0, pc, mc;
+         for (; j < awords-1; j++) {
+            pc = __builtin_popcountl(Pr[j]);
+            mc = __builtin_popcountl(Mr[j]);
+            if (score - mc < c_scr[c_ptr]) c_scr[c_ptr] = align_max(score - mc);
+            score += pc - mc;
+         }
+         pc = __builtin_popcountl(Pr[j] << last_bit);
+         mc = __builtin_popcountl(Mr[j] << last_bit);
+         if (score - mc < c_scr[c_ptr]) c_scr[c_ptr] = align_max(0,score - mc);
+         c_pos[c_ptr] = i;
+
+         // Compute likelihood.
+         int E = c_scr[c_ptr] - c_scr[bp];
+         int M = i - c_pos[bp] - E;
+         double J = E*logAe + M*logBe;
+
+         // Check threshold.
+         double maxJ = -INFINITY;
+         if (J > opt.bp_thr) {
+            bp_count++;
+            if (bp_count >= opt.bp_repeats) {
+               /* Save align_t, free memory and
+                  return */
+            }
+         } else {
+            for (int b = 0; b < c_ptr; b++) {
+               E = c_scr[c_ptr] - c_scr[b];
+               M = i - c_pos[b] - E;
+               J = E*logAe + M*logBe;
+               if (J > maxJ) { maxJ = J; bp = b; }
+            }
+            if (maxJ > opt.bp_thr) {
+               bp_count = 1;
+            }
+         }
+      }
+   }
+
+   // Compute score at this point.
+   uint32_t score = align_w;
+   int j = 0, pc, mc;
+   c_scr[0] = align_w;
+
+   // Check whether the matrix is full.
+   if (align_min(rlen,qlen) <= align_w) {
+      free_eq(Peq, awords);
+      free(Mr); free(Pr); free(Mb); free(Pb);
+      if (bp_count > 0) return (align_t){0,c_pos[bp],c_scr[bp],0};
+      return score;
+   }
+
+   // ***
+   // Compute diagonals
+   // ***
+   int        diag_max = align_min(qlen, rlen);
+   
+   // Precompute Eq for reference.
+   uint32_t rwords;
+   uint64_t ** Req = precompute_eq(rlen, ref, &rwords);
+
+   // Alloc words for shifted Eq values.
+   uint64_t * Eqr = malloc(awords * sizeof(uint64_t));
+   uint64_t * Eqb = malloc(awords * sizeof(uint64_t));
+   uint8_t    Eqc;
+
+   // Alloc horizontal/vertical input deltas.
+   uint8_t Phinr, Mhinr, Phinb, Mhinb;
+   uint8_t Pvinr = 0, Mvinr = 1, Pvinb = 0, Mvinb = 1;
+
+   for (int d = 0, i = align_w; i < diag_max; i++, d++) {
+      Phinr = Phinb = 1;
+      Mhinr = Mhinb = 0;
+
+      int bits = d%WORD_SIZE;
+      if (bits) {
+         for (int j = 0, s = d/WORD_SIZE; j < awords; j++) {
+            Eqr[j] = (Peq[s+j][translate[ref[i]]] >> bits) | (Peq[s+j+1][translate[ref[i]]] << (WORD_SIZE - bits));
+            Eqb[j] = (Req[s+j][translate[qry[i]]] >> bits) | (Req[s+j+1][translate[qry[i]]] << (WORD_SIZE - bits));
+         }
+      }
+      else {
+         for (int j = 0, s = d/WORD_SIZE; j < awords; j++) {
+            Eqr[j] = Peq[s+j][translate[ref[i]]];
+            Eqb[j] = Req[s+j][translate[qry[i]]];
+         }
+      }
+
+      // Update bitfields.
+      for (int j = 0; j < awords; j++) {
+         update(Eqr[j], Pr+j, Mr+j, &Phinr, &Mhinr);
+         update(Eqb[j], Pb+j, Mb+j, &Phinb, &Mhinb);
+      }
+
+      // Compute the central cell.
+      uint64_t Pvc, Mvc, Phc, Mhc;
+      if (ref[i] == qry[i]) {
+         Mhc = Phinb;
+         Phc = Mhinb;
+         Mvc = Phinr;
+         Pvc = Mhinr;
+      } else {
+         Mhc = Phinb & Mhinr;
+         Phc = !Phinb & (Mhinb | !Mhinr);
+         Mvc = Phinr & Mhinb;
+         Pvc = !Phinr & (Mhinr | !Mhinb);;
+      }
+
+      score += Phinr - Mhinr + Pvc - Mvc;
+
+      // Now shift the bitfields and insert center cell.
+      int j = 0;
+      for (; j < awords-1; j++) {
+         Pr[j] = (Pr[j] >> 1) | (Pr[j+1] << (WORD_SIZE-1));
+         Mr[j] = (Mr[j] >> 1) | (Mr[j+1] << (WORD_SIZE-1));
+         Pb[j] = (Pb[j] >> 1) | (Pb[j+1] << (WORD_SIZE-1));
+         Mb[j] = (Mb[j] >> 1) | (Mb[j+1] << (WORD_SIZE-1));
+      }
+      Pr[j] = (Pr[j] >> 1) | (Pvc << (WORD_SIZE-1));
+      Mr[j] = (Mr[j] >> 1) | (Mvc << (WORD_SIZE-1));
+      Pb[j] = (Pb[j] >> 1) | (Phc << (WORD_SIZE-1));
+      Mb[j] = (Mb[j] >> 1) | (Mhc << (WORD_SIZE-1));
+   }
+   // Free shifted Eq values.   
+   free(Eqr);
+   free(Eqb);
+
+   // Check whether the matrix is full.
+   if (rlen == qlen) {
+      free_eq(Peq, awords);
+      free_eq(Req, awords);
+      free(Mr); free(Pr); free(Mb); free(Pb);
+      return score;
+   }
+
+   // If the matrix is not square, compute the last block.
+   uint64_t  * Pv = (qlen > rlen ? Pb : Pr);
+   uint64_t  * Mv = (qlen > rlen ? Mb : Mr);
+   uint8_t   * nt = (qlen > rlen ? qry : ref);
+   uint64_t ** Eq;
+   if (qlen > rlen) {
+      Eq = precompute_eq(awords*WORD_SIZE, ref + rlen - awords*WORD_SIZE, NULL);
+   } else {
+      Eq = precompute_eq(awords*WORD_SIZE, qry + qlen - awords*WORD_SIZE, NULL);
+   }
+
+   // Iterate over the remaining rows/columns.
+   for (int i = align_min(qlen, rlen); i < align_max(qlen, rlen); i++) {
+      uint32_t c = translate[nt[i]];
+
+      // Update bitfields.
+      uint8_t  Phin = 1, Mhin = 0;
+      for (int j = 0; j < awords; j++)
+         update(Eq[j][c], Pv+j, Mv+j, &Phin, &Mhin);
+      score += Phin - Mhin;
+      
+   }
+
+   free_eq(Peq, awords);
+   free_eq(Req, awords);
+   free_eq(Eq, awords);
+   free(Mr); free(Pr); free(Mb); free(Pb);
+   return score;
+}
+
 align_t
 nw_align
 (
  const char * query,
  const char * ref,
  const int len_q,
- int align_min,
+ int min_len,
  const int dir_q,
  const int dir_r,
  const alignopt_t opt
@@ -25,10 +311,6 @@ nw_align
    char translate[256] = {[0 ... 255] = 4, ['@'] = 0,
                            ['a'] = 1, ['c'] = 2, ['g'] = 3, ['n'] = 4, ['t'] = 5,
                            ['A'] = 1, ['C'] = 2, ['G'] = 3, ['N'] = 4, ['T'] = 5 };
-
-#define PEN_SUB 0
-#define PEN_INS 1
-#define PEN_DEL 2
 
    // Matrix cell structure.
    typedef struct cell_t cell_t;
@@ -72,13 +354,9 @@ nw_align
    int ins, dels, min_score;
    int path_len = 0;
 
-   int lastbs = 0, lastbe = 0, bp_count = 0, align_end = 0;
+   int lastbe = 0, bp_count = 0, align_end = 0;
    double logAe = log(opt.rand_error) - log(opt.read_error);
    double logBe = log(1-opt.rand_error) - log(1-opt.read_error);
-
-   double logAs = log(opt.rand_subst) - log(opt.read_subst);
-   double logBs = log(1-opt.rand_subst) - log(1-opt.read_subst);
-
 
    // Initialize (0,0) value.
    cell_t * uL = Ls[0] + align_len[0] + 1;
@@ -230,47 +508,43 @@ nw_align
       }
 
       // Breakpoint detection.
-      if (i % opt.bp_period == 0 && i >= align_min) {
-         double maxJe, maxJs;
+      if (i % opt.bp_period == 0 && i > min_len) {
+         double maxJe;
          // Compute breakpoint statistics.
-         maxJe = maxJs = -INFINITY;
-         int be = 0, bs = 0;
-         // b represents the last value of the 1st interval. So b is part of the 1st interval!
-         for (int b = 0; b < path_len; b += opt.bp_period) {
-            int Ee = path[path_len]->score - path[b]->score;
-            int Me = path_len - b - Ee;
-            float Je = Ee*logAe + Me*logBe;
-            if (Je > maxJe) { maxJe = Je; be = b; }
-            int Es = Ee - path[path_len]->ins + path[b]->ins - path[path_len]->dels + path[b]->dels;
-            int Ms = path_len - b - Es;
-            float Js = Es*logAs + Ms*logBs;
-            if (Js > maxJs) { maxJs = Js; bs = b; }
+         maxJe = -INFINITY;
+         int Ee = path[path_len]->score - path[lastbe]->score;
+         int Me = path_len - lastbe - Ee;
+         float Je = Ee*logAe + Me*logBe;
+         if (Je > opt.bp_thr) {
+            bp_count++;
+            if (bp_count >= opt.bp_repeats) align_end = 1;
+            //            fprintf(stdout, "\tML algorithm (ml=%d, i=%d) {pos = %d, be = %d (Je = %.2f)}\n", min_len, i, path_len, lastbe, Je);
+         } else {
+            for (int b = 0; b < path_len; b += opt.bp_period) {
+               Ee = path[path_len]->score - path[b]->score;
+               Me = path_len - b - Ee;
+               Je = Ee*logAe + Me*logBe;
+               if (Je > maxJe) { maxJe = Je; lastbe = b; }
+            }
+            if (maxJe > opt.bp_thr) {
+               bp_count = 1;
+            }
+            //            fprintf(stdout, "\tML algorithm (ml=%d, i=%d) {pos = %d, be = %d (Je = %.2f)}\n", min_len, i, path_len, lastbe, maxJe);
          }
 
-         //         fprintf(stdout, "ML algorithm {pos = %d, be = %d (Je = %.2f), bs = %d (Js = %.2f)}\n", path_len, be, maxJe, bs, maxJs);
-         
-         if (maxJs > opt.bp_thr && maxJe > opt.bp_thr) {
-            if (bs == lastbs && be == lastbe) bp_count++;
-            else {
-               bp_count = 1;
-               lastbs = bs;
-               lastbe = be;
-            }
-            if (bp_count >= opt.bp_repeats) {
-               align_end = 1;
-            }
-         }
+
       }
 
       // End of alignment, compute ML breakpoint.
       if (L[best_idx].row >= len_q - 1 || align_end) {
+
          float maxJ = -INFINITY;
-         int bp = 0;
+         int bp = path_len;
          for (int b = 0; b < path_len; b++) {
             int E = path[path_len]->score - path[b]->score;
             int M = path_len - b - E;
             float J = E*logAe + M*logBe;
-            if (J > maxJ) { maxJ = J; bp = b; }
+            if (J > maxJ && J > opt.bp_min_thr) { maxJ = J; bp = b; }
          }
 
          // Set alignment values.
@@ -280,9 +554,9 @@ nw_align
          align.score   = bpc->score;
          align.pathlen = bp + 1;
          
-         cell_t * last = path[path_len];
+         //         cell_t * last = path[path_len];
         
-         fprintf(stdout, "Breakpoint: %ld\nRead(0-%d): %d (%.2f%%)\n- sub: %d\n- ins: %d\n- del: %d\nRandom(%d-%d): %d (%.2f%%)\n- sub: %d\n- ins: %d\n- del: %d\n", align.start, bp, bpc->score, bpc->score*100.0/(bp+1), bpc->score - bpc->ins - bpc->dels, bpc->ins, bpc->dels, bp, path_len, last->score - bpc->score, (last->score - bpc->score)*100.0/(path_len-bp+1), last->score - last->ins - last->dels - bpc->score + bpc->ins + bpc->dels, last->ins - bpc->ins, last->dels - bpc->dels);
+         //         fprintf(stdout, "len: %d  \tBreakpoint: %d (read_pos=%ld) (fine J = %.2f)\tRead(0-%d): {%d (%.2f%%) sub: %d ins: %d del: %d} Random(%d-%d): {%d (%.2f%%) sub: %d ins: %d del: %d}\n", last->row,  bp, align.start, maxJ, bp, bpc->score, bpc->score*100.0/(bp+1), bpc->score - bpc->ins - bpc->dels, bpc->ins, bpc->dels, bp, path_len, last->score - bpc->score, (last->score - bpc->score)*100.0/(path_len-bp+1), last->score - last->ins - last->dels - bpc->score + bpc->ins + bpc->dels, last->ins - bpc->ins, last->dels - bpc->dels);
 
          break;
       }
