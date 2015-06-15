@@ -32,6 +32,7 @@ seq_push
  seqstack_t ** stackp,
  const char  * tag,
  const char  * seq,
+ const char  * q,
  const int     reverse
 )
 {
@@ -55,6 +56,8 @@ seq_push
    // Copy tag
    seqt->tag = strdup(tag);
    seqt->seq = strdup(seq);
+   if (q) seqt->q = strdup(q);
+   else seqt->q = calloc(strlen(seqt->seq),sizeof(char));
 
    // Copy sequence (or reverse-complement)
    if (reverse) {

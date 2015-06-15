@@ -79,38 +79,51 @@ int main(int argc, char * argv[]) {
       // Default arguments.
 
       int rounds = 4;
-      int kmers[6] = {22,20,18,22};
-      int tau[6] = {0,0,0,1};
+      int kmers[6] = {22,20,18,22,20,18};
+      int tau[6] = {0,0,0,1,0,1};
+      char qthr[6] = {0,0,0,0,0,0};
 
       hmargs_t hmargs = {
+         // Format options.
          .verbose = 1,
+         .repeat_print_num = 5,
+         // Seeding strategy.
          .search_rounds = rounds,
          .tau = tau,
          .kmer_size = kmers,
-         .repeat_print_num = 5,
+         .qthr = qthr,
+         // Seeding options.
          .seed_max_loci = 20,
          .seed_abs_max_loci = 10000,
-         .read_ref_ratio = 2,
-         .dist_accept = 10,
+         // Hitmap analysis options.
+         .read_ref_ratio = 1 + 0.15,
+         .dist_accept = 20,
+         // Alignment filter options.
          .max_align_per_read = 10000,
-         .match_min_len = 75,
-         .match_min_id = 0.7,
-         .feedback_id_thr = 0.8,
+         .align_full_seed_thr = 0.01,
+         .align_filter_eexp = -6.0,
+         .align_accept_eexp = -50.0,
+         .align_seed_filter_thr = 0.5,
+         // Post-processing options.
+         .feedback_eexp_thr = -9.0,
+         .feedback_gap_minlen = 75,
          .repeat_min_overlap = 0.9,
          .overlap_tolerance = 0.1,
          .overlap_max_tolerance = 0.5,
-         .align_likelihood_thr = 5.0,
          .fuse_min_spanratio = 0.5,
+         // Alignment algorithm options.
          .align = (alignopt_t) {
             .border_slope = 0.168,
             .border_y0    = 26,
-            .bp_thr       = 5,
+            .bp_thr       = 30,
+            .bp_max_thr   = 25,
+            .bp_min_thr   = 5,
             .bp_period    = 20,
             .bp_repeats   = 3,
-            .read_error   = 0.85,
-            .rand_error   = 0.5,
-            .read_subst   = 0.05,
-            .rand_subst   = 0.3
+            .read_error   = 0.10,
+            .rand_error   = 0.45,
+            .read_subst   = 0.10,
+            .rand_subst   = 0.30
          }
       };
       clock_t tstart = clock();

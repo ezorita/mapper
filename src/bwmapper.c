@@ -388,6 +388,7 @@ read_file
 
    char *seq  = NULL;
    char *tag  = NULL;
+   char *q    = NULL;
    int lineno = 0;
 
    while ((nread = getline(&line, &linesz, inputf)) != -1) {
@@ -427,6 +428,7 @@ read_file
                }
                lineno++;
             }
+            q = temp;
          } else continue;
          break;
       }
@@ -439,7 +441,7 @@ read_file
          }*/
       
       
-      if (seq_push(&seqstack, tag, seq, reverse)) return NULL;
+      if (seq_push(&seqstack, tag, seq, q, reverse)) return NULL;
    }
 
    free(line);

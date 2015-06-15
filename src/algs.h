@@ -35,6 +35,7 @@ struct seq_t {
    char * tag;
    char * seq;
    char * rseq;
+   char * q;
 };
 
 
@@ -136,7 +137,7 @@ int           pushvec          (vstack_t ** stackp, long * vector, int vecsize);
 pstack_t    * new_pstack       (long size);
 int           ppush            (pstack_t ** stackp, pebble_t pebble);
 seqstack_t  * new_seqstack     (int size);
-int           seq_push         (seqstack_t ** stackp, const char* tag, const char* seq, const int reverse);
+int           seq_push         (seqstack_t ** stackp, const char* tag, const char* seq, const char* q, const int reverse);
 
 // Trie functions.
 trie_t      * trie_new         (int initial_size);
