@@ -226,7 +226,7 @@ mbf_align
          Mhc = Phinb & Mhinr;
          Phc = !Phinb & (Mhinb | !Mhinr);
          Mvc = Phinr & Mhinb;
-         Pvc = !Phinr & (Mhinr | !Mhinb);;
+         Pvc = !Phinr & (Mhinr | !Mhinb);
       }
 
       score += Phinr - Mhinr + Pvc - Mvc;
