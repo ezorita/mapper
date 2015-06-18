@@ -369,7 +369,7 @@ hitmap_analysis
       if (hits > minv && (sgnf_streak < streak)) {
          // Allocate match.
          match_t * match = malloc(sizeof(match_t));
-         match->ref_e  = refloc;
+         match->ref_e  = refloc + kmer_size;
          match->read_e = refkmer + kmer_size;
          match->dir    = refdir;
          match->ref_s  = streakloc; //- kmer_size;
@@ -472,130 +472,113 @@ align_seeds
    int significant = 0;
    int slen = strlen(seq.seq);
 
-   matchlist_t * accepted = matchlist_new(HITBUF_SIZE);
-
    // Sort by seeded nucleotides.
    mergesort_mt(seeds->match, seeds->pos, sizeof(match_t *), 0, 1, compar_seedhits);
 
    for(long k = 0; k < seeds->pos; k++) {
       // Get next seed.
       match_t * seed = seeds->match[k];
-      int next_alignment = 0;
-
-      // Stop alignment if something significant has been already found.
-      for (int i = 0; i < accepted->pos; i++) {
-         match_t * found = accepted->match[i];
-         // Check if seed has enough hits to pass.
-         if (seed->hits > found->hits * hmargs.align_seed_filter_thr) continue;
-
-         // If not, check the overlap.
-         int span = hm_min(seed->read_e - seed->read_s, found->read_e - found->read_s);
-         int overlap = hm_max(0, hm_min(seed->read_e, found->read_e) - hm_max(seed->read_s, found->read_s));
-         // If overlap is higher than the maximum overlap tolerance, cancel the alignment.
-         if (overlap > span*hmargs.overlap_max_tolerance) {
-            next_alignment = 1;
-            break;
-         }
-      }
-      if (next_alignment) continue;
 
       // Get query sequence.
       char * read = (seed->dir ? seq.rseq : seq.seq);
+
+      // Compute alignment limits.
+      long r_min  = seed->read_e - seed->read_s + 1;
+      long l_min  = 0;
+      long r_qstart = seed->read_s + 1;
+      long l_qstart = r_qstart - 1;
+      long r_rstart = seed->ref_s - 1;
+      long l_rstart = r_rstart + 1;
+     
+      // Extend previous alignment.
+      double last_eexp = INFINITY;
+      match_t * extend = NULL;
+      int extend_score = 0;
+      for (int i = 0; i < (*seqmatches)->pos; i++) {
+         match_t * match = (*seqmatches)->match[i];
+         if (match->dir != seed->dir || match->e_exp > last_eexp) continue;
+         // Reverse if seed->dir.
+         long read_s = (seed->dir ? slen - 1 - match->read_e : match->read_s);
+         long read_e = (seed->dir ? slen - 1 - match->read_s : match->read_e);
+         long ref_s = match->ref_s;
+         long ref_e = match->ref_e;
+         // Check whether the seed is right-contiguous.
+         long r_distr = seed->read_e - read_e;
+         long g_distr = ref_e - seed->ref_e;
+         long r_distl = read_s - seed->read_s;
+         long g_distl = seed->ref_s - ref_s;
+         fprintf(stdout, "genomic distance: (%ld,%ld)\tquery distance:(%ld,%ld)\n",g_distl,g_distr,r_distl,r_distr);
+         int ext_r = r_distr > 0 && g_distr > 0 && ((g_distr < (r_distr * hmargs.read_ref_ratio)) || (g_distr < hmargs.dist_accept));
+         int ext_l = r_distl > 0 && g_distl > 0 && ((g_distl < (r_distl * hmargs.read_ref_ratio)) || (g_distl < hmargs.dist_accept));
+         if (ext_r || ext_l) {
+            r_min  = (ext_r ? r_distr : 0);
+            l_min  = (ext_l ? r_distl : 0);
+            r_qstart = read_e + 1;
+            r_rstart = ref_e - 1;
+            l_qstart = read_s - 1;
+            l_rstart = ref_s + 1;
+            last_eexp = match->e_exp;
+            extend = match;
+            extend_score = match->score;
+         }
+      }
+      long r_qlen = slen - r_qstart;
+      long l_qlen = l_qstart;
+      long r_rlen = (long)(r_qlen * (1 + hmargs.align.width_ratio));
+      long l_rlen = (long)(l_qlen * (1 + hmargs.align.width_ratio));
+      char * r_qry = read + r_qstart;
+      char * l_qry = read + l_qstart;
+      char * r_ref = index->genome + r_rstart;
+      char * l_ref = index->genome + l_rstart;
       
       // Check whether a full alignment will be performed.
-      int min_len = seed->read_e - seed->read_s + 1;
-      if (seed->hits*1.0/min_len < hmargs.align_full_seed_thr) min_len = 1;
+      //      if (seed->hits*1.0/min_len < hmargs.align_full_seed_thr) min_len = 1;
 
       // Align forward and backward starting from (read_s, ref_s).
-      path_t align_r, align_l;
-      int qlen = slen-seed->read_s-1;
-      int rlen = (int)(qlen*(1+hmargs.align.width_ratio));
-      align_r = dbf_align(qlen,read+seed->read_s+1,rlen,index->genome+seed->ref_s-1,min_len,ALIGN_FORWARD,ALIGN_BACKWARD, hmargs.align);
-      qlen = seed->read_s + 1;
-      rlen = (int)(qlen*(1+hmargs.align.width_ratio));
-      align_l = dbf_align(qlen,read+seed->read_s,rlen,index->genome+seed->ref_s,0,ALIGN_BACKWARD,ALIGN_FORWARD,hmargs.align);
+      path_t align_r = dbf_align(r_qlen, r_qry, r_rlen, r_ref, r_min, ALIGN_FORWARD, ALIGN_BACKWARD, hmargs.align);
+      path_t align_l = dbf_align(l_qlen, l_qry, l_rlen, l_ref, l_min, ALIGN_BACKWARD, ALIGN_FORWARD, hmargs.align);
       
       // Compute significance.
-      long ref_e = (index->gsize - seed->ref_s) + align_r.col + 2; // column is the genome breakpoint.
-      long ref_s = (index->gsize - seed->ref_s) - align_l.col;     // column is the genome breakpoint.
-      long bp = seed->read_s + align_r.row + 2; // row is the read breakpoint.
-      double e_exp = e_value(ref_e - ref_s, align_l.score + align_r.score, index->gsize);
+      long ref_s = (index->gsize - l_rstart) - align_l.col;
+      long ref_e = (index->gsize - r_rstart) + align_r.col + 2; // column is the genome breakpoint.
+      long read_s = l_qstart - align_l.row;                     // row is the read breakpoint.
+      long read_e = r_qstart + align_r.row + 2;
+      double e_exp = e_value(ref_e - ref_s + 1, extend_score + align_l.score + align_r.score, index->gsize);
 
+      // If significant, store.
       if (e_exp < hmargs.align_filter_eexp) {
-         // If significant, store.
-         match_t * hit = malloc(sizeof(match_t));
-         hit->repeats = matchlist_new(REPEATS_SIZE);
-         hit->score  = align_l.score + align_r.score;
-         hit->ident  = 1.0 - (hit->score*1.0)/(hm_max(align_r.row,align_r.col) + hm_max(align_l.row,align_l.col));
+         // Correct read start and end points if we are aligning the reverse complement.
+         if (seed->dir) {
+            long end = slen - 1 - read_s;
+            read_s = slen - 1 - read_e;
+            read_e = end;
+         }
+         match_t * hit;
+         if (extend != NULL)
+            hit = extend;
+         else {
+            hit = malloc(sizeof(match_t));
+            hit->repeats = matchlist_new(REPEATS_SIZE);
+            hit->flags  = 0;
+         }
+
+         // Fill/Update hit.
+         hit->score  = extend_score + align_l.score + align_r.score;
+         hit->ident  = 1.0 - (hit->score*1.0)/(hm_max(read_e-read_s+1,ref_e-ref_s+1));            
          hit->ref_e  = ref_e;
          hit->ref_s  = ref_s;
-         hit->read_e = bp;
-         hit->read_s = seed->read_s - align_l.row;     // row is the read breakpoint.
+         hit->read_e = read_e;
+         hit->read_s = read_s;
          hit->dir    = seed->dir;
-         hit->hits   = seed->hits;
-         hit->flags  = 0;
          hit->e_exp  = e_exp;
-
-         // Correct read start and end points if we are aligning the reverse complement.
-         if (hit->dir) {
-            long end = slen - 1 - hit->read_s;
-            hit->read_s = slen - 1 - hit->read_e;
-            hit->read_e = end;
-         }
 
          // Add to significant matchlist.
          significant = 1;
-         matchlist_add(seqmatches, hit);
-         if (e_exp < hmargs.align_accept_eexp) matchlist_add(&accepted, hit);
-      }         
-
-
-      // Do alignment from the other end if not reached.
-      if (bp < seed->read_e) {
-         qlen = slen - seed->read_e - 1;
-         rlen = (int)(qlen*(1+hmargs.align.width_ratio));
-         align_r = dbf_align(qlen,read+seed->read_e+1,rlen,index->genome+seed->ref_e-1,0,ALIGN_FORWARD,ALIGN_BACKWARD,hmargs.align);
-         qlen = seed->read_e + 1;
-         rlen = (int)(qlen*(1+hmargs.align.width_ratio));
-         align_l = dbf_align(qlen,read+seed->read_e,rlen,index->genome+seed->ref_e,0,ALIGN_BACKWARD,ALIGN_FORWARD,hmargs.align);
-
-         ref_e = (index->gsize - seed->ref_e) + align_r.col + 2;
-         ref_s = (index->gsize - seed->ref_e) - align_l.col;
-         e_exp = e_value(ref_e - ref_s, align_l.score + align_r.score, index->gsize);
-
-         if (e_exp < hmargs.align_filter_eexp) {
-            // Compute hit.
-            match_t * hit = malloc(sizeof(match_t));
-            hit->repeats = matchlist_new(REPEATS_SIZE);
-            hit->score  = align_l.score + align_r.score;
-            hit->ident  = 1.0 - (hit->score*1.0)/(hm_max(align_l.row,align_r.col) + hm_max(align_r.row,align_l.col));
-            hit->ref_e  = ref_e;
-            hit->ref_s  = ref_s;
-            hit->read_e = seed->read_e + align_r.row + 2; // Align.start is the read breakpoint.
-            hit->read_s = seed->read_e - align_l.row;     // Align.start is the read breakpoint.
-            hit->dir    = seed->dir;
-            hit->hits   = seed->hits;
-            hit->flags  = 0;
-            hit->e_exp  = e_exp;
-
-            // Correct read start and end points if we are aligning the reverse complement.
-            if (hit->dir) {
-               long end = slen - hit->read_s;
-               hit->read_s = slen - hit->read_e;
-               hit->read_e = end;
-            }
-
-            // Add to significant matchlist.
-            significant = 1;
-            matchlist_add(seqmatches, hit);
-            if (e_exp < hmargs.align_accept_eexp) matchlist_add(&accepted, hit);
-         }
+         if (extend == NULL) matchlist_add(seqmatches, hit);
       }
             
       free_match(seed);
    }
-
-   free(accepted);   
 
    return significant;
 }
