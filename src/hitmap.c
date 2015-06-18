@@ -372,7 +372,7 @@ hitmap_analysis
          match->ref_e  = refloc;
          match->read_e = refkmer + kmer_size;
          match->dir    = refdir;
-         match->ref_s  = streakloc - kmer_size;
+         match->ref_s  = streakloc; //- kmer_size;
          match->read_s = streakkmer;
          // TODO:
          // Nothing extra to do with reverse strand??
@@ -478,11 +478,8 @@ align_seeds
    mergesort_mt(seeds->match, seeds->pos, sizeof(match_t *), 0, 1, compar_seedhits);
 
    for(long k = 0; k < seeds->pos; k++) {
-      align_t align_r, align_l;
-
       // Get next seed.
       match_t * seed = seeds->match[k];
-
       int next_alignment = 0;
 
       // Stop alignment if something significant has been already found.
@@ -510,13 +507,18 @@ align_seeds
       if (seed->hits*1.0/min_len < hmargs.align_full_seed_thr) min_len = 1;
 
       // Align forward and backward starting from (read_s, ref_s).
-      align_r = nw_align(read + seed->read_s + 1, index->genome + seed->ref_s - 1, slen - seed->read_s - 1, min_len, ALIGN_FORWARD, ALIGN_BACKWARD, hmargs.align); 
-      align_l = nw_align(read + seed->read_s, index->genome + seed->ref_s, seed->read_s + 1, 1, ALIGN_BACKWARD, ALIGN_FORWARD, hmargs.align);
+      path_t align_r, align_l;
+      int qlen = slen-seed->read_s-1;
+      int rlen = (int)(qlen*(1+hmargs.align.width_ratio));
+      align_r = dbf_align(qlen,read+seed->read_s+1,rlen,index->genome+seed->ref_s-1,min_len,ALIGN_FORWARD,ALIGN_BACKWARD, hmargs.align);
+      qlen = seed->read_s + 1;
+      rlen = (int)(qlen*(1+hmargs.align.width_ratio));
+      align_l = dbf_align(qlen,read+seed->read_s,rlen,index->genome+seed->ref_s,0,ALIGN_BACKWARD,ALIGN_FORWARD,hmargs.align);
       
       // Compute significance.
-      long ref_e = (index->gsize - seed->ref_s) + align_r.end + 2; // Align.end is the genome breakpoint.
-      long ref_s = (index->gsize - seed->ref_s) - align_l.end;     // Align.end is the genome breakpoint.
-      long bp = seed->read_s + align_r.start + 2; // Align.start is the read breakpoint.
+      long ref_e = (index->gsize - seed->ref_s) + align_r.col + 2; // column is the genome breakpoint.
+      long ref_s = (index->gsize - seed->ref_s) - align_l.col;     // column is the genome breakpoint.
+      long bp = seed->read_s + align_r.row + 2; // row is the read breakpoint.
       double e_exp = e_value(ref_e - ref_s, align_l.score + align_r.score, index->gsize);
 
       if (e_exp < hmargs.align_filter_eexp) {
@@ -524,11 +526,11 @@ align_seeds
          match_t * hit = malloc(sizeof(match_t));
          hit->repeats = matchlist_new(REPEATS_SIZE);
          hit->score  = align_l.score + align_r.score;
-         hit->ident  = 1.0 - (hit->score*1.0)/(align_l.pathlen + align_r.pathlen);
+         hit->ident  = 1.0 - (hit->score*1.0)/(hm_max(align_r.row,align_r.col) + hm_max(align_l.row,align_l.col));
          hit->ref_e  = ref_e;
          hit->ref_s  = ref_s;
          hit->read_e = bp;
-         hit->read_s = seed->read_s - align_l.start;     // Align.start is the read breakpoint.
+         hit->read_s = seed->read_s - align_l.row;     // row is the read breakpoint.
          hit->dir    = seed->dir;
          hit->hits   = seed->hits;
          hit->flags  = 0;
@@ -536,8 +538,8 @@ align_seeds
 
          // Correct read start and end points if we are aligning the reverse complement.
          if (hit->dir) {
-            long end = slen - hit->read_s;
-            hit->read_s = slen - hit->read_e;
+            long end = slen - 1 - hit->read_s;
+            hit->read_s = slen - 1 - hit->read_e;
             hit->read_e = end;
          }
 
@@ -550,11 +552,15 @@ align_seeds
 
       // Do alignment from the other end if not reached.
       if (bp < seed->read_e) {
-         align_r = nw_align(read + seed->read_e + 1, index->genome + seed->ref_e - 1, slen - seed->read_e - 1, 1, ALIGN_FORWARD, ALIGN_BACKWARD, hmargs.align); 
-         align_l = nw_align(read + seed->read_e, index->genome + seed->ref_e, seed->read_e + 1, 1, ALIGN_BACKWARD, ALIGN_FORWARD, hmargs.align);
+         qlen = slen - seed->read_e - 1;
+         rlen = (int)(qlen*(1+hmargs.align.width_ratio));
+         align_r = dbf_align(qlen,read+seed->read_e+1,rlen,index->genome+seed->ref_e-1,0,ALIGN_FORWARD,ALIGN_BACKWARD,hmargs.align);
+         qlen = seed->read_e + 1;
+         rlen = (int)(qlen*(1+hmargs.align.width_ratio));
+         align_l = dbf_align(qlen,read+seed->read_e,rlen,index->genome+seed->ref_e,0,ALIGN_BACKWARD,ALIGN_FORWARD,hmargs.align);
 
-         ref_e = (index->gsize - seed->ref_e) + align_r.end + 2; // Align.end is the genome breakpoint.
-         ref_s = (index->gsize - seed->ref_e) - align_l.end;     // Align.end is the genome breakpoint.
+         ref_e = (index->gsize - seed->ref_e) + align_r.col + 2;
+         ref_s = (index->gsize - seed->ref_e) - align_l.col;
          e_exp = e_value(ref_e - ref_s, align_l.score + align_r.score, index->gsize);
 
          if (e_exp < hmargs.align_filter_eexp) {
@@ -562,11 +568,11 @@ align_seeds
             match_t * hit = malloc(sizeof(match_t));
             hit->repeats = matchlist_new(REPEATS_SIZE);
             hit->score  = align_l.score + align_r.score;
-            hit->ident  = 1.0 - (hit->score*1.0)/(align_l.pathlen + align_r.pathlen);
+            hit->ident  = 1.0 - (hit->score*1.0)/(hm_max(align_l.row,align_r.col) + hm_max(align_r.row,align_l.col));
             hit->ref_e  = ref_e;
             hit->ref_s  = ref_s;
-            hit->read_e = seed->read_e + align_r.start + 2; // Align.start is the read breakpoint.
-            hit->read_s = seed->read_e - align_l.start;     // Align.start is the read breakpoint.
+            hit->read_e = seed->read_e + align_r.row + 2; // Align.start is the read breakpoint.
+            hit->read_s = seed->read_e - align_l.row;     // Align.start is the read breakpoint.
             hit->dir    = seed->dir;
             hit->hits   = seed->hits;
             hit->flags  = 0;
@@ -696,7 +702,7 @@ print_intervals
             long       g_end = rmatch->ref_e - 1;
             int chrnum = bisect_search(0, chr->nchr-1, chr->start, g_start+1)-1;
             fprintf(stdout, "\t\t(%d,%d)\t%s:%ld-%ld:%c\t%.2f\t(%.0f%%)\t%c%c\n",
-                    rmatch->read_s, rmatch->read_e - 1,
+                    rmatch->read_s+1, rmatch->read_e,
                     chr->name[chrnum],
                     g_start - chr->start[chrnum]+1,
                     g_end - chr->start[chrnum]+1,
@@ -718,7 +724,7 @@ print_intervals
          // Print results.
          fprintf(stdout, "[interval %d]\t(%d,%d)\t%s:%ld-%ld:%c\t%.2f\t(%.2f%%)\t%c%c\n",
                  ++cnt,
-                 match->read_s, match->read_e - 1,
+                 match->read_s+1, match->read_e,
                  chr->name[chrnum],
                  g_start - chr->start[chrnum]+1,
                  g_end - chr->start[chrnum]+1,

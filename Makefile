@@ -18,7 +18,7 @@ ASOURCES= $(addprefix $(SRC_DIR)/,$(ASOURCE_FILES))
 AHEADERS= $(addprefix $(INC_DIR)/,$(AHEADER_FILES))
 INCLUDES= $(addprefix -I, $(INC_DIR))
 
-CFLAGS= -std=c99 -g -Wall -O3
+CFLAGS= -std=c99 -g -Wall #-O3 -march=core-avx-i -mpopcnt
 LDLIBS= -lpthread -lm
 CC= gcc
 

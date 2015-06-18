@@ -78,7 +78,7 @@ int main(int argc, char * argv[]) {
       // Hitmap.
       // Default arguments.
 
-      int rounds = 4;
+      int rounds = 3;
       int kmers[6] = {22,20,18,22,20,18};
       int tau[6] = {0,0,0,1,0,1};
       char qthr[6] = {0,0,0,0,0,0};
@@ -113,17 +113,12 @@ int main(int argc, char * argv[]) {
          .fuse_min_spanratio = 0.5,
          // Alignment algorithm options.
          .align = (alignopt_t) {
-            .border_slope = 0.168,
-            .border_y0    = 26,
-            .bp_thr       = 30,
-            .bp_max_thr   = 25,
-            .bp_min_thr   = 5,
-            .bp_period    = 20,
-            .bp_repeats   = 3,
-            .read_error   = 0.10,
-            .rand_error   = 0.45,
-            .read_subst   = 0.10,
-            .rand_subst   = 0.30
+            .bp_thr       = 10,
+            .bp_period    = 10,
+            .bp_repeats   = 20,
+            .read_error   = 0.20,
+            .rand_error   = 0.50,
+            .width_ratio  = 0.15
          }
       };
       clock_t tstart = clock();

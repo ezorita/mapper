@@ -1,3 +1,5 @@
+#include <string.h>
+#include <stdint.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -31,8 +33,10 @@
 #define align_max(a,b) ((a) > (b) ? (a) : (b))
 #define align_min(a,b) ((a) < (b) ? (a) : (b))
 
-typedef struct align_t align_t;
+typedef struct align_t    align_t;
 typedef struct alignopt_t alignopt_t;
+typedef struct path_t     path_t;
+
 struct align_t {
    long start;
    long end;
@@ -41,18 +45,21 @@ struct align_t {
 };
 
 struct alignopt_t {
-   int    align_width;
-   double bp_max_thr;
-   double bp_min_thr;
+   double bp_thr;
    int    bp_period;
    int    bp_repeats;
    double read_error;
    double rand_error;
-   double read_subst;
-   double rand_subst;
-
+   double width_ratio;
 };
 
-align_t nw_align (const char * query, const char * ref, const int len_q, int min_len, const int dir_q, const int dir_r, const alignopt_t opt);
+struct path_t {
+   uint32_t score;
+   uint32_t row;
+   uint32_t col;
+};
+
+
+path_t dbf_align (int qlen,char* query,int rlen,char* ref,int min_len,int dir_r,int dir_q,alignopt_t opt);
 
 #endif
