@@ -115,7 +115,7 @@ void          fuse_matches     (matchlist_t ** listp, int slen, hmargs_t hmargs)
 int           find_repeats     (matchlist_t * list, double overlap);
 matchlist_t * combine_matches  (matchlist_t * list, double overlap_tolerance);
 int           feedback_gaps    (int seqnum, seq_t seq, matchlist_t * intervals, sublist_t ** subseqs, vstack_t ** hitmap, hmargs_t hmargs, int next_kmer_size, char next_qthr);
-void          print_intervals  (matchlist_t * intervals, chr_t * chr, int max_repeats);
+void          print_intervals  (matchlist_t * intervals, chr_t * chr, index_t * index, int max_repeats);
 int           fill_gaps        (matchlist_t ** intervp, matchlist_t * matches, int seq_len, double gap_coverage, double max_overlap);
 double        e_value          (int L, int errors, long gsize);
 matchlist_t * matchlist_new    (int elements);

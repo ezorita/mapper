@@ -22,7 +22,7 @@ int main(int argc, char * argv[]) {
    int opt_verbose  = 1;
 
    // Backtrace handler
-   //    signal(SIGSEGV, SIGSEGV_handler); 
+   signal(SIGSEGV, SIGSEGV_handler); 
 
    if (argc < 3) {
       fprintf(stderr, "usage: bwmapper {query <file.fastq> | index} <genome file>\n");
@@ -78,10 +78,25 @@ int main(int argc, char * argv[]) {
       // Hitmap.
       // Default arguments.
 
+      // Decreasing strategy.
+      /*
       int rounds = 3;
-      int kmers[6] = {22,20,18,22,20,18};
-      int tau[6] = {0,0,0,1,0,1};
-      char qthr[6] = {0,0,0,0,0,0};
+      int kmers[4] = {22,20,18,22};
+      int tau[4] = {0,0,0,1};
+      char qthr[4] = {0,0,0,0};
+      */
+      // Quality strategy (decresing seed).
+      int rounds = 5;
+      int kmers[8] = {22,22,20,20,18,22,20,18};
+      int tau[8] = {0,0,0,0,0,0,0,1};
+      char qthr[8] = {'(','$','(','$',0,0,0,0};
+
+      // Quality strategy (decresing quality).
+      int rounds = 7;
+      int kmers[8] = {22,20,18,22,20,18,18,18};
+      int tau[8] = {0,0,0,0,0,0,0,0};
+      char qthr[8] = {'(','(','(','$','$','$',0,0};
+
 
       hmargs_t hmargs = {
          // Format options.
@@ -102,10 +117,10 @@ int main(int argc, char * argv[]) {
          .max_align_per_read = 10000,
          .align_full_seed_thr = 0.01,
          .align_filter_eexp = -6.0,
-         .align_accept_eexp = -50.0,
+         .align_accept_eexp = -100.0,
          .align_seed_filter_thr = 0.5,
          // Post-processing options.
-         .feedback_eexp_thr = -9.0,
+         .feedback_eexp_thr = -15.0,
          .feedback_gap_minlen = 75,
          .repeat_min_overlap = 0.9,
          .overlap_tolerance = 0.1,

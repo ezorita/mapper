@@ -78,10 +78,8 @@ dbf_find_min
    uint32_t cur = score;
    uint32_t min = score;
    uint32_t row = 0, col = 0;
-   int w = align_min(idx/WORD_SIZE, awords);
-   int b = (w == awords ? 0 : idx%WORD_SIZE);
    // Right wing.
-   for (int j = w, word = 0; j > 0; j--, word++) {
+   for (int j = awords-1, word = 0; j >= 0; j--, word++) {
       uint32_t abs_min = cur - __builtin_popcountl(Pr[j]);
       if (abs_min < min) {
          for (int i = WORD_SIZE-1, bit = 1; i >= 0; i--, bit++) {
@@ -96,21 +94,9 @@ dbf_find_min
          cur = abs_min + __builtin_popcountl(Mr[j]);
       }
    }
-   // Partial word.
-   if (cur - __builtin_popcountl(Pr[0] >> (b ? WORD_SIZE - b : 0)) < min) {
-      for (int i = WORD_SIZE-1, bit = 1; i >= (b ? WORD_SIZE - b : 0); i--, bit++) {
-         cur += ((Mr[0] >> i) & 1) - ((Pr[0] >> i) & 1);
-         if (cur < min) {
-            min = cur;
-            row = WORD_SIZE*w + bit;
-            col = 0;
-         }
-      } 
-   }
-   
    // Bottom wing.
    cur = score;
-   for (int j = w, word = 0; j > 0; j--, word++) {
+   for (int j = awords-1, word = 0; j >= 0; j--, word++) {
       uint32_t abs_min = cur - __builtin_popcountl(Pb[j]);
       if (abs_min < min) {
          for (int i = WORD_SIZE-1, bit = 1; i >= 0; i--, bit++) {
@@ -125,18 +111,6 @@ dbf_find_min
          cur = abs_min + __builtin_popcountl(Mb[j]);
       }
    }
-   // Partial word.
-   if (cur - __builtin_popcountl(Pb[0] >> (b ? WORD_SIZE - b : 0)) < min) {
-      for (int i = WORD_SIZE-1, bit = 1; i >= (b ? WORD_SIZE - b : 0); i--, bit++) {
-         cur += ((Mb[0] >> i) & 1) - ((Pb[0] >> i) & 1);
-         if (cur < min) {
-            min = cur;
-            col = WORD_SIZE*w + bit;
-            row = 0;
-         }
-      } 
-   }
-
 
    return (path_t){.score = min, .row = idx - row, .col = idx - col};
 }
@@ -220,8 +194,8 @@ char translate[256] = {[0 ... 255] = 4,
             Eqb[j] = (Req[w+j][(int)translate[(uint8_t)qry[dir_q*i]]] >> b) | (Req[w+j+1][(int)translate[(uint8_t)qry[dir_q*i]]] << (WORD_SIZE - b));
       }
       else {
-         for (int j = 0; j < awords; j++) Eqr[j] = Peq[w+j][(int)translate[(uint8_t)ref[dir_q*i]]];
-         for (int j = 0; j < awords; j++) Eqb[j] = Req[w+j][(int)translate[(uint8_t)qry[dir_r*i]]];
+         for (int j = 0; j < awords; j++) Eqr[j] = Peq[w+j][(int)translate[(uint8_t)ref[dir_r*i]]];
+         for (int j = 0; j < awords; j++) Eqb[j] = Req[w+j][(int)translate[(uint8_t)qry[dir_q*i]]];
       }
 
       // Update bitfields.
@@ -230,7 +204,7 @@ char translate[256] = {[0 ... 255] = 4,
 
       // Compute the central cell.
       uint64_t Pvc, Mvc, Phc, Mhc;
-      if (ref[i] == qry[i]) {
+      if (translate[(uint8_t)ref[dir_r*i]] == translate[(uint8_t)qry[dir_q*i]]) {
          Mhc = Phinb;
          Phc = Mhinb;
          Mvc = Phinr;
@@ -256,10 +230,8 @@ char translate[256] = {[0 ... 255] = 4,
       Mb[j] = (Mb[j] >> 1) | (Mhc << (WORD_SIZE-1));
 
       if (i%opt.bp_period == 0 && i >= min_qlen) {
-         // Find wing minimum.
-         bp_path[bp_pos] = dbf_find_min(i, score, awords, Pr, Mr, Pb, Mb);
-         //         if (bp_path[bp_pos].row < min_qlen) continue;
          if (bp_pos == 0) first_bp = i;
+         bp_path[bp_pos] = dbf_find_min(i,score,awords,Pr,Mr,Pb,Mb);
          // Compute likelihood of current reference.
          int Ee = bp_path[bp_pos].score - bp_path[bp_ref].score;
          int Me = i - first_bp - bp_ref*opt.bp_period - Ee;
@@ -305,6 +277,7 @@ char translate[256] = {[0 ... 255] = 4,
       if (maxJe >= opt.bp_thr) best_bp = bp_path[bp_ref];
       else best_bp = bp_path[bp_pos];
    }
+
    // Free memory.
    free(Eqr);
    free(Eqb);
@@ -315,6 +288,7 @@ char translate[256] = {[0 ... 255] = 4,
 
    if (best_bp.row >= qlen) best_bp.row = qlen-1;
    if (best_bp.col >= rlen) best_bp.row = rlen-1;
+
 
    return best_bp;
 }
