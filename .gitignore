@@ -10,5 +10,8 @@ tmp/*
 genomes/*
 *.o
 input/*
+out/*
+align/*
+bwa/*
 doc/*
 *.txt

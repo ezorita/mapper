@@ -46,6 +46,7 @@ struct align_t {
 
 struct alignopt_t {
    double bp_thr;
+   double bp_max_thr;
    int    bp_period;
    int    bp_repeats;
    double read_error;

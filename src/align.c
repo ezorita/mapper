@@ -44,12 +44,14 @@ dbf_fill_eq
 {
 char translate[256] = {[0 ... 255] = 4,
                        ['a'] = 0, ['c'] = 1, ['g'] = 2, ['t'] = 3,
-                       ['A'] = 0, ['C'] = 1, ['G'] = 2, ['T'] = 3 };
+                       ['A'] = 0, ['C'] = 1, ['G'] = 2, ['T'] = 3};
 
    uint32_t w = (len+WORD_SIZE-1)/WORD_SIZE;
    for (int i = 0; i < w; i++)
-      for (int b = 0; b < WORD_SIZE && i*WORD_SIZE+b < len; b++)
-         Peq[i][(int)translate[(uint8_t)text[dir*(i*WORD_SIZE+b)]]] |= ((uint64_t)1) << b;
+      for (int b = 0; b < WORD_SIZE && i*WORD_SIZE+b < len; b++) {
+         int c = (int)translate[(uint8_t)text[dir*(i*WORD_SIZE+b)]];
+         if (c < 4)  Peq[i][c] |= ((uint64_t)1) << b;
+      }
 }
 
 void
@@ -172,7 +174,6 @@ char translate[256] = {[0 ... 255] = 4,
    int    bp_pos  = 0;
    int    bp_ref  = 0;
    int    bp_cnt  = 0;
-   int    first_bp = 0;
    double logAe = log(opt.rand_error) - log(opt.read_error);
    double logBe = log(1-opt.rand_error) - log(1-opt.read_error);
 
@@ -204,7 +205,9 @@ char translate[256] = {[0 ... 255] = 4,
 
       // Compute the central cell.
       uint64_t Pvc, Mvc, Phc, Mhc;
-      if (translate[(uint8_t)ref[dir_r*i]] == translate[(uint8_t)qry[dir_q*i]]) {
+      int cref = translate[(uint8_t)ref[dir_r*i]];
+      int cqry = translate[(uint8_t)qry[dir_q*i]];
+      if (cref == cqry && cref < 4) {
          Mhc = Phinb;
          Phc = Mhinb;
          Mvc = Phinr;
@@ -229,16 +232,18 @@ char translate[256] = {[0 ... 255] = 4,
       for (j=0; j < awords-1; j++) Mb[j] = (Mb[j] >> 1) | (Mb[j+1] << (WORD_SIZE-1));
       Mb[j] = (Mb[j] >> 1) | (Mhc << (WORD_SIZE-1));
 
-      if (i%opt.bp_period == 0 && i >= min_qlen) {
-         if (bp_pos == 0) first_bp = i;
+      if (i%opt.bp_period == 0) {
          bp_path[bp_pos] = dbf_find_min(i,score,awords,Pr,Mr,Pb,Mb);
          // Compute likelihood of current reference.
          int Ee = bp_path[bp_pos].score - bp_path[bp_ref].score;
-         int Me = i - first_bp - bp_ref*opt.bp_period - Ee;
+         int Me = i - bp_ref*opt.bp_period - Ee;
          float Je = Ee*logAe + Me*logBe;
          if (Je > opt.bp_thr) {
             bp_cnt++;
-            if (bp_cnt >= opt.bp_repeats) break;
+            if ((bp_cnt >= opt.bp_repeats && i >= min_qlen) || Je > opt.bp_max_thr) {
+               bp_cnt = opt.bp_repeats;
+               break;
+            }
             //fprintf(stdout, "\tML algorithm (i=%d, score=%d, cnt=%d) {bp_ref = %d (Je = %.2f)}\n", i, bp_path[bp_pos].score, bp_cnt, bp_ref*opt.bp_period, Je);
          } else {
             double maxJe;
@@ -246,13 +251,18 @@ char translate[256] = {[0 ... 255] = 4,
             bp_cnt = 0;
             for (int b = 0; b < bp_pos; b ++) {
                Ee = bp_path[bp_pos].score - bp_path[b].score;
-               Me = i - first_bp - b*opt.bp_period - Ee;
+               Me = i - b*opt.bp_period - Ee;
                Je = Ee*logAe + Me*logBe;
                if (Je > maxJe) { maxJe = Je; bp_ref = b; }
+            }
+            if (maxJe > opt.bp_max_thr) {
+               bp_cnt = opt.bp_repeats;
+               break;
             }
             if (maxJe > opt.bp_thr) {
                bp_cnt = 1;
             }
+
             //fprintf(stdout, "\tML algorithm (i=%d, score=%d, cnt=%d) {*bp_ref = %d (Je = %.2f)}\n", i, bp_path[bp_pos].score, bp_cnt, bp_ref*opt.bp_period, maxJe);
          }
          // Increase bp list position.
@@ -270,7 +280,7 @@ char translate[256] = {[0 ... 255] = 4,
       maxJe = -INFINITY;
       for (int b = 0; b < bp_pos; b++) {
          int Ee = score - bp_path[b].score;
-         int Me = a_len - 1 - first_bp - b*opt.bp_period - Ee;
+         int Me = a_len - 1 - b*opt.bp_period - Ee;
          double Je = Ee*logAe + Me*logBe;
          if (Je > maxJe) { maxJe = Je; bp_ref = b; }
       }

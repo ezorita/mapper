@@ -174,17 +174,22 @@ write_index
 
    // Write index.
    size_t s = 0, stot = 0;
+   // Write C
    while (s < NUM_BASES*sizeof(long)) s += write(fd, C + s/sizeof(long), NUM_BASES*sizeof(long) - s);
    stot += s;
+   // Write gsize (last value of C).
    s = 0;
    while (s < sizeof(long)) s += write(fd, &gsize, sizeof(long));
    stot += s;
+   // Write genome bases.
    s = 0;
    while (s < gsize*sizeof(char)) s += write(fd, genome + s/sizeof(char), gsize*sizeof(char) - s);
    stot += s;
+   // Write Suffix Array.
    s = 0;
    while (s < gsize*sizeof(long)) s += write(fd, pos + s/sizeof(long), gsize*sizeof(long) - s);
    stot += s;
+   // Write OCC.
    for (int i = 0; i < NUM_BASES; i++) {
        s = 0;
       while (s < sizeof(long)) s += write(fd, &(occ[i]->pos), sizeof(long));
@@ -293,6 +298,8 @@ bwt_index
    free(values);
    //   long * sa = dc3(genome);
 
+
+   // Compute OCC.
    // Fill compacted occ.
    vstack_t * stacks[NUM_BASES];
    for (int i = 0; i < NUM_BASES; i++) stacks[i] = new_stack(gsize/NUM_BASES);

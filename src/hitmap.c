@@ -12,9 +12,15 @@ hitmap
    int maxtau = 0;
    for (int i = 0; i < hmargs.search_rounds; i++) if (hmargs.tau[i] > maxtau) maxtau = hmargs.tau[i];
 
+   // Define number of seqs that will be mixed in each poucet search.
+   int seq_block = hmargs.sequence_blocks;
+
+   pstack_t **pebbles = NULL, **hits = NULL;
+   vstack_t **hitmaps = NULL;
+   matchlist_t * seeds = NULL;
    // Initialize pebble and hit stacks.
-   pstack_t ** pebbles = malloc((MAX_TRAIL+1)*sizeof(pstack_t *));
-   pstack_t ** hits    = malloc((maxtau+1) * sizeof(pstack_t *));
+   pebbles = malloc((MAX_TRAIL+1)*sizeof(pstack_t *));
+   hits    = malloc((maxtau+1) * sizeof(pstack_t *));
    for (int i = 0 ; i <= MAX_TRAIL ; i++) pebbles[i] = new_pstack(PBSTACK_SIZE);
    for (int i = 0 ; i <= maxtau ; i++)    hits[i]    = new_pstack(HITSTACK_SIZE);
 
@@ -25,15 +31,12 @@ hitmap
 
    ppush(pebbles, root);
 
-   // Define number of seqs that will be mixed in each poucet search.
-   int seq_block = 10000;
-
    // Allocate hitmaps.
-   vstack_t ** hitmaps = malloc(seq_block * sizeof(vstack_t *));
+   hitmaps = malloc(seq_block * sizeof(vstack_t *));
    for (int i = 0 ; i < seq_block ; i++) hitmaps[i] = new_stack(HITMAP_SIZE);
 
    // Allocate loci stack.
-   matchlist_t * seeds = matchlist_new(hmargs.max_align_per_read);
+   seeds = matchlist_new(hmargs.max_align_per_read);
 
    // Allocate match buffer.
    matchlist_t ** seqmatches;
@@ -42,10 +45,9 @@ hitmap
 
    // Iterate over sequence blocks.
    for (int s = 0 ; s < seqs->pos; s += seq_block) {
-
       // Pre-process sequence block: chunk in subsequences and sort.
       int         numseqs = (seq_block < seqs->pos - s ? seq_block : seqs->pos - s);
-      sublist_t * subseqs = process_subseq(seqs->seq+s, numseqs, hmargs.kmer_size[0], hmargs.qthr[0], hitmaps);
+      sublist_t * subseqs = process_subseq(seqs->seq+s, numseqs, hmargs.kmer_size[0], hmargs.kmer_offset[0], hmargs.qthr[0], hitmaps);
 
       // Verbose processed blocks.
       if(hmargs.verbose) fprintf(stderr, "processing reads from %d to %d\n", s+1, s+numseqs);
@@ -55,7 +57,7 @@ hitmap
          int tau = hmargs.tau[a];
          int kmer = hmargs.kmer_size[a];
          // Verbose sorting.
-         if(hmargs.verbose) fprintf(stderr, "[%d,%d] %d subsequences\nsorting  ...", kmer, tau, subseqs->pos);
+         if(hmargs.verbose) fprintf(stderr, "[k:%d,d:%d,o:%d,q:%d] %d subsequences\nsorting  ...", kmer, tau, hmargs.kmer_offset[a], hmargs.qthr[a],subseqs->pos);
          clock_t tstart = clock();
          // Sort subsequences.
          mergesort_mt(subseqs->sub, subseqs->pos, sizeof(sub_t), kmer, 1, compar_seqsort);
@@ -64,7 +66,6 @@ hitmap
 
          // Clear hitmaps.
          for (int i = 0 ; i < numseqs ; i++) hitmaps[i]->pos = 0;
-
          // Search subsequences.
          poucet_search(subseqs, pebbles, hits, index, tau, kmer, kmer, hmargs.seed_max_loci, hmargs.seed_abs_max_loci, hmargs.verbose);
 
@@ -72,13 +73,12 @@ hitmap
          subseqs->pos = 0;
 
          // Sort all hitmaps
-         long recompute = 0, matched = 0, totalnt = 0;
+         long recompute = 0, matched = 0, totalnt = 0, num_aligns = 0;
          // Reset verbose variables.
          double progress = 0.0;
          tstart = clock();
          clock_t himap_time = 0;
          clock_t align_time = 0;
-         long    num_aligns = 0;
          // Process reads.
          for (int i = 0 ; i < numseqs ; i++) {
             // Verbose progress.
@@ -97,11 +97,11 @@ hitmap
             /*
             // DEBUG.
             for (int i = 0; i < seeds->pos; i++) {
-               match_t * match = seeds->match[i];
-               long     g_start = index->gsize - match->ref_e;
-               long       g_end = index->gsize - match->ref_s - 1;
-               int chrnum = bisect_search(0, chr->nchr-1, chr->start, g_start+1)-1;
-               fprintf(stdout, "%d\t%s:%ld-%ld\t%d-%d\n", match->hits, chr->name[chrnum],g_start-chr->start[chrnum], g_end-chr->start[chrnum], match->read_s, match->read_e);
+            match_t * match = seeds->match[i];
+            long     g_start = index->gsize - match->ref_e;
+            long       g_end = index->gsize - match->ref_s - 1;
+            int chrnum = bisect_search(0, chr->nchr-1, chr->start, g_start+1)-1;
+            fprintf(stdout, "%d\t%s:%ld-%ld\t%d-%d\n", match->hits, chr->name[chrnum],g_start-chr->start[chrnum], g_end-chr->start[chrnum], match->read_s, match->read_e);
             }
             fprintf(stdout, "SEED LIST END\n");
             */
@@ -112,19 +112,20 @@ hitmap
             tmp = clock();
             int newdata = align_seeds(seqs->seq[i], seeds, seqmatches + i, index, hmargs, chr);
             align_time += clock() - tmp;
-             if (newdata) {
+
+            if (newdata) {
                // Fuse matches.
-                //               fuse_matches(seqmatches+i, slen, hmargs);
+               //               fuse_matches(seqmatches+i, slen, hmargs);
 
                // Find sequence repeats.
                find_repeats(seqmatches[i], hmargs.repeat_min_overlap);
             }
             // Assemble read.
-             matchlist_t * intervals = combine_matches(seqmatches[i], hmargs.overlap_tolerance);
+            matchlist_t * intervals = combine_matches(seqmatches[i], hmargs.overlap_tolerance);
 
             if (a < hmargs.search_rounds - 1) {
                // Feedback gaps between intervals and low identity matches.
-               recompute += feedback_gaps(i, seqs->seq[i], intervals, &subseqs, hitmaps + i, hmargs, hmargs.kmer_size[a+1], hmargs.qthr[a+1]);
+               recompute += feedback_gaps(i, seqs->seq[i], intervals, &subseqs, hitmaps + i, hmargs, hmargs.kmer_size[a+1], hmargs.kmer_offset[a+1], hmargs.qthr[a+1]);
             }
             else {
                // Print results if a == maxtau.
@@ -160,6 +161,109 @@ hitmap
 
    return 0;
 }
+
+void
+bw_query
+(
+ sub_t          sub,
+ int            height,
+ int            depth,
+ int            trail,
+ bwpos_t      * cache,
+ index_t      * index,
+ matchlist_t ** seeds,
+ hmargs_t       hmargs
+)
+{
+   static const char translate[256] = {[0 ... 255] = 4, ['@'] = 0,
+                          ['a'] = 1, ['c'] = 2, ['g'] = 3, ['n'] = 4, ['t'] = 5,
+                          ['A'] = 1, ['C'] = 2, ['G'] = 3, ['N'] = 4, ['T'] = 5 };
+   
+   long     sp   = cache[depth].sp;
+   long     ep   = cache[depth].ep;
+   long   * c    = index->c;
+   list_t * occs = index->occ;
+   int i = depth;
+   int nt;
+
+   for (;i < height;i++) {
+      nt = translate[(uint8_t)sub.seq[i]];
+      long occsp = bisect_search(0, occs[nt].max-1, occs[nt].val, sp-1);
+      long occep = bisect_search(0, occs[nt].max-1, occs[nt].val, ep);
+      sp = c[nt] + (occs[nt].max ? occsp : 0);
+      ep = c[nt] + (occs[nt].max ? occep : 0 ) - 1;
+      if (ep < sp) return;
+      cache[i+1] = (bwpos_t){sp,ep};
+   }
+
+   if (ep - sp < hmargs.seed_max_loci) {
+      for (long i = sp; i <= ep; i++) {
+         int seqnum = sub.seqid >> KMERID_BITS;
+         match_t * seed = malloc(sizeof(match_t));
+         seed->read_s = (sub.seqid & KMERID_MASK)/2;
+         seed->read_e = seed->read_s + height;
+         seed->ref_e  = index->pos[i];
+         seed->ref_s  = seed->ref_e + height;
+         seed->dir    = sub.seqid & 1;
+         seed->hits   = 1;
+         seed->flags  = 0;
+         seed->score  = -1;
+         matchlist_add(seeds+seqnum,seed);
+      }
+   }
+}
+
+int
+bw_search
+(
+ sublist_t    * subseqs,
+ int            kmer_size,
+ index_t      * index,
+ hmargs_t       hmargs,
+ matchlist_t ** seeds
+ )
+{
+   int start = 0;
+   clock_t tstart = clock();
+   double  progress = 0.0;
+   bwpos_t * cache = malloc((kmer_size+1) * sizeof(bwpos_t));
+   // Insert root.
+   cache[0] = (bwpos_t){0,index->gsize-1};
+
+   for (int i = 0; i < subseqs->pos; i++) {
+      // Verbose progress.
+      if (hmargs.verbose && i*100.0/subseqs->pos - progress > 0.1) {
+         progress = i*100.0/subseqs->pos;
+         fprintf(stderr, "mapping  ...  %.1f%%\r", progress);
+      }
+      // Subseq.
+      sub_t query = subseqs->sub[i];
+      int   qlen  = kmer_size;
+      int   trail = 0;
+
+      // Compute trail depth.
+      if (i < subseqs->pos - 1) {
+         int k = 1;
+         while (i+k < subseqs->pos && strcmp(query.seq, subseqs->sub[i+k].seq) == 0) k++;
+         if (i+k < subseqs->pos) {
+            sub_t next = subseqs->sub[i+k];
+            while (query.seq[trail] == next.seq[trail]) trail++;
+         }
+      }
+
+      // Reset cache.
+      for (int k = start + 1; k <= trail; k++) cache[k] = (bwpos_t){-1,-1};
+
+      // Query.
+      bw_query(query, qlen, start, trail, cache, index, seeds, hmargs);
+      
+      // Update start.
+      start = trail;
+   }
+   if (hmargs.verbose) fprintf(stderr, "mapping  ...  [%.3fms]\n", (clock()-tstart)*1000.0/CLOCKS_PER_SEC);
+   return 0;
+}
+
 
 
 int
@@ -374,12 +478,10 @@ hitmap_analysis
          match->dir    = refdir;
          match->ref_s  = streakloc; //- kmer_size;
          match->read_s = streakkmer;
-         // TODO:
-         // Nothing extra to do with reverse strand??
          match->hits   = hits;
          match->flags  = 0;
          match->score  = -1;
-         match->repeats = matchlist_new(REPEATS_SIZE);
+         //         match->repeats = matchlist_new(REPEATS_SIZE);
 
          // Append if list not yet full, replace the minimum value otherwise.
          if (matchlist->pos < matchlist->size) {
@@ -469,8 +571,10 @@ align_seeds
  chr_t * chr
  )
 {
+   if (seeds->pos == 0) return 0;
    int significant = 0;
    int slen = strlen(seq.seq);
+   matchlist_t * matches = *seqmatches;
 
    // Sort by seeded nucleotides.
    mergesort_mt(seeds->match, seeds->pos, sizeof(match_t *), 0, 1, compar_seedhits);
@@ -486,7 +590,7 @@ align_seeds
       long r_min  = seed->read_e - seed->read_s + 1;
       long l_min  = 0;
       long r_qstart = seed->read_s + 1;
-      long l_qstart = r_qstart - 1;
+      long l_qstart = hm_max(r_qstart - 1,0);
       long r_rstart = seed->ref_s - 1;
       long l_rstart = r_rstart + 1;
      
@@ -495,26 +599,28 @@ align_seeds
       match_t * extend = NULL;
       int extend_score = 0;
       int cancel_align = 0;
-      for (int i = 0; i < (*seqmatches)->pos; i++) {
-         match_t * match = (*seqmatches)->match[i];
+      for (int i = 0; i < matches->pos; i++) {
+         match_t * match = matches->match[i];
          if (match->dir != seed->dir || match->e_exp > last_eexp) continue;
          long read_s = (seed->dir ? slen - 1 - match->read_e : match->read_s);
          long read_e = (seed->dir ? slen - 1 - match->read_s : match->read_e);
          long ref_s = match->ref_s;
          long ref_e = match->ref_e;
-         // Check whether the seed is right-contiguous.
+         // Check whether the seed is contiguous.
          long r_distr = seed->read_e - read_e;
          long g_distr = ref_e - seed->ref_e;
          long r_distl = read_s - seed->read_s;
          long g_distl = seed->ref_s - ref_s;
-         int ext_r = r_distr > 0 && g_distr > 0 && ((g_distr < (r_distr * hmargs.read_ref_ratio)) || (g_distr < hmargs.dist_accept));
-         int ext_l = r_distl > 0 && g_distl > 0 && ((g_distl < (r_distl * hmargs.read_ref_ratio)) || (g_distl < hmargs.dist_accept));
+         long d_accept = hmargs.dist_accept;
+         double rg_ratio = hmargs.read_ref_ratio;
+         int ext_r = g_distr > -d_accept && r_distr > -d_accept && ((g_distr < (r_distr * rg_ratio)) || (g_distr < d_accept && r_distr < d_accept));
+         int ext_l = g_distl > -d_accept && r_distl > -d_accept && ((g_distl < (r_distl * rg_ratio)) || (g_distl < d_accept && r_distl < d_accept));
          if (ext_r || ext_l) {
             r_min  = (ext_r ? r_distr : 0);
             l_min  = (ext_l ? r_distl : 0);
-            r_qstart = read_e + 1;
+            r_qstart = hm_min(read_e + 1, slen-1);
             r_rstart = ref_e - 1;
-            l_qstart = read_s - 1;
+            l_qstart = hm_max(read_s - 1,0);
             l_rstart = ref_s + 1;
             last_eexp = match->e_exp;
             extend = match;
@@ -530,10 +636,18 @@ align_seeds
                cancel_align = 1;
                break;
             }
+         } else {
+            if (r_distr < 0) {r_distr = -r_distr; g_distr = -g_distr;}
+            if (r_distl < 0) {r_distl = -r_distl; g_distl = -g_distl;}
+            int same_align = (g_distr > -d_accept && (g_distr < (r_distr*rg_ratio) || g_distr < d_accept)) || (g_distl > -d_accept && (g_distl < (r_distl*rg_ratio) || g_distl < d_accept));
+            if (same_align) {
+               cancel_align = 1;
+               break;
+            }
          }
       }
       if (cancel_align) continue;
-      long r_qlen = slen - r_qstart;
+      long r_qlen = slen - 1 - r_qstart;
       long l_qlen = l_qstart;
       long r_rlen = (long)(r_qlen * (1 + hmargs.align.width_ratio));
       long l_rlen = (long)(l_qlen * (1 + hmargs.align.width_ratio));
@@ -543,15 +657,20 @@ align_seeds
       char * l_ref = index->genome + l_rstart;
       
       // Align forward and backward starting from (read_s, ref_s).
-      path_t align_r = dbf_align(r_qlen, r_qry, r_rlen, r_ref, r_min, ALIGN_FORWARD, ALIGN_BACKWARD, hmargs.align);
-      path_t align_l = dbf_align(l_qlen, l_qry, l_rlen, l_ref, l_min, ALIGN_BACKWARD, ALIGN_FORWARD, hmargs.align);
+      path_t align_r = (path_t){0,0,0}, align_l = (path_t){0,0,0};
+      if(r_qlen) align_r = dbf_align(r_qlen, r_qry, r_rlen, r_ref, r_min, ALIGN_FORWARD, ALIGN_BACKWARD, hmargs.align);
+      if(l_qlen) align_l = dbf_align(l_qlen, l_qry, l_rlen, l_ref, l_min, ALIGN_BACKWARD, ALIGN_FORWARD, hmargs.align);
       
       // Compute significance.
       long ref_s = l_rstart + align_l.col;
       long ref_e = r_rstart - align_r.col;
       long read_s = l_qstart - align_l.row;                     // row is the read breakpoint.
       long read_e = r_qstart + align_r.row;
-      double e_exp = e_value(ref_s - ref_e + 1, extend_score + align_l.score + align_r.score, index->gsize);
+      long score = extend_score + align_l.score + align_r.score;
+      double ident = 1.0 - (score*1.0)/(hm_max(read_e-read_s+1,ref_e-ref_s+1));
+      double e_exp = INFINITY;
+      if (ident > hmargs.align_filter_ident) 
+         e_exp = e_value(ref_s - ref_e + 1, extend_score + align_l.score + align_r.score, index->gsize);
 
       // If significant, store.
       if (e_exp < hmargs.align_filter_eexp) {
@@ -568,8 +687,8 @@ align_seeds
          }
 
          // Fill/Update hit.
-         hit->score  = extend_score + align_l.score + align_r.score;
-         hit->ident  = 1.0 - (hit->score*1.0)/(hm_max(read_e-read_s+1,ref_e-ref_s+1));            
+         hit->score  = score;
+         hit->ident  = ident;
          hit->ref_e  = ref_e;
          hit->ref_s  = ref_s;
          hit->read_e = (seed->dir ? slen - 1 - read_s : read_e);
@@ -579,11 +698,13 @@ align_seeds
 
          // Add to significant matchlist.
          significant = 1;
-         if (extend == NULL)
+         if (extend == NULL) {
             matchlist_add(seqmatches, hit);
+            matches = *seqmatches;
+         }
       }
             
-      free_match(seed);
+      free(seed);
    }
 
    return significant;
@@ -599,7 +720,8 @@ feedback_gaps
  vstack_t    ** hitmap,
  hmargs_t       hmargs,
  int            next_kmer_size,
- char            next_qthr
+ int            next_kmer_offset,
+ char           next_qthr
 )
 // Find sequence gaps and feedback them to a sublist_t.
 // Both unmapped gaps and intervals with identity below
@@ -619,7 +741,7 @@ feedback_gaps
          match_t * match = intervals->match[k];
          // If maximum identity within repeats is not enough, feedback the whole interval.
          if (match->repeats->pos > 1) {
-            mergesort_mt(match->repeats->match, match->repeats->pos, sizeof(match_t *), 0, 1, compar_matchid);
+            mergesort_mt(match->repeats->match, match->repeats->pos, sizeof(match_t *), 0, 1, compar_matcheexp);
             match = match->repeats->match[0];
          }
          if (match->e_exp > hmargs.feedback_eexp_thr) continue;
@@ -637,6 +759,7 @@ feedback_gaps
             } else {
                cnt++;
                if (cnt < next_kmer_size) continue;
+               int idx = j - next_kmer_size + 1;
 
                // Add nucleotides to recompute count.
                recompute += hm_min(j - last_rec + 1, next_kmer_size);
@@ -648,7 +771,6 @@ feedback_gaps
                   if (subseqs == NULL) return -1;
                   subseqs->size = newsize;
                }
-               int idx = j - next_kmer_size + 1;
                sub_t sseq = (sub_t) {
                   .seqid = (seqnum << KMERID_BITS | (idx*2 & KMERID_MASK)),
                   .seq   = seq.seq + idx,
@@ -660,6 +782,7 @@ feedback_gaps
                   sseq.seq = seq.rseq + slen - idx - next_kmer_size;
                   subseqs->sub[subseqs->pos++] = sseq;
                }
+               cnt = hm_max(next_kmer_size - next_kmer_offset, 0);
             }
          }
       }
@@ -681,7 +804,7 @@ print_intervals
    for (long k = 0; k < intervals->pos; k++) {
       match_t * match = intervals->match[k];
       if (match->repeats->pos > 1) {
-         mergesort_mt(match->repeats->match, match->repeats->pos, sizeof(match_t *), 0, 1, compar_matchid);
+         mergesort_mt(match->repeats->match, match->repeats->pos, sizeof(match_t *), 0, 1, compar_matcheexp);
          fprintf(stdout, "[interval %d]\t*%d* significant loci\n", ++cnt, match->repeats->pos);
          for (int j = 0; j < hm_min(max_repeats, match->repeats->pos); j++) {
             match_t * rmatch = match->repeats->match[j];
@@ -732,6 +855,7 @@ process_subseq
  seq_t     * seqs,
  int         numseqs,
  int         k,
+ int         offset,
  char        qthr,
  vstack_t ** hitmaps
  )
@@ -787,10 +911,11 @@ process_subseq
                subseq.seq = s.rseq + slen - idx - k;
                list->sub[list->pos++] = subseq;
             }
+            j = hm_max(j, idx + offset - 1);
+            cnt = hm_max(k - offset,0);
          }
       }
    }
-
    return list;
 }
 

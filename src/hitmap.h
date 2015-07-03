@@ -9,6 +9,10 @@
 #ifndef _HITMAP_H
 #define _HITMAP_H
 
+// Seeding strategies
+#define SEED_PARALLEL 0
+#define SEED_SINGLE   1
+
 // Default size params
 #define HITMAP_SIZE   1024
 #define HITSTACK_SIZE 16
@@ -76,8 +80,11 @@ struct sublist_t {
 struct hmargs_t {
    int verbose;
    int search_rounds;
+   int sequence_blocks;
+   // Seeding strategy.
    int * tau;
    int * kmer_size;
+   int * kmer_offset;
    char * qthr;
    int repeat_print_num;
    // Seeding options.
@@ -90,6 +97,7 @@ struct hmargs_t {
    double read_ref_ratio;
    // Alignment filter options.
    double align_full_seed_thr;
+   double align_filter_ident; // Minimum identity to compute E-value.
    double align_filter_eexp; // Maximum log10(E) to consider an alignment acceptable.
    double align_accept_eexp; // Maximum log10(E) to directly accept an alignment and do not align again that region.
    double align_seed_filter_thr; // If an alignment with N hits has passed 'align_accept_ratio', alignments with at least N*align_seed_filter_thr hits will be performed anyway.
@@ -110,17 +118,19 @@ int           poucet_search    (sublist_t * subseqs, pstack_t ** pebbles, pstack
 int           hitmap_analysis  (vstack_t * hitmap, matchlist_t * loci, int kmer_size, int maxdist, hmargs_t hmargs);
 int           map_hits         (pstack_t ** hits, vstack_t ** hitmap, index_t * index, int tau, long id, int max_loci, int abs_max_loci);
 int           align_seeds      (seq_t seq, matchlist_t * seeds, matchlist_t ** seqmatches, index_t * index, hmargs_t hmargs, chr_t * chr);
-sublist_t   * process_subseq   (seq_t * seqs, int numseqs, int k, char qthr, vstack_t ** hitmaps);
+sublist_t   * process_subseq   (seq_t * seqs, int numseqs, int k, int offset, char qthr, vstack_t ** hitmaps);
 void          fuse_matches     (matchlist_t ** listp, int slen, hmargs_t hmargs);
 int           find_repeats     (matchlist_t * list, double overlap);
 matchlist_t * combine_matches  (matchlist_t * list, double overlap_tolerance);
-int           feedback_gaps    (int seqnum, seq_t seq, matchlist_t * intervals, sublist_t ** subseqs, vstack_t ** hitmap, hmargs_t hmargs, int next_kmer_size, char next_qthr);
+int           feedback_gaps    (int seqnum, seq_t seq, matchlist_t * intervals, sublist_t ** subseqs, vstack_t ** hitmap, hmargs_t hmargs, int next_kmer_size, int next_kmer_offset, char next_qthr);
 void          print_intervals  (matchlist_t * intervals, chr_t * chr, index_t * index, int max_repeats);
 int           fill_gaps        (matchlist_t ** intervp, matchlist_t * matches, int seq_len, double gap_coverage, double max_overlap);
 double        e_value          (int L, int errors, long gsize);
 matchlist_t * matchlist_new    (int elements);
 int           matchlist_add    (matchlist_t ** listp, match_t * match);
 void          free_match       (match_t * match);
+void          bw_query         (sub_t, int, int, int, bwpos_t *, index_t *, matchlist_t **, hmargs_t);
+int           bw_search        (sublist_t *, int, index_t *, hmargs_t, matchlist_t ** seeds);
 
 // mergesort_mt compar functions.
 int           compar_seqsort   (const void * a, const void * b, const int val);

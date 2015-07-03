@@ -75,27 +75,98 @@ int main(int argc, char * argv[]) {
       chr_t * chr = read_CHRindex(filename);
       if (chr == NULL) return EXIT_FAILURE;
 
+      // ILLUMINA STRATEGY
+
+      // Quality strategy (decresing quality).
+      /*
+      int rounds = 4;
+      int kmers[7] = {24,18,22,18};
+      //int kmers[4] = {22,20,18,18};
+      int tau[7] = {0,0,0,0,0,0,0};
+      int off[7] = {80,80,11,4};
+      char qthr[7] = {0,0,0,0,0,0,0};
+      //      char qthr[7] = {'F','9','0','0',0};
+      */
+      int rounds = 4;
+      int kmers[7] = {24,18,22,18};
+      //int kmers[4] = {22,20,18,18};
+      int tau[7] = {0,0,0,0,0,0,0};
+      int off[7] = {80,80,11,4};
+      char qthr[7] = {0,0,0,0,0,0,0};
+
+
+      hmargs_t hmargs = {
+         // Format options.
+         .verbose = 1,
+         .repeat_print_num = 5,
+         .sequence_blocks = 100000,
+         // Seeding strategy.
+         .search_rounds = rounds,
+         .tau = tau,
+         .kmer_size = kmers,
+         .kmer_offset = off,
+         .qthr = qthr,
+         // Seeding options.
+         .seed_max_loci = 20,
+         .seed_abs_max_loci = 100,
+         // Hitmap analysis options.
+         .read_ref_ratio = 1 + 0.05,
+         .dist_accept = 20,
+         // Alignment filter options.
+         .max_align_per_read = 10000,
+         .align_filter_ident = 0.9,
+         .align_filter_eexp = -6.0,
+         .align_accept_eexp = -30.0,
+         .align_seed_filter_thr = 0.5,
+         // Post-processing options.
+         .feedback_eexp_thr = -20.0,
+         .feedback_gap_minlen = 5,
+         .repeat_min_overlap = 0.9,
+         .overlap_tolerance = 0.1,
+         .overlap_max_tolerance = 0.5,
+         .fuse_min_spanratio = 0.5,
+         // Alignment algorithm options.
+         .align = (alignopt_t) {
+            .bp_thr       = 10,
+            .bp_max_thr   = 50,
+            .bp_period    = 1,
+            .bp_repeats   = 5,
+            .read_error   = 0.05,
+            .rand_error   = 0.50,
+            .width_ratio  = 0.05
+         }
+      };
+
+      /*
       // Hitmap.
       // Default arguments.
 
       // Decreasing strategy.
-      /*
-      int rounds = 3;
-      int kmers[4] = {22,20,18,22};
-      int tau[4] = {0,0,0,1};
-      char qthr[4] = {0,0,0,0};
-      */
+      // PACBIO STRATEGY
+      //int rounds = 3;
+      //int kmers[4] = {22,20,18,22};
+      //int tau[4] = {0,0,0,1};
+      //char qthr[4] = {0,0,0,0};
       // Quality strategy (decresing seed).
       int rounds = 5;
       int kmers[8] = {22,22,20,20,18,22,20,18};
       int tau[8] = {0,0,0,0,0,0,0,1};
       char qthr[8] = {'(','$','(','$',0,0,0,0};
-
       // Quality strategy (decresing quality).
-      int rounds = 7;
-      int kmers[8] = {22,20,18,22,20,18,18,18};
-      int tau[8] = {0,0,0,0,0,0,0,0};
-      char qthr[8] = {'(','(','(','$','$','$',0,0};
+      //int rounds = 7;
+      //int kmers[8] = {22,20,18,22,20,18,18,18};
+      //int tau[8] = {0,0,0,0,0,0,0,0};
+      //char qthr[8] = {'(','(','(','$','$','$',0,0};
+      // Short-seed quality strategy.
+      //int rounds = 3;
+      //int kmers[3] = {18,18,18};
+      //int tau[3] = {0,0,0};
+      //char qthr[3] = {'(','$',0};
+      // All-in strategy.
+      //int rounds = 1;
+      //int kmers[1] = {18};
+      //int tau[1] = {0};
+      //char qthr[1] = {0};
 
 
       hmargs_t hmargs = {
@@ -103,10 +174,12 @@ int main(int argc, char * argv[]) {
          .verbose = 1,
          .repeat_print_num = 5,
          // Seeding strategy.
+         .seed_strategy = SEED_PARALLEL,
          .search_rounds = rounds,
          .tau = tau,
          .kmer_size = kmers,
          .qthr = qthr,
+         .sequence_blocks = 100000,
          // Seeding options.
          .seed_max_loci = 20,
          .seed_abs_max_loci = 10000,
@@ -115,13 +188,13 @@ int main(int argc, char * argv[]) {
          .dist_accept = 20,
          // Alignment filter options.
          .max_align_per_read = 10000,
-         .align_full_seed_thr = 0.01,
-         .align_filter_eexp = -6.0,
+         .align_filter_ident = 0.7,
+         .align_filter_eexp = -15.0,
          .align_accept_eexp = -100.0,
          .align_seed_filter_thr = 0.5,
          // Post-processing options.
-         .feedback_eexp_thr = -15.0,
-         .feedback_gap_minlen = 75,
+         .feedback_eexp_thr = -25.0,
+         .feedback_gap_minlen = 50,
          .repeat_min_overlap = 0.9,
          .overlap_tolerance = 0.1,
          .overlap_max_tolerance = 0.5,
@@ -129,6 +202,7 @@ int main(int argc, char * argv[]) {
          // Alignment algorithm options.
          .align = (alignopt_t) {
             .bp_thr       = 10,
+            .bp_max_thr   = 50,
             .bp_period    = 10,
             .bp_repeats   = 20,
             .read_error   = 0.20,
@@ -136,6 +210,7 @@ int main(int argc, char * argv[]) {
             .width_ratio  = 0.15
          }
       };
+      */     
       clock_t tstart = clock();
       hitmap(&index, chr, seqs, hmargs);
       double totaltime = ((clock()-tstart)*1.0)/CLOCKS_PER_SEC;

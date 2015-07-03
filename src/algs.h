@@ -22,6 +22,9 @@ typedef struct seqstack_t seqstack_t;
 typedef struct vstack_t   vstack_t;
 typedef struct pstack_t   pstack_t;
 
+typedef struct bwarg_t    bwarg_t;
+typedef struct bwpos_t    bwpos_t;
+
 // Definitions
 #define TRIE_SIZE     1024
 #define TRIE_CHILDREN  3
@@ -50,10 +53,14 @@ struct chr_t {
    char ** name;
 };
 
+struct bwpos_t {
+   long sp;
+   long ep;
+};
+
 struct pebble_t {
    long sp;
    long ep;
-   //   long rowid; // [bits 63..16] node id. [bits 15..0] score.
    char nwrow[2*MAXTAU+3];
 };
 
@@ -97,6 +104,12 @@ struct pstack_t {
 };
 
 // Parameter structs.
+
+struct bwarg_t {
+   struct index_t * index;
+   struct bwpos_t * pebbles;
+   struct bwpos_t * hits;
+};
 
 struct arg_t {
    char             * query;
