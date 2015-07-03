@@ -65,11 +65,15 @@ struct pebble_t {
 };
 
 struct index_t {
-   long            gsize;
-   long          * c;
-   char          * genome;
-   long          * pos;
-   struct list_t * occ;
+   void      * gen_file;
+   void      * occ_file;
+   void      * sa_file;
+   uint64_t    gsize;
+   uint64_t  * c;
+   char      * genome;
+   uint64_t  * pos;
+   uint64_t ** occ;
+   chr_t     * chr;
 };
 
 struct node_t {
@@ -141,6 +145,7 @@ void        * _mergesort       (void * args);
 void          radix_sort       (long * a, long * b, long n, long maxval);
 
 // General algorithms.
+uint64_t      compute_occ      (uint64_t ptr, uint64_t * occ);
 long          bisect_search    (long start, long end, long* set, long value);
 
 // Stack functions.

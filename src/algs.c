@@ -4,6 +4,36 @@
 /** seq_t functions **/
 /*********************/
 
+uint64_t
+compute_occ
+(
+ uint64_t   ptr,
+ uint64_t * occ
+)
+{
+   uint64_t wrdnum = ptr/OCC_WORD_SIZE;
+   uint64_t wrdptr = wordnum + wordnum/OCC_MARK_INTERVAL + 1;
+   uint64_t mrkptr = ((wordnum + OCC_MARK_INTERVAL/2)/OCC_MARK_INTERVAL)*(OCC_MARK_INTERVAL+1);
+   uint64_t mark   = occ[mrkptr];
+   uint64_t bit    = ptr%OCC_WORD_SIZE;
+
+   uint64_t offset = 0;
+   // Sum bit offsets.
+   if (wrdptr > intptr) {
+      for (uint64_t i = mrkptr + 1; i < wrdptr; i++) offset += __builtin_popcountl(occ[i]);
+      // Sum partial word.
+      offset += __builtin_popcountl(occ[wrdptr] >> (OCC_WORD_SIZE - 1 - bit));
+      // Returm sum.
+      return mark + offset;
+   } else {
+      for (uint64_t i = wrdptr + 1; i < mrkptr; i++) offset += __builtin_popcountl(occ[i]);
+      // Sum partial word.
+      if (bit < OCC_WORD_SIZE - 1) offset += __builtin_popcountl(occ[wrdptr] << (bit+1));
+      // Return subtraction.
+      return mark - offset;
+   }
+
+}
 long
 bisect_search
 (

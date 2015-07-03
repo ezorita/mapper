@@ -39,10 +39,14 @@ poucet
    for (int nt = 1 ; nt < NUM_BASES ; nt++) {
       // Check whether child 'i' exists.
       long newsp, newep;
+      /*
       long occsp = bisect_search(0, occs[nt].max-1, occs[nt].val, sp-1);
       long occep = bisect_search(0, occs[nt].max-1, occs[nt].val, ep);
       newsp = c[nt] + (occs[nt].max ? occsp : 0);
       newep = c[nt] + (occs[nt].max ? occep : 0) - 1;
+      */
+      newsp = c[nt] + compute_occ(sp-1, occs[nt]);
+      newep = c[nt] + compute_occ(ep  , occs[nt]) - 1;
       // Skip if current node has no child at this position.
       if (newep < newsp) continue;
 

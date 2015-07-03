@@ -89,6 +89,98 @@ read_CHRindex
    return chrindex;
 }
 
+index_t *
+load_index
+(
+ char * file
+)
+{
+   // Alloc index struct.
+   index_t * index = malloc(sizeof(index_t));
+   
+   // Read chromosome index.
+   index->chr = read_CHRindex(file);
+   if (index->chr == NULL) {
+      exit(EXIT_FAILURE);
+   }
+
+   // Open OCC file.
+   char * occ_file = malloc(strlen(file)+5);
+   strcpy(occ_file, file);
+   strcpy(occ_file+strlen(file), ".occ");
+   int fd_occ = open(occ_file, O_RDONLY);
+   if (fd_occ == -1) {
+      fprintf(stderr, "error opening '%s': %s\n", filename, strerror(errno));
+      exit(EXIT_FAILURE);
+   }
+   free(occ_file);
+
+   // Open SA file.
+   char * sa_file = malloc(strlen(file)+4);
+   strcpy(sa_file, file);
+   strcpy(sa_file+strlen(file), ".sa");
+   int fd_sa = open(sa_file, O_RDONLY);
+   if (fd_sa == -1) {
+      fprintf(stderr, "error opening '%s': %s\n", filename, strerror(errno));
+      exit(EXIT_FAILURE);
+   }
+   free(sa_file);
+
+   // Open GEN file.
+   char * gen_file = malloc(strlen(file)+5);
+   strcpy(gen_file, file);
+   strcpy(gen_file+strlen(file), ".gen");
+   int fd_gen = open(gen_file, O_RDONLY);
+   if (fd_gen == -1) {
+      fprintf(stderr, "error opening '%s': %s\n", filename, strerror(errno));
+      exit(EXIT_FAILURE);
+   }
+   free(gen_file);
+
+   // Load OCC index.
+   long idxsize = lseek(fd_occ, 0, SEEK_END);
+   lseek(fd_occ, 0, SEEK_SET);
+   index->occ_file = mmap(NULL, idxsize, PROT_READ, MMAP_FLAGS, fd_occ, 0);
+   close(fd_occ);
+   if (index->occ_file == NULL) {
+      fprintf(stderr, "error mmaping .occ index file: %s.\n", strerror(errno));
+      exit(EXIT_FAILURE);
+   }
+   // Load SA index.
+   idxsize = lseek(fd_sa, 0, SEEK_END);
+   lseek(fd_sa, 0, SEEK_SET);
+   index->sa_file = mmap(NULL, idxsize, PROT_READ, MMAP_FLAGS, fd_sa, 0);
+   close(fd_sa);
+   if (index->sa_file == NULL) {
+      fprintf(stderr, "error mmaping .sa index file: %s.\n", strerror(errno));
+      exit(EXIT_FAILURE);
+   }
+   // Load GEN index.
+   idxsize = lseek(fd_gen, 0, SEEK_END);
+   lseek(fd_gen, 0, SEEK_SET);
+   index->gen_file = mmap(NULL, idxsize, PROT_READ, MMAP_FLAGS, fd_gen, 0);
+   close(fd_gen);
+   if (index->occ_file == NULL) {
+      fprintf(stderr, "error mmaping .gen index file: %s.\n", strerror(errno));
+      exit(EXIT_FAILURE);
+   }
+
+   // Set C and gsize.
+   index->c = ((uint64_t *) index->occ_file);
+   index->gsize = index->c[NUM_BASES];
+   // Load occ tables.
+   uint64_t occ_size = index->c[NUM_BASES+1];
+   index->occ   = malloc(NUM_BASES * sizeof(void *));
+   for (int i = 0; i < NUM_BASES; i++) {
+      index->occ[i] = ((uint64_t *) index->occ_file) + NUM_BASES + 2 + i*occ_size;
+   }
+   // Load SA.
+   index->pos = (uint64_t *) index->sa_file;
+   // Load genome.
+   index->genome = (char *) index->gen_file;
+
+   return index;
+}
 
 int
 format_FMindex
@@ -152,52 +244,81 @@ write_index
 
    // Allocate structures.
    long * C, * pos;
-   vstack_t ** occ = malloc(NUM_BASES * sizeof(vstack_t *));
+   uint64_t ** occ = malloc(NUM_BASES * sizeof(vstack_t *));
 
    // Parse genome and convert to integers. (0..NBASES-1)
    char * genome = compact_genome(filename, &gsize);
    C = compute_c(genome, gsize);
 
    // Output files.
-   char * fmfile = malloc(strlen(filename)+5);
-   strcpy(fmfile, filename);
-   strcpy(fmfile + strlen(filename), ".fmi");
-   int fd = open(fmfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-   if (fd == -1) {
-      fprintf(stderr, "error in write_index (open %s): %s.\n", fmfile, strerror(errno));
+   char * safile = malloc(strlen(filename)+4);
+   strcpy(safile, filename);
+   strcpy(safile + strlen(filename), ".sa");
+   char * occfile = malloc(strlen(filename)+5);
+   strcpy(occfile, filename);
+   strcpy(occfile + strlen(filename), ".occ");
+   char * genfile = malloc(strlen(filename)+5);
+   strcpy(genfile, filename);
+   strcpy(occfile + strlen(filename), ".gen");
+   // Open files.
+   int fsa = open(safile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+   int foc = open(occfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+   int fgn = open(genfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+   // Error control.
+   if (fsa == -1) {
+      fprintf(stderr, "error in write_index (open %s): %s.\n", safile, strerror(errno));
       exit(EXIT_FAILURE);
    }
-   free(fmfile);
+   if (foc == -1) {
+      fprintf(stderr, "error in write_index (open %s): %s.\n", occfile, strerror(errno));
+      exit(EXIT_FAILURE);
+   }
+   if (fgn == -1) {
+      fprintf(stderr, "error in write_index (open %s): %s.\n", genfile, strerror(errno));
+      exit(EXIT_FAILURE);
+   }
+
+   free(safile);
+   free(occfile);
+   free(genfile);
 
    // FM index
-   bwt_index(genome, gsize, &pos, occ);
+   uint64_t occ_size;
+   bwt_index(genome, gsize, &pos, occ, &occ_size);
 
    // Write index.
    size_t s = 0, stot = 0;
+   
+   // .OCC FILE
    // Write C
-   while (s < NUM_BASES*sizeof(long)) s += write(fd, C + s/sizeof(long), NUM_BASES*sizeof(long) - s);
+   while (s < NUM_BASES*sizeof(uint64_t)) s += write(foc, C + (NUM_SYMBOLS-NUM_BASES) + s/sizeof(uint64_t), NUM_BASES*sizeof(uint64_t) - s);
    stot += s;
    // Write gsize (last value of C).
    s = 0;
-   while (s < sizeof(long)) s += write(fd, &gsize, sizeof(long));
+   while (s < sizeof(uint64_t)) s += write(fd, &gsize, sizeof(uint64_t));
    stot += s;
-   // Write genome bases.
+   // Write OCC size.
    s = 0;
-   while (s < gsize*sizeof(char)) s += write(fd, genome + s/sizeof(char), gsize*sizeof(char) - s);
-   stot += s;
-   // Write Suffix Array.
-   s = 0;
-   while (s < gsize*sizeof(long)) s += write(fd, pos + s/sizeof(long), gsize*sizeof(long) - s);
+   while (s < sizeof(uint64_t)) s += write(fd, &occ_size, sizeof(uint64_t));
    stot += s;
    // Write OCC.
    for (int i = 0; i < NUM_BASES; i++) {
-       s = 0;
-      while (s < sizeof(long)) s += write(fd, &(occ[i]->pos), sizeof(long));
+      s = 0;
+      while (s < occ_size * sizeof(uint64_t)) s += write(foc,occ[i] + s/sizeof(uint64_t), occ_size*sizeof(uint64_t) - s);
       stot += s;
-       s = 0;
-      while (s < occ[i]->pos * sizeof(long)) s += write(fd,((long*) &(occ[i]->val[0])) + s/sizeof(long), occ[i]->pos*sizeof(long) - s);
-      stot += s;
-    }
+   }
+
+   // .GEN FILE
+   // Write genome bases.
+   s = 0;
+   while (s < gsize*sizeof(char)) s += write(fgn, genome + s/sizeof(char), gsize*sizeof(char) - s);
+   stot += s;
+
+   // .SA FILE
+   // Write Suffix Array.
+   s = 0;
+   while (s < gsize*sizeof(uint64_t)) s += write(fsa, pos + s/sizeof(uint64_t), gsize*sizeof(uint64_t) - s);
+   stot += s;
 
    return stot;
 }
@@ -210,9 +331,9 @@ compact_genome
  long * genomesize
 )
 {
-   char * fileindex = malloc(strlen(filename)+7);
+   char * fileindex = malloc(strlen(filename)+5);
    strcpy(fileindex, filename);
-   strcpy(fileindex + strlen(filename), ".index");
+   strcpy(fileindex + strlen(filename), ".chr");
 
    // Files
    FILE * input = fopen(filename,"r");
@@ -280,44 +401,60 @@ compact_genome
 }
 
 
-void
+uint64_t
 bwt_index
 (
  char      * genome,
- long        gsize,
- long     ** pos,
- vstack_t ** occ
+ uint64_t    gsize,
+ uint64_t ** pos,
+ uint64_t ** occ,
+ uint64_t  * occ_size
 )
 {
    // Sort prefixes
-   long * values = malloc((gsize+3)*sizeof(long));
-   for (long i = 0; i < gsize; i++) values[i] = (long)translate[(int)genome[i]];
+   uint64_t * values = malloc((gsize+3)*sizeof(long));
+   for (uint64_t i = 0; i < gsize; i++) values[i] = (uint64_t)translate[(int)genome[i]];
    values[gsize] = values[gsize+1] = values[gsize+2] = 0;
-   long * sa = malloc(gsize*sizeof(long));
-   suffixArray(values, sa, gsize, NUM_BASES-1);
+   uint64_t * sa = malloc(gsize*sizeof(uint64_t));
+   suffixArray(values, sa, gsize, NUM_BASES);
    free(values);
-   //   long * sa = dc3(genome);
 
-
-   // Compute OCC.
-   // Fill compacted occ.
-   vstack_t * stacks[NUM_BASES];
-   for (int i = 0; i < NUM_BASES; i++) stacks[i] = new_stack(gsize/NUM_BASES);
-
-   for (long i = 0; i < gsize; i++) push(stacks+translate[(int)genome[(sa[i] == 0 ? gsize-1 : sa[i] - 1)]], i);
-   
-   // Save stacks to output.
-   *pos = sa;
-
+   // Compute OCC. (MSB FIRST encoding)
+   uint64_t occ_abs[NUM_BASES];
+   uint64_t occ_intervals = (gsize+OCC_MARK_BITS-1)/OCC_MARK_BITS;
+   uint64_t occ_words = occ_intervals * OCC_MARK_INTERVAL;
+   uint64_t occ_marks = occ_intervals + 1;
+   // Initial values.
    for (int i = 0; i < NUM_BASES; i++) {
-      stacks[i] = realloc(stacks[i], sizeof(vstack_t) + stacks[i]->pos*sizeof(long));
-      if (stacks[i] == NULL) {
-         fprintf(stderr, "error in bwt_index (realloc): %s\n", strerror(errno));
-         exit(EXIT_FAILURE);
-      }
-      stacks[i]->size = stacks[i]->pos;
-      occ[i] = stacks[i];
+      occ_abs[i]  = 0;
+      occ[i] = calloc((occ_words+occ_marks),sizeof(uint64_t));
    }
+   // Compute occ for the full genome.
+   // Word starts at 1, this is the first mark.
+   for (uint64_t i = 0, word = 1, interval = 0; i < gsize; i++) {
+      // Set occ bit.
+      int base = translate[(uint8_t)genome[(sa[i] == 0 ? gsize-1 : sa[i]-1)]];
+      if (base) {
+         occ[base-1][word] |= 1;
+         occ_abs[base-1]++;
+      }
+      // Next word.
+      if (i % OCC_WORD_SIZE == OCC_WORD_SIZE-1) {
+         word++; interval++;
+         // Write Mark.
+         if (interval == OCC_MARK_INTERVAL) {
+            for (int j = 0; j < NUM_BASES; j++) occ[j][word] = occ_abs[j];
+            word++;
+            interval = 0;
+         }
+      }
+      // Shift words.
+      for (int j = 0; j < NUM_BASES; j++) occ[j][word] <<= 1;
+   }
+   // Add last interval.
+   for (int j = 0; j < NUM_BASES; j++) occ[j][occ_words+occ_marks-1] = occ_abs[j];
+   // Set occ size.
+   *occ_size = occ_words + occ_marks;
 }
 
 
@@ -328,11 +465,11 @@ compute_c
  long gsize
 )
 {
-   long * cnt = calloc(NUM_BASES, sizeof(long));
+   long * cnt = calloc(NUM_SYMBOLS, sizeof(long));
    for (long i = 0; i < gsize; i++) cnt[(int)translate[(int)genome[i]]]++;
-   long * c = malloc(NUM_BASES * sizeof(long));
+   long * c = malloc(NUM_SYMBOLS * sizeof(long));
    c[0] = 0;
-   for (int i = 1; i < NUM_BASES; i++) c[i] = c[i-1] + cnt[i-1];
+   for (int i = 1; i < NUM_SYMBOLS; i++) c[i] = c[i-1] + cnt[i-1];
    free(cnt);
    return c;
 }

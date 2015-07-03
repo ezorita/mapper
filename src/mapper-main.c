@@ -30,23 +30,17 @@ int main(int argc, char * argv[]) {
    }
 
    if (strcmp(argv[1],"query") == 0) {
-      char * filename = malloc(strlen(argv[3])+5);
-      strcpy(filename, argv[3]);
-
-      // Open index file.
-      strcpy(filename+strlen(argv[3]), ".fmi");
-      int fd = open(filename, O_RDONLY);
-      if (fd == -1) {
-         fprintf(stderr, "error opening '%s': %s\n", filename, strerror(errno));
-         exit(EXIT_FAILURE);
-      }
-
       // Parse query filename.
       FILE * queryfile = fopen(argv[2], "r");
       if (queryfile == NULL) {
-         fprintf(stderr, "error: could not open file.\n");
+         fprintf(stderr, "error: could not open file: %s (%s).\n", argv[2],strerror(errno));
          return EXIT_FAILURE;
       }
+
+      // Read FM index format.
+      if (opt_verbose) fprintf(stderr, "loading index...\n");
+      index_t * index = load_index(argv[3]);
+      if(index == NULL) return EXIT_FAILURE;
 
       // Read file.
       if (opt_verbose) fprintf(stderr, "reading query file...\n");
@@ -54,26 +48,6 @@ int main(int argc, char * argv[]) {
       if (seqs == NULL) {
          return EXIT_FAILURE;
       }
-
-      // Load index.
-      int mflags = MAP_PRIVATE | MAP_POPULATE;
-      long idxsize = lseek(fd, 0, SEEK_END);
-      lseek(fd, 0, SEEK_SET);
-      long * indexp = mmap(NULL, idxsize, PROT_READ, mflags, fd, 0);
-      if (indexp == NULL) {
-         fprintf(stderr, "error opening index file: %s.\n", strerror(errno));
-         return EXIT_FAILURE;
-      }
-      
-      // Read FM index format.
-      index_t index;
-      if(format_FMindex(indexp, &index))
-         return EXIT_FAILURE;
-
-      // Read chromosome index.
-      strcpy(filename+strlen(argv[3]), ".index");
-      chr_t * chr = read_CHRindex(filename);
-      if (chr == NULL) return EXIT_FAILURE;
 
       // ILLUMINA STRATEGY
 
@@ -212,7 +186,7 @@ int main(int argc, char * argv[]) {
       };
       */     
       clock_t tstart = clock();
-      hitmap(&index, chr, seqs, hmargs);
+      hitmap(index, chr, seqs, hmargs);
       double totaltime = ((clock()-tstart)*1.0)/CLOCKS_PER_SEC;
       if (opt_verbose) fprintf(stderr, "query time [%.3fs] / rate [%.3f s/read]\n", totaltime, totaltime/seqs->pos);
       

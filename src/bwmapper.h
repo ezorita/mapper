@@ -18,6 +18,12 @@
 #ifndef _BWMAPPER_H
 #define _BWMAPPER_H
 
+// Index params.
+#define OCC_MARK_INTERVAL 14
+#define OCC_WORD_SIZE     64
+#define OCC_MARK_BITS     (OCC_MARK_INTERVAL * OCC_WORD_SIZE)
+#define OCC_WORD_MASK     0xFFFFFFFFFFFFFFFF
+#define MMAP_FLAGS        (MAP_PRIVATE | MAP_POPULATE)
 // Initial buffer/stack sizes
 #define BUFFER_SIZE   100
 #define GENOME_SIZE   100000
@@ -38,7 +44,7 @@ int           format_FMindex   (long* index, index_t* fmindex);
 chr_t       * read_CHRindex    (char* filename);
 ssize_t       write_index      (char* filename);
 char        * compact_genome   (char* filename, long* genomesize);
-void          bwt_index        (char* text, long tlen, long** pos, vstack_t** occ);
+void          bwt_index        (char* text, long tlen, long** pos, uint64_t** occ, uint64_t* occ_size);
 long        * compute_c        (char* genome, long gsize);
 
 // Misc functions.

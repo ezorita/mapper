@@ -2,7 +2,8 @@
 #define _BWM_DEFINITIONS_H
 
 // Definitions
-#define NUM_BASES 6
+#define NUM_SYMBOLS 6
+#define NUM_BASES 5
 #define NUM_COMBS NUM_BASES*NUM_BASES*NUM_BASES
 #define MAXSEQLEN 10000
 #define MAXTAU    2
