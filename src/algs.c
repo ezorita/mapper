@@ -12,14 +12,14 @@ compute_occ
 )
 {
    uint64_t wrdnum = ptr/OCC_WORD_SIZE;
-   uint64_t wrdptr = wordnum + wordnum/OCC_MARK_INTERVAL + 1;
-   uint64_t mrkptr = ((wordnum + OCC_MARK_INTERVAL/2)/OCC_MARK_INTERVAL)*(OCC_MARK_INTERVAL+1);
+   uint64_t wrdptr = wrdnum + wrdnum/OCC_MARK_INTERVAL + 1;
+   uint64_t mrkptr = ((wrdnum + OCC_MARK_INTERVAL/2)/OCC_MARK_INTERVAL)*(OCC_MARK_INTERVAL+1);
    uint64_t mark   = occ[mrkptr];
    uint64_t bit    = ptr%OCC_WORD_SIZE;
 
    uint64_t offset = 0;
    // Sum bit offsets.
-   if (wrdptr > intptr) {
+   if (wrdptr > mrkptr) {
       for (uint64_t i = mrkptr + 1; i < wrdptr; i++) offset += __builtin_popcountl(occ[i]);
       // Sum partial word.
       offset += __builtin_popcountl(occ[wrdptr] >> (OCC_WORD_SIZE - 1 - bit));

@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <errno.h>
 #include <pthread.h>
+#include <stdint.h>
 #include "definitions.h"
 
 #ifndef _BWM_ALGS_H

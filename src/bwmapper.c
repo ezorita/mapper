@@ -110,7 +110,7 @@ load_index
    strcpy(occ_file+strlen(file), ".occ");
    int fd_occ = open(occ_file, O_RDONLY);
    if (fd_occ == -1) {
-      fprintf(stderr, "error opening '%s': %s\n", filename, strerror(errno));
+      fprintf(stderr, "error opening '%s': %s\n", occ_file, strerror(errno));
       exit(EXIT_FAILURE);
    }
    free(occ_file);
@@ -121,7 +121,7 @@ load_index
    strcpy(sa_file+strlen(file), ".sa");
    int fd_sa = open(sa_file, O_RDONLY);
    if (fd_sa == -1) {
-      fprintf(stderr, "error opening '%s': %s\n", filename, strerror(errno));
+      fprintf(stderr, "error opening '%s': %s\n", sa_file, strerror(errno));
       exit(EXIT_FAILURE);
    }
    free(sa_file);
@@ -132,7 +132,7 @@ load_index
    strcpy(gen_file+strlen(file), ".gen");
    int fd_gen = open(gen_file, O_RDONLY);
    if (fd_gen == -1) {
-      fprintf(stderr, "error opening '%s': %s\n", filename, strerror(errno));
+      fprintf(stderr, "error opening '%s': %s\n", gen_file, strerror(errno));
       exit(EXIT_FAILURE);
    }
    free(gen_file);
@@ -182,68 +182,16 @@ load_index
    return index;
 }
 
-int
-format_FMindex
-(
- long    * index,
- index_t * fmindex
-)
-{
-   // index structure:
-   // DATA:
-   //   C[NUM_BASES]  (8-byte)
-   //   gsize         (8-byte)
-   //   genome[gsize] (1-byte)
-   //   POS[gsize]    (8-byte)
-   //   ooc(1): pos:size:val[0]:val[1]:val[2]:...:val[pos-1]          (8-byte)
-   //   ...
-   //   occ(NUM_BASES): pos:size:val[0]:val[1]:val[2]:...:val[pos-1]  (8-byte)
-   long * start = index;
-   long pointer_offset = 0;
-
-   // C values.
-   fmindex->c = start;
-   pointer_offset += NUM_BASES;
-
-   // Genome size.
-   long gsize = fmindex->gsize = start[pointer_offset++];
-
-   // Genome bases. (8-bit data).
-   char * genome = (char *)(index + pointer_offset);
-   fmindex->genome = genome;
-   
-   // Go back to (8-byte data).
-   pointer_offset = 0;
-   start = (long *) (genome + gsize);
-   
-   // Reverse BWT (pos values).
-   fmindex->pos = start + pointer_offset;
-   pointer_offset += gsize;
-
-   // Occurrences.
-   list_t * occ = fmindex->occ = malloc(NUM_BASES * sizeof(list_t));
-   if (occ == NULL)
-      return -1;
-
-   for (int i = 0; i < NUM_BASES; i++) {
-      occ[i].max = start[pointer_offset++];
-      occ[i].val = start + pointer_offset;
-      pointer_offset += occ[i].max;
-   }
-
-   return 0;
-}
-
 ssize_t
 write_index
 (
  char * filename
 )
 {
-   long gsize;
+   uint64_t gsize;
 
    // Allocate structures.
-   long * C, * pos;
+   uint64_t * C, * pos;
    uint64_t ** occ = malloc(NUM_BASES * sizeof(vstack_t *));
 
    // Parse genome and convert to integers. (0..NBASES-1)
@@ -295,11 +243,11 @@ write_index
    stot += s;
    // Write gsize (last value of C).
    s = 0;
-   while (s < sizeof(uint64_t)) s += write(fd, &gsize, sizeof(uint64_t));
+   while (s < sizeof(uint64_t)) s += write(foc, &gsize, sizeof(uint64_t));
    stot += s;
    // Write OCC size.
    s = 0;
-   while (s < sizeof(uint64_t)) s += write(fd, &occ_size, sizeof(uint64_t));
+   while (s < sizeof(uint64_t)) s += write(foc, &occ_size, sizeof(uint64_t));
    stot += s;
    // Write OCC.
    for (int i = 0; i < NUM_BASES; i++) {
@@ -327,8 +275,8 @@ write_index
 char *
 compact_genome
 (
- char * filename,
- long * genomesize
+ char     * filename,
+ uint64_t * genomesize
 )
 {
    char * fileindex = malloc(strlen(filename)+5);
@@ -351,7 +299,7 @@ compact_genome
 
    // Genome storage vars
    char * genome = malloc(GENOME_SIZE);
-   long gbufsize = GENOME_SIZE;
+   uint64_t gbufsize = GENOME_SIZE;
    genome[0] = '@';
    *genomesize = 1;
    while ((rlen = getline(&buffer, &sz, input)) != -1) {
@@ -381,7 +329,7 @@ compact_genome
    genome = realloc(genome, *genomesize+1);
 
    // Reverse genome.
-   long end = *genomesize - 1;
+   uint64_t end = *genomesize - 1;
    char tmp;
    for (int i = 0 ; i < *genomesize/2; i++) {
       tmp = genome[i];
@@ -401,7 +349,7 @@ compact_genome
 }
 
 
-uint64_t
+void
 bwt_index
 (
  char      * genome,
@@ -416,8 +364,9 @@ bwt_index
    for (uint64_t i = 0; i < gsize; i++) values[i] = (uint64_t)translate[(int)genome[i]];
    values[gsize] = values[gsize+1] = values[gsize+2] = 0;
    uint64_t * sa = malloc(gsize*sizeof(uint64_t));
-   suffixArray(values, sa, gsize, NUM_BASES);
+   suffixArray((long *)values, (long *)sa, gsize, NUM_BASES);
    free(values);
+   *pos = sa;
 
    // Compute OCC. (MSB FIRST encoding)
    uint64_t occ_abs[NUM_BASES];
@@ -458,16 +407,16 @@ bwt_index
 }
 
 
-long *
+uint64_t *
 compute_c
 (
  char * genome,
  long gsize
 )
 {
-   long * cnt = calloc(NUM_SYMBOLS, sizeof(long));
-   for (long i = 0; i < gsize; i++) cnt[(int)translate[(int)genome[i]]]++;
-   long * c = malloc(NUM_SYMBOLS * sizeof(long));
+   uint64_t * cnt = calloc(NUM_SYMBOLS, sizeof(long));
+   for (uint64_t i = 0; i < gsize; i++) cnt[(int)translate[(int)genome[i]]]++;
+   uint64_t * c = malloc(NUM_SYMBOLS * sizeof(long));
    c[0] = 0;
    for (int i = 1; i < NUM_SYMBOLS; i++) c[i] = c[i-1] + cnt[i-1];
    free(cnt);

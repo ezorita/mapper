@@ -186,7 +186,7 @@ int main(int argc, char * argv[]) {
       };
       */     
       clock_t tstart = clock();
-      hitmap(index, chr, seqs, hmargs);
+      hitmap(index, seqs, hmargs);
       double totaltime = ((clock()-tstart)*1.0)/CLOCKS_PER_SEC;
       if (opt_verbose) fprintf(stderr, "query time [%.3fs] / rate [%.3f s/read]\n", totaltime, totaltime/seqs->pos);
       

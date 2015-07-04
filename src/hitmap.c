@@ -4,7 +4,6 @@ int
 hitmap
 (
  index_t    * index,
- chr_t      * chr,
  seqstack_t * seqs,
  hmargs_t     hmargs
  )
@@ -110,7 +109,7 @@ hitmap
             num_aligns += seeds->pos;
             // Smith-Waterman alignment.
             tmp = clock();
-            int newdata = align_seeds(seqs->seq[i], seeds, seqmatches + i, index, hmargs, chr);
+            int newdata = align_seeds(seqs->seq[i], seeds, seqmatches + i, index, hmargs);
             align_time += clock() - tmp;
 
             if (newdata) {
@@ -135,7 +134,7 @@ hitmap
                // Print intervals.
                if (intervals->pos) {
                   fprintf(stdout, "%s\n", seqs->seq[s+i].tag);
-                  print_intervals(intervals, chr, index, hmargs.repeat_print_num);
+                  print_intervals(intervals, index, hmargs.repeat_print_num);
                }
             }
 
@@ -175,29 +174,33 @@ bw_query
  hmargs_t       hmargs
 )
 {
-   static const char translate[256] = {[0 ... 255] = 4, ['@'] = 0,
-                          ['a'] = 1, ['c'] = 2, ['g'] = 3, ['n'] = 4, ['t'] = 5,
-                          ['A'] = 1, ['C'] = 2, ['G'] = 3, ['N'] = 4, ['T'] = 5 };
+   static const char translate[256] = {[0 ... 255] = 3,
+                          ['a'] = 0, ['c'] = 1, ['g'] = 2, ['n'] = 3, ['t'] = 4,
+                          ['A'] = 0, ['C'] = 1, ['G'] = 2, ['N'] = 3, ['T'] = 4 };
    
-   long     sp   = cache[depth].sp;
-   long     ep   = cache[depth].ep;
-   long   * c    = index->c;
-   list_t * occs = index->occ;
+   uint64_t    sp = cache[depth].sp;
+   uint64_t    ep = cache[depth].ep;
+   uint64_t  * c  = index->c;
+   uint64_t ** occs = index->occ;
    int i = depth;
    int nt;
 
    for (;i < height;i++) {
       nt = translate[(uint8_t)sub.seq[i]];
+      /*
       long occsp = bisect_search(0, occs[nt].max-1, occs[nt].val, sp-1);
       long occep = bisect_search(0, occs[nt].max-1, occs[nt].val, ep);
       sp = c[nt] + (occs[nt].max ? occsp : 0);
       ep = c[nt] + (occs[nt].max ? occep : 0 ) - 1;
+      */
+      sp = c[nt] + compute_occ(sp-1, occs[nt]);
+      ep = c[nt] + compute_occ(ep  , occs[nt]) - 1;
       if (ep < sp) return;
       cache[i+1] = (bwpos_t){sp,ep};
    }
 
    if (ep - sp < hmargs.seed_max_loci) {
-      for (long i = sp; i <= ep; i++) {
+      for (uint64_t i = sp; i <= ep; i++) {
          int seqnum = sub.seqid >> KMERID_BITS;
          match_t * seed = malloc(sizeof(match_t));
          seed->read_s = (sub.seqid & KMERID_MASK)/2;
@@ -282,9 +285,9 @@ poucet_search
  )
 {
    // Translate alphabet.
-   char translate[256] = {[0 ... 255] = 4, ['@'] = 0,
-                          ['a'] = 1, ['c'] = 2, ['g'] = 3, ['n'] = 4, ['t'] = 5,
-                          ['A'] = 1, ['C'] = 2, ['G'] = 3, ['N'] = 4, ['T'] = 5 };
+   char translate[256] = {[0 ... 255] = 3,
+                          ['a'] = 0, ['c'] = 1, ['g'] = 2, ['n'] = 3, ['t'] = 4,
+                          ['A'] = 0, ['C'] = 1, ['G'] = 2, ['N'] = 3, ['T'] = 4 };
 
    // Poucet variables.
    int start = 0;
@@ -566,9 +569,7 @@ align_seeds
  matchlist_t  * seeds,
  matchlist_t ** seqmatches,
  index_t      * index,
- hmargs_t       hmargs,
- // DEBUG
- chr_t * chr
+ hmargs_t       hmargs
  )
 {
    if (seeds->pos == 0) return 0;
@@ -795,12 +796,12 @@ void
 print_intervals
 (
  matchlist_t * intervals,
- chr_t       * chr,
  index_t     * index,
  int           max_repeats
 )
 {
    int cnt = 0;
+   chr_t * chr = index->chr;
    for (long k = 0; k < intervals->pos; k++) {
       match_t * match = intervals->match[k];
       if (match->repeats->pos > 1) {

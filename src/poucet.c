@@ -13,8 +13,8 @@ poucet
 {
    int tau = arg->tau;
    // Index.
-   long   * c      = arg->index->c;
-   list_t * occs   = arg->index->occ;
+   uint64_t  * c      = arg->index->c;
+   uint64_t ** occs   = arg->index->occ;
 
    // Penalty for match/mismatch and insertion/deletion resepectively.
    uint mmatch;
@@ -36,7 +36,7 @@ poucet
 
 
    // start at base=1 ('@' is never going to be queried).
-   for (int nt = 1 ; nt < NUM_BASES ; nt++) {
+   for (int nt = 0 ; nt < NUM_BASES ; nt++) {
       // Check whether child 'i' exists.
       long newsp, newep;
       /*
@@ -145,8 +145,8 @@ dash
 // SIDE EFFECTS:                                                          
 //   Updates 'arg.hits' if the suffix is found.                           
 {
-   long   * c      = arg->index->c;
-   list_t * occs   = arg->index->occ;
+   uint64_t  * c    = arg->index->c;
+   uint64_t ** occs = arg->index->occ;
    int i = depth;
    int nt;
 
@@ -160,10 +160,15 @@ dash
    }
    
    while ((nt = arg->query[i++]) != EOS) {
+      /*
       long occsp = bisect_search(0, occs[nt].max-1, occs[nt].val, sp-1);
       long occep = bisect_search(0, occs[nt].max-1, occs[nt].val, ep);
       sp = c[nt] + (occs[nt].max ? occsp : 0);
       ep = c[nt] + (occs[nt].max ? occep : 0 ) - 1;
+      */
+      sp = c[nt] + compute_occ(sp-1, occs[nt]);
+      ep = c[nt] + compute_occ(ep  , occs[nt]) - 1;
+
       if (ep < sp) return;
    }
 

@@ -113,17 +113,17 @@ struct hmargs_t {
 
 
 
-int           hitmap           (index_t * index, chr_t * chr, seqstack_t * seqs, hmargs_t args);
+int           hitmap           (index_t * index, seqstack_t * seqs, hmargs_t args);
 int           poucet_search    (sublist_t * subseqs, pstack_t ** pebbles, pstack_t ** hits, index_t * index, int tau, int kmer_size, int max_trail, int max_loci_per_hit, int abs_max_loci_per_hit, int verbose);
 int           hitmap_analysis  (vstack_t * hitmap, matchlist_t * loci, int kmer_size, int maxdist, hmargs_t hmargs);
 int           map_hits         (pstack_t ** hits, vstack_t ** hitmap, index_t * index, int tau, long id, int max_loci, int abs_max_loci);
-int           align_seeds      (seq_t seq, matchlist_t * seeds, matchlist_t ** seqmatches, index_t * index, hmargs_t hmargs, chr_t * chr);
+int           align_seeds      (seq_t seq, matchlist_t * seeds, matchlist_t ** seqmatches, index_t * index, hmargs_t hmargs);
 sublist_t   * process_subseq   (seq_t * seqs, int numseqs, int k, int offset, char qthr, vstack_t ** hitmaps);
 void          fuse_matches     (matchlist_t ** listp, int slen, hmargs_t hmargs);
 int           find_repeats     (matchlist_t * list, double overlap);
 matchlist_t * combine_matches  (matchlist_t * list, double overlap_tolerance);
 int           feedback_gaps    (int seqnum, seq_t seq, matchlist_t * intervals, sublist_t ** subseqs, vstack_t ** hitmap, hmargs_t hmargs, int next_kmer_size, int next_kmer_offset, char next_qthr);
-void          print_intervals  (matchlist_t * intervals, chr_t * chr, index_t * index, int max_repeats);
+void          print_intervals  (matchlist_t * intervals, index_t * index, int max_repeats);
 int           fill_gaps        (matchlist_t ** intervp, matchlist_t * matches, int seq_len, double gap_coverage, double max_overlap);
 double        e_value          (int L, int errors, long gsize);
 matchlist_t * matchlist_new    (int elements);
