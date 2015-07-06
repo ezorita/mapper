@@ -120,9 +120,9 @@ load_index
    free(occ_file);
 
    // Open SA file.
-   char * sa_file = malloc(strlen(file)+4);
+   char * sa_file = malloc(strlen(file)+5);
    strcpy(sa_file, file);
-   strcpy(sa_file+strlen(file), ".sa");
+   strcpy(sa_file+strlen(file), ".sar");
    int fd_sa = open(sa_file, O_RDONLY);
    if (fd_sa == -1) {
       fprintf(stderr, "error opening '%s': %s\n", sa_file, strerror(errno));
@@ -156,7 +156,7 @@ load_index
    index->sa_file = mmap(NULL, idxsize, PROT_READ, MMAP_FLAGS, fd_sa, 0);
    close(fd_sa);
    if (index->sa_file == NULL) {
-      fprintf(stderr, "error mmaping .sa index file: %s.\n", strerror(errno));
+      fprintf(stderr, "error mmaping .sar index file: %s.\n", strerror(errno));
       exit(EXIT_FAILURE);
    }
    // Load GEN index.
@@ -203,9 +203,9 @@ write_index
    C = compute_c(genome, gsize);
 
    // Output files.
-   char * safile = malloc(strlen(filename)+4);
-   strcpy(safile, filename);
-   strcpy(safile + strlen(filename), ".sa");
+   char * sarfile = malloc(strlen(filename)+5);
+   strcpy(sarfile, filename);
+   strcpy(sarfile + strlen(filename), ".sar");
    char * occfile = malloc(strlen(filename)+5);
    strcpy(occfile, filename);
    strcpy(occfile + strlen(filename), ".occ");
@@ -213,12 +213,12 @@ write_index
    strcpy(genfile, filename);
    strcpy(genfile + strlen(filename), ".gen");
    // Open files.
-   int fsa = open(safile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+   int fsa = open(sarfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
    int foc = open(occfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
    int fgn = open(genfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
    // Error control.
    if (fsa == -1) {
-      fprintf(stderr, "error in write_index (open %s): %s.\n", safile, strerror(errno));
+      fprintf(stderr, "error in write_index (open %s): %s.\n", sarfile, strerror(errno));
       exit(EXIT_FAILURE);
    }
    if (foc == -1) {
@@ -230,7 +230,7 @@ write_index
       exit(EXIT_FAILURE);
    }
 
-   free(safile);
+   free(sarfile);
    free(occfile);
    free(genfile);
 
@@ -266,7 +266,7 @@ write_index
    while (s < gsize*sizeof(char)) s += write(fgn, genome + s/sizeof(char), gsize*sizeof(char) - s);
    stot += s;
 
-   // .SA FILE
+   // .SAR FILE
    // Write Suffix Array.
    s = 0;
    while (s < gsize*sizeof(uint64_t)) s += write(fsa, pos + s/sizeof(uint64_t), gsize*sizeof(uint64_t) - s);

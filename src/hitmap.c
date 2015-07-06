@@ -12,7 +12,7 @@ hitmap
    for (int i = 0; i < hmargs.search_rounds; i++) if (hmargs.tau[i] > maxtau) maxtau = hmargs.tau[i];
 
    // Define number of seqs that will be mixed in each poucet search.
-   int seq_block = hmargs.sequence_blocks;
+   int seq_block = hm_min(seqs->pos, hmargs.sequence_blocks);
 
    pstack_t **pebbles = NULL, **hits = NULL;
    vstack_t **hitmaps = NULL;
@@ -144,7 +144,7 @@ hitmap
                long next_s;
                if (i < intervals->pos - 1) next_s = intervals->match[i+1]->read_s;
                else next_s = slen;
-               matched += hm_min(next_s, current->read_e) - current->read_s;
+               matched += hm_min(next_s, current->read_e + 1) - current->read_s;
             }
 
             free(intervals);
@@ -619,9 +619,9 @@ align_seeds
          if (ext_r || ext_l) {
             r_min  = (ext_r ? r_distr : 0);
             l_min  = (ext_l ? r_distl : 0);
-            r_qstart = hm_min(read_e + 1, slen-1);
+            r_qstart = read_e + 1;
             r_rstart = ref_e - 1;
-            l_qstart = hm_max(read_s - 1,0);
+            l_qstart = read_s - 1;
             l_rstart = ref_s + 1;
             last_eexp = match->e_exp;
             extend = match;
@@ -647,9 +647,9 @@ align_seeds
             }
          }
       }
-      if (cancel_align) continue;
       long r_qlen = slen - r_qstart;
       long l_qlen = l_qstart + 1;
+      if (cancel_align || (!r_qlen && !l_qlen)) continue;
       long r_rlen = align_min((long)(r_qlen * (1 + hmargs.align.width_ratio)), index->gsize - r_rstart);
       long l_rlen = align_min((long)(l_qlen * (1 + hmargs.align.width_ratio)), r_qstart);
       char * r_qry = read + r_qstart;
@@ -753,18 +753,18 @@ feedback_gaps
 
       if (gap_end - gap_start >= hmargs.feedback_gap_minlen) {
          int last_rec = gap_start;
-         for (int j = gap_start, cnt = 0; j <= gap_end; j++) {
+         for (int j = gap_start, cnt = 0; j < gap_end; j++) {
             if (seq.q[j] < next_qthr) {
                cnt = 0;
                continue;
             } else {
                cnt++;
                if (cnt < next_kmer_size) continue;
-               int idx = j - next_kmer_size + 1;
+               int idx = j + 1 - next_kmer_size;
 
                // Add nucleotides to recompute count.
                recompute += hm_min(j - last_rec + 1, next_kmer_size);
-               last_rec = j;
+               last_rec = j+1;
                // Realloc sublist.
                if (subseqs->pos + 1 >= subseqs->size) {
                   int newsize = subseqs->size * 2;
@@ -810,11 +810,11 @@ print_intervals
          for (int j = 0; j < hm_min(max_repeats, match->repeats->pos); j++) {
             match_t * rmatch = match->repeats->match[j];
             int          dir = rmatch->dir;
-            long     g_start = index->gsize - rmatch->ref_s;
-            long       g_end = index->gsize - (rmatch->ref_e - 1);
+            long     g_start = index->gsize - rmatch->ref_s - 1;
+            long       g_end = index->gsize - rmatch->ref_e - 1;
             int chrnum = bisect_search(0, chr->nchr-1, chr->start, g_start+1)-1;
             fprintf(stdout, "\t\t(%d,%d)\t%s:%ld-%ld:%c\t%.2f\t(%.0f%%)\t%c%c\n",
-                    rmatch->read_s+1, rmatch->read_e,
+                    rmatch->read_s+1, rmatch->read_e+1,
                     chr->name[chrnum],
                     g_start - chr->start[chrnum]+1,
                     g_end - chr->start[chrnum]+1,
@@ -830,13 +830,13 @@ print_intervals
       }
       else {
          int      dir = match->dir;
-         long     g_start = index->gsize - match->ref_s;
-         long       g_end = index->gsize - (match->ref_e - 1);
+         long     g_start = index->gsize - match->ref_s - 1;
+         long       g_end = index->gsize - match->ref_e - 1;
          int   chrnum = bisect_search(0, chr->nchr-1, chr->start, g_start+1)-1;
          // Print results.
          fprintf(stdout, "[interval %d]\t(%d,%d)\t%s:%ld-%ld:%c\t%.2f\t(%.2f%%)\t%c%c\n",
                  ++cnt,
-                 match->read_s+1, match->read_e,
+                 match->read_s+1, match->read_e+1,
                  chr->name[chrnum],
                  g_start - chr->start[chrnum]+1,
                  g_end - chr->start[chrnum]+1,
