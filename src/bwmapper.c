@@ -99,10 +99,14 @@ load_index
    index_t * index = malloc(sizeof(index_t));
    
    // Read chromosome index.
-   index->chr = read_CHRindex(file);
+   char * chr_file = malloc(strlen(file)+5);
+   strcpy(chr_file, file);
+   strcpy(chr_file+strlen(file), ".chr");
+   index->chr = read_CHRindex(chr_file);
    if (index->chr == NULL) {
       exit(EXIT_FAILURE);
    }
+   free(chr_file);
 
    // Open OCC file.
    char * occ_file = malloc(strlen(file)+5);
@@ -207,7 +211,7 @@ write_index
    strcpy(occfile + strlen(filename), ".occ");
    char * genfile = malloc(strlen(filename)+5);
    strcpy(genfile, filename);
-   strcpy(occfile + strlen(filename), ".gen");
+   strcpy(genfile + strlen(filename), ".gen");
    // Open files.
    int fsa = open(safile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
    int foc = open(occfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
@@ -380,7 +384,8 @@ bwt_index
    }
    // Compute occ for the full genome.
    // Word starts at 1, this is the first mark.
-   for (uint64_t i = 0, word = 1, interval = 0; i < gsize; i++) {
+   uint64_t word = 1;
+   for (uint64_t i = 0, interval = 0; i < gsize; i++) {
       // Set occ bit.
       int base = translate[(uint8_t)genome[(sa[i] == 0 ? gsize-1 : sa[i]-1)]];
       if (base) {
@@ -399,6 +404,11 @@ bwt_index
       }
       // Shift words.
       for (int j = 0; j < NUM_BASES; j++) occ[j][word] <<= 1;
+   }
+   // Shift last word.
+   if (gsize%OCC_WORD_SIZE) {
+      for (int j = 0; j < NUM_BASES; j++)
+         occ[j][word] <<= OCC_WORD_SIZE - 1 - gsize%OCC_WORD_SIZE;
    }
    // Add last interval.
    for (int j = 0; j < NUM_BASES; j++) occ[j][occ_words+occ_marks-1] = occ_abs[j];

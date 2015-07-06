@@ -107,7 +107,7 @@ int main(int argc, char * argv[]) {
             .bp_repeats   = 5,
             .read_error   = 0.05,
             .rand_error   = 0.50,
-            .width_ratio  = 0.05
+            .width_ratio  = 0
          }
       };
 

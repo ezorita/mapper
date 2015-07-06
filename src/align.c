@@ -249,6 +249,9 @@ char translate[256] = {[0 ... 255] = 4,
             double maxJe;
             maxJe = -INFINITY;
             bp_cnt = 0;
+            // TODO:
+            // Gross search here, search only every bp_online_resolution, maybe 5, then at the
+            // end do a fine search.
             for (int b = 0; b < bp_pos; b ++) {
                Ee = bp_path[bp_pos].score - bp_path[b].score;
                Me = i - b*opt.bp_period - Ee;
@@ -275,7 +278,6 @@ char translate[256] = {[0 ... 255] = 4,
       best_bp = bp_path[bp_ref];
    } else {
       // Recompute highest likelihood.
-      bp_pos--;
       double maxJe;
       maxJe = -INFINITY;
       for (int b = 0; b < bp_pos; b++) {
@@ -285,7 +287,7 @@ char translate[256] = {[0 ... 255] = 4,
          if (Je > maxJe) { maxJe = Je; bp_ref = b; }
       }
       if (maxJe >= opt.bp_thr) best_bp = bp_path[bp_ref];
-      else best_bp = bp_path[bp_pos];
+      else best_bp = bp_path[bp_pos-1];
    }
 
    // Free memory.

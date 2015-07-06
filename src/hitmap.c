@@ -648,10 +648,10 @@ align_seeds
          }
       }
       if (cancel_align) continue;
-      long r_qlen = slen - 1 - r_qstart;
-      long l_qlen = l_qstart;
-      long r_rlen = (long)(r_qlen * (1 + hmargs.align.width_ratio));
-      long l_rlen = (long)(l_qlen * (1 + hmargs.align.width_ratio));
+      long r_qlen = slen - r_qstart;
+      long l_qlen = l_qstart + 1;
+      long r_rlen = align_min((long)(r_qlen * (1 + hmargs.align.width_ratio)), index->gsize - r_rstart);
+      long l_rlen = align_min((long)(l_qlen * (1 + hmargs.align.width_ratio)), r_qstart);
       char * r_qry = read + r_qstart;
       char * l_qry = read + l_qstart;
       char * r_ref = index->genome + r_rstart;

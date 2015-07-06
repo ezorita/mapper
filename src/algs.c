@@ -11,6 +11,7 @@ compute_occ
  uint64_t * occ
 )
 {
+   if (ptr == (uint64_t)-1) return 0;
    uint64_t wrdnum = ptr/OCC_WORD_SIZE;
    uint64_t wrdptr = wrdnum + wrdnum/OCC_MARK_INTERVAL + 1;
    uint64_t mrkptr = ((wrdnum + OCC_MARK_INTERVAL/2)/OCC_MARK_INTERVAL)*(OCC_MARK_INTERVAL+1);
