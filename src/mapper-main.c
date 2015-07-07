@@ -62,12 +62,19 @@ int main(int argc, char * argv[]) {
       //      char qthr[7] = {'F','9','0','0',0};
       */
       int rounds = 4;
-      int kmers[7] = {22,18,22,18};
+      int kmers[7] = {22,18,22,18,20};
+      //int kmers[4] = {22,20,18,18};
+      int tau[7] = {0,0,0,0,0,0};
+      int off[7] = {22,18,11,1,1};
+      char qthr[7] = {0,0,0,0,0,0,0};
+      /*
+      int rounds = 1;
+      int kmers[7] = {18,18,22,18};
       //int kmers[4] = {22,20,18,18};
       int tau[7] = {0,0,0,0,0,0,0};
-      int off[7] = {80,80,11,4};
+      int off[7] = {1,80,11,4};
       char qthr[7] = {0,0,0,0,0,0,0};
-
+      */
 
       hmargs_t hmargs = {
          // Format options.
@@ -89,11 +96,11 @@ int main(int argc, char * argv[]) {
          // Alignment filter options.
          .max_align_per_read = 10000,
          .align_filter_ident = 0.9,
-         .align_filter_eexp = -6.0,
+         .align_filter_eexp = -10.0,
          .align_accept_eexp = -30.0,
          .align_seed_filter_thr = 0.5,
          // Post-processing options.
-         .feedback_eexp_thr = -20.0,
+         .feedback_eexp_thr = -25.0,
          .feedback_gap_minlen = 5,
          .repeat_min_overlap = 0.9,
          .overlap_tolerance = 0.1,
