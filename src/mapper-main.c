@@ -62,7 +62,7 @@ int main(int argc, char * argv[]) {
       //      char qthr[7] = {'F','9','0','0',0};
       */
       int rounds = 4;
-      int kmers[7] = {24,18,22,18};
+      int kmers[7] = {22,18,22,18};
       //int kmers[4] = {22,20,18,18};
       int tau[7] = {0,0,0,0,0,0,0};
       int off[7] = {80,80,11,4};
@@ -103,8 +103,9 @@ int main(int argc, char * argv[]) {
          .align = (alignopt_t) {
             .bp_thr       = 10,
             .bp_max_thr   = 50,
-            .bp_period    = 1,
-            .bp_repeats   = 5,
+            .bp_resolution = 1,
+            .bp_period    = 5, // This is N times the resolution!!!
+            .bp_repeats   = 2,
             .read_error   = 0.05,
             .rand_error   = 0.50,
             .width_ratio  = 0
@@ -188,7 +189,7 @@ int main(int argc, char * argv[]) {
       clock_t tstart = clock();
       hitmap(index, seqs, hmargs);
       double totaltime = ((clock()-tstart)*1.0)/CLOCKS_PER_SEC;
-      if (opt_verbose) fprintf(stderr, "query time [%.3fs] / rate [%.3f s/read]\n", totaltime, totaltime/seqs->pos);
+      if (opt_verbose) fprintf(stderr, "query time [%.3fs] / rate [%.3f ms/read]\n", totaltime, totaltime*1000.0/seqs->pos);
       
    }
    else if (strcmp(argv[1],"index") == 0) {

@@ -170,7 +170,8 @@ char translate[256] = {[0 ... 255] = 4,
    uint64_t * Eqb = malloc(awords * sizeof(uint64_t));
 
    // Breakpoint.
-   path_t   * bp_path = malloc((a_len/opt.bp_period+1)*sizeof(path_t));
+   path_t   * bp_path = malloc((a_len/opt.bp_resolution+1)*sizeof(path_t));
+   int    period  = 0;
    int    bp_pos  = 0;
    int    bp_ref  = 0;
    int    bp_cnt  = 0;
@@ -232,63 +233,65 @@ char translate[256] = {[0 ... 255] = 4,
       for (j=0; j < awords-1; j++) Mb[j] = (Mb[j] >> 1) | (Mb[j+1] << (WORD_SIZE-1));
       Mb[j] = (Mb[j] >> 1) | (Mhc << (WORD_SIZE-1));
 
-      if (i%opt.bp_period == 0) {
+      if (i%opt.bp_resolution == 0) {
          bp_path[bp_pos] = dbf_find_min(i,score,awords,Pr,Mr,Pb,Mb);
-         // Compute likelihood of current reference.
-         int Ee = bp_path[bp_pos].score - bp_path[bp_ref].score;
-         int Me = i - bp_ref*opt.bp_period - Ee;
-         float Je = Ee*logAe + Me*logBe;
-         if (Je > opt.bp_thr) {
-            bp_cnt++;
-            if ((bp_cnt >= opt.bp_repeats && i >= min_qlen) || Je > opt.bp_max_thr) {
-               bp_cnt = opt.bp_repeats;
-               break;
+         if ((period++)%opt.bp_period == 1 || opt.bp_period == opt.bp_resolution) {
+            // Compute likelihood of current reference.
+            int Ee = bp_path[bp_pos].score - bp_path[bp_ref].score;
+            int Me = i - bp_ref*opt.bp_resolution - Ee;
+            float Je = Ee*logAe + Me*logBe;
+            if (Je > opt.bp_thr) {
+               bp_cnt++;
+               //               fprintf(stdout, "\tML algorithm (i=%d, score=%d, cnt=%d) {bp_ref = %d (Je = %.2f)}\n", i, bp_path[bp_pos].score, bp_cnt, bp_ref*opt.bp_resolution, Je);
+               if ((bp_cnt >= opt.bp_repeats && i >= min_qlen) || Je > opt.bp_max_thr) {
+                  bp_cnt = opt.bp_repeats;
+                  break;
+               }
+            } else {
+               double maxJe;
+               maxJe = -INFINITY;
+               bp_cnt = 0;
+               for (int b = 0; b < bp_pos; b += opt.bp_period) {
+                  Ee = bp_path[bp_pos].score - bp_path[b].score;
+                  Me = i - b*opt.bp_resolution - Ee;
+                  Je = Ee*logAe + Me*logBe;
+                  if (Je > maxJe) { maxJe = Je; bp_ref = b; }
+               }
+               if (maxJe > opt.bp_max_thr) {
+                  bp_cnt = opt.bp_repeats;
+                  break;
+               }
+               if (maxJe > opt.bp_thr) {
+                  bp_cnt = 1;
+               }
+               //               fprintf(stdout, "\tML algorithm (i=%d, score=%d, cnt=%d) {*bp_ref = %d (Je = %.2f)}\n", i, bp_path[bp_pos].score, bp_cnt, bp_ref*opt.bp_resolution, maxJe);
             }
-            //fprintf(stdout, "\tML algorithm (i=%d, score=%d, cnt=%d) {bp_ref = %d (Je = %.2f)}\n", i, bp_path[bp_pos].score, bp_cnt, bp_ref*opt.bp_period, Je);
-         } else {
-            double maxJe;
-            maxJe = -INFINITY;
-            bp_cnt = 0;
-            // TODO:
-            // Gross search here, search only every bp_online_resolution, maybe 5, then at the
-            // end do a fine search.
-            for (int b = 0; b < bp_pos; b ++) {
-               Ee = bp_path[bp_pos].score - bp_path[b].score;
-               Me = i - b*opt.bp_period - Ee;
-               Je = Ee*logAe + Me*logBe;
-               if (Je > maxJe) { maxJe = Je; bp_ref = b; }
-            }
-            if (maxJe > opt.bp_max_thr) {
-               bp_cnt = opt.bp_repeats;
-               break;
-            }
-            if (maxJe > opt.bp_thr) {
-               bp_cnt = 1;
-            }
-
-            //fprintf(stdout, "\tML algorithm (i=%d, score=%d, cnt=%d) {*bp_ref = %d (Je = %.2f)}\n", i, bp_path[bp_pos].score, bp_cnt, bp_ref*opt.bp_period, maxJe);
          }
          // Increase bp list position.
          bp_pos++;
       }
    }
 
+   // High resolution breakpoint computation.
    path_t best_bp;
+   int start = 0, end = bp_pos;
    if (bp_cnt >= opt.bp_repeats) {
-      best_bp = bp_path[bp_ref];
-   } else {
-      // Recompute highest likelihood.
-      double maxJe;
-      maxJe = -INFINITY;
-      for (int b = 0; b < bp_pos; b++) {
-         int Ee = score - bp_path[b].score;
-         int Me = a_len - 1 - b*opt.bp_period - Ee;
-         double Je = Ee*logAe + Me*logBe;
-         if (Je > maxJe) { maxJe = Je; bp_ref = b; }
-      }
-      if (maxJe >= opt.bp_thr) best_bp = bp_path[bp_ref];
-      else best_bp = bp_path[bp_pos-1];
+      start = align_max(bp_ref - opt.bp_period + 1, 0);
+      end   = align_min(bp_ref + opt.bp_period, bp_pos);
    }
+   // Recompute highest likelihood.
+   double maxJe = -INFINITY;
+   //   fprintf(stdout, "FINE ML (%d to %d):\n", start, end);
+   for (int b = start; b < end; b++) {
+      int Ee = score - bp_path[b].score;
+      int Me = bp_pos*opt.bp_resolution - b*opt.bp_resolution - Ee;
+      double Je = Ee*logAe + Me*logBe;
+      //      fprintf(stdout, "\tJe(%d)=%.2f [score = %d, len = %d]\n", b*opt.bp_resolution, Je, bp_path[b].score, a_len-1);
+      if (Je > maxJe) { maxJe = Je; bp_ref = b; }
+   }
+   //   fprintf(stdout, "FINE ML (%d to %d) bp_ref=%d (maxJe = %.2f)\n", start, end, bp_ref*opt.bp_resolution, maxJe);
+   if (maxJe >= opt.bp_thr) best_bp = bp_path[bp_ref];
+   else best_bp = bp_path[bp_pos-1];
 
    // Free memory.
    free(Eqr);

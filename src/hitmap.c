@@ -658,15 +658,28 @@ align_seeds
       char * l_ref = index->genome + l_rstart;
       
       // Align forward and backward starting from (read_s, ref_s).
+      long read_s, read_e, ref_s, ref_e;
       path_t align_r = (path_t){0,0,0}, align_l = (path_t){0,0,0};
-      if(r_qlen) align_r = dbf_align(r_qlen, r_qry, r_rlen, r_ref, r_min, ALIGN_FORWARD, ALIGN_BACKWARD, hmargs.align);
-      if(l_qlen) align_l = dbf_align(l_qlen, l_qry, l_rlen, l_ref, l_min, ALIGN_BACKWARD, ALIGN_FORWARD, hmargs.align);
+      if(r_qlen) {
+         align_r = dbf_align(r_qlen, r_qry, r_rlen, r_ref, r_min, ALIGN_FORWARD, ALIGN_BACKWARD, hmargs.align);
+         read_e = r_qstart + align_r.row;
+         ref_e = r_rstart - align_r.col;
+      }
+      else {
+         read_e = r_qstart - 1;
+         ref_e  = r_rstart + 1;
+      }
+      if(l_qlen) {
+         align_l = dbf_align(l_qlen, l_qry, l_rlen, l_ref, l_min, ALIGN_BACKWARD, ALIGN_FORWARD, hmargs.align);
+         read_s =  l_qstart - align_l.row;
+         ref_s = l_rstart + align_l.col;
+      }
+      else {
+         read_s = l_qstart + 1;
+         ref_s  = l_rstart - 1;
+      }
       
       // Compute significance.
-      long ref_s = l_rstart + align_l.col;
-      long ref_e = r_rstart - align_r.col;
-      long read_s = l_qstart - align_l.row;                     // row is the read breakpoint.
-      long read_e = r_qstart + align_r.row;
       long score = extend_score + align_l.score + align_r.score;
       double ident = 1.0 - (score*1.0)/(hm_max(read_e-read_s+1,ref_e-ref_s+1));
       double e_exp = INFINITY;
