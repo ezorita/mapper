@@ -61,11 +61,12 @@ int main(int argc, char * argv[]) {
       char qthr[7] = {0,0,0,0,0,0,0};
       //      char qthr[7] = {'F','9','0','0',0};
       */
-      int rounds = 4;
-      int kmers[7] = {22,18,22,18,20};
+      int rounds = 1;
+      int kmers[7] = {40,22,18,22,18,20};
       //int kmers[4] = {22,20,18,18};
       int tau[7] = {0,0,0,0,0,0};
-      int off[7] = {22,18,11,1,1};
+      int off[7] = {10,22,18,11,1,1};
+      int thr[7] = {10,0,0,0,0,0,0};
       char qthr[7] = {0,0,0,0,0,0,0};
       /*
       int rounds = 1;
@@ -86,6 +87,7 @@ int main(int argc, char * argv[]) {
          .tau = tau,
          .kmer_size = kmers,
          .kmer_offset = off,
+         .seed_thr = thr,
          .qthr = qthr,
          // Seeding options.
          .seed_max_loci = 20,
@@ -112,7 +114,7 @@ int main(int argc, char * argv[]) {
             .bp_max_thr   = 50,
             .bp_resolution = 1,
             .bp_period    = 5, // This is N times the resolution!!!
-            .bp_repeats   = 2,
+            .bp_repeats   = 4,
             .read_error   = 0.05,
             .rand_error   = 0.50,
             .width_ratio  = 0

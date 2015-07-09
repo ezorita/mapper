@@ -59,7 +59,7 @@ hitmap
          int tau = hmargs.tau[a];
          int kmer = hmargs.kmer_size[a];
          // Verbose sorting.
-         if(hmargs.verbose) fprintf(stderr, "[k:%d,d:%d,o:%d,q:%d] %d seeds\nsorting  ...", kmer, tau, hmargs.kmer_offset[a], hmargs.qthr[a],subseqs->pos);
+         if(hmargs.verbose) fprintf(stderr, "[k:%d,d:%d,o:%d,t:%d,q:%d] %d seeds\nsorting  ...", kmer, tau, hmargs.kmer_offset[a], hmargs.seed_thr[a], hmargs.qthr[a],subseqs->pos);
          clock_t tstart = clock();
          // Sort subsequences.
          mergesort_mt(subseqs->sub, subseqs->pos, sizeof(sub_t), kmer, 1, compar_seqsort);
@@ -69,8 +69,10 @@ hitmap
          // Clear hitmaps.
          for (int i = 0 ; i < numseqs ; i++) hitmaps[i]->pos = 0;
          // Search subsequences.
-         poucet_search(subseqs, pebbles, hits, index, tau, kmer, kmer, hmargs.seed_max_loci, hmargs.seed_abs_max_loci, hmargs.verbose);
-
+         if (tau > 0)
+            poucet_search(subseqs, pebbles, hits, index, tau, kmer, kmer, hmargs.seed_max_loci, hmargs.seed_abs_max_loci, hmargs.verbose);
+         else 
+            bw_search(subseqs, kmer, hmargs.seed_thr[a], index, hmargs);
 
          // Reset the subsequence list. It will be filled up with the unmatched regions.
          subseqs->pos = 0;
@@ -162,6 +164,107 @@ hitmap
    }
    if (hmargs.verbose) fprintf(stderr, "stats: %.2f%% mapped reads.\n", mapped*100.0/seqs->pos);
 
+   return 0;
+}
+
+int
+bw_search
+(
+ sublist_t  * subseqs,
+ int          kmer_size,
+ int          seed_loci,
+ index_t    * index,
+ hmargs_t     hmargs
+)
+{
+   static const char translate[256] = {[0 ... 255] = 3,
+                          ['a'] = 0, ['c'] = 1, ['g'] = 2, ['n'] = 3, ['t'] = 4,
+                          ['A'] = 0, ['C'] = 1, ['G'] = 2, ['N'] = 3, ['T'] = 4 };
+
+   int start = 0;
+   clock_t tstart = clock();
+   double  progress = 0.0;
+   bwpos_t * cache = malloc((kmer_size+1) * sizeof(bwpos_t));
+   // Insert root.
+   cache[0] = (bwpos_t){0,index->gsize-1};
+
+   for (int i = 0; i < subseqs->pos; i++) {
+      // Verbose progress.
+      if (hmargs.verbose && i*100.0/subseqs->pos - progress > 0.1) {
+         progress = i*100.0/subseqs->pos;
+         fprintf(stderr, "mapping  ...  %.1f%%\r", progress);
+      }
+      // Subseq.
+      sub_t query = subseqs->sub[i];
+      int   trail = 0;
+
+      // Compute trail depth.
+      /*
+      if (i < subseqs->pos - 1) {
+         sub_t next = subseqs->sub[i+1];
+         while (query.seq[trail] == next.seq[trail] && trail < kmer_size) trail++;
+      }
+      */
+      // Query index.
+      uint64_t    sp = cache[start].sp;
+      uint64_t    ep = cache[start].ep;
+      uint64_t  * c  = index->c;
+      uint64_t ** occs = index->occ;
+      int nt;
+      int n = start;
+      /* VARIANT 1: SEED THRESHOLDING
+      while (n < kmer_size && ep >= seed_loci + sp) {
+         nt = translate[(uint8_t)query.seq[n++]];
+         sp = c[nt] + compute_occ(sp-1, occs[nt]);
+         ep = c[nt] + compute_occ(ep  , occs[nt]) - 1;
+         cache[n] = (bwpos_t){sp,ep};
+      }
+       */
+      /* VARIANT 2: SEED RESSURECTION */
+      uint64_t tsp = 0, tep = seed_loci;
+      while (n < kmer_size && ep >= sp) {
+         nt = translate[(uint8_t)query.seq[n++]];
+         tsp = sp;
+         tep = ep;
+         sp = c[nt] + compute_occ(sp-1, occs[nt]);
+         ep = c[nt] + compute_occ(ep  , occs[nt]) - 1;
+         cache[n] = (bwpos_t){sp,ep};
+      }
+      if (ep < sp && tep - tsp < seed_loci) {
+         sp = tsp;
+         ep = tep;
+         n--;
+      }
+      /* */
+
+      if (n < trail) trail = n;
+
+      if (ep >= sp && ep - sp < hmargs.seed_abs_max_loci) {
+         vstack_t * hmap = *(query.hitmap);
+         long n_hits = ep - sp + 1;
+         if (hmap->pos + n_hits >= hmap->size) {
+            long newsize = hmap->size + n_hits + 1;
+            hmap = *(query.hitmap) = realloc(hmap, sizeof(vstack_t) + newsize * sizeof(long));
+            if (hmap == NULL) {
+               fprintf(stderr, "error in 'map_hits' (realloc): %s\n", strerror(errno));
+               return -1;
+            }
+            hmap->size = newsize;
+         }
+
+         // Copy hits.
+         long idstamp = 2*(query.seqid & KMERID_MASK);
+         for (long k = sp; k <= ep ; k++) {
+            // Delay offset to match the beginning of the sequence. Offset contains the alignment length.
+            hmap->val[hmap->pos++] = ((long)(index->pos[k] + n - 1) << KMERID_BITS) | (idstamp + (n_hits > hmargs.seed_max_loci));
+         }
+      }
+
+      // Update start.
+      start = trail;
+   }
+
+   if (hmargs.verbose) fprintf(stderr, "mapping  ...  [%.3fms]\n", (clock()-tstart)*1000.0/CLOCKS_PER_SEC);
    return 0;
 }
 
