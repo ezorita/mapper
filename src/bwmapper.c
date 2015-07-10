@@ -258,8 +258,11 @@ write_index
 
    // .SAR FILE
    // Write Suffix Array.
+   int bits = 0;
+   while (2*gsize < (1 << bits)) bits++;
+   uint64_t sa_size = compact_array(pos, 2*gsize, bits);
    s = 0;
-   while (s < gsize*sizeof(uint64_t)) s += write(fsa, pos + s/sizeof(uint64_t), gsize*sizeof(uint64_t) - s);
+   while (s < sa_size*sizeof(uint64_t)) s += write(fsa, pos + s/sizeof(uint64_t), sa_size*sizeof(uint64_t) - s);
    stot += s;
 
    return stot;

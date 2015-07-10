@@ -53,6 +53,40 @@ bisect_search
    else return bisect_search(middle, end, set, value);
 }
 
+uint64_t
+compact_array
+(
+ uint64_t * array,
+ uint64_t     len,
+ int         bits
+)
+{
+   uint64_t mask = ((uint64_t)0xFFFFFFFFFFFFFFFF) >> (64-bits);
+   uint64_t word = 0;
+   int   lastbit = 0;
+   
+   // Clear upper bits of array[0].
+   array[0] &= mask;
+
+   for (uint64_t i = 0, current; i < len; i++) {
+      // Save the current value.
+      current = array[i];
+      // Store the compact version.
+      array[word] |= (current & mask) << lastbit;
+      // Update bit offset.
+      lastbit += bits;
+      // Word is full.
+      if (lastbit >= 64) {
+         lastbit = 64 - lastbit;
+         // Complete with remainder or set to 0 (if lastbit = 0).
+         // This will clear the upper bits of array.
+         array[++word] = (current & mask) >> (bits - lastbit);
+      }
+   }
+
+   return word + (lastbit > 0);
+}
+
 /*********************/
 /** seq_t functions **/
 /*********************/

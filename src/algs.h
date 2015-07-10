@@ -148,6 +148,7 @@ void          radix_sort       (long * a, long * b, long n, long maxval);
 // General algorithms.
 uint64_t      compute_occ      (uint64_t ptr, uint64_t * occ);
 long          bisect_search    (long start, long end, long* set, long value);
+uint64_t      compact_array    (uint64_t * array, uint64_t len, int bits);
 
 // Stack functions.
 vstack_t    * new_stack        (long size);
