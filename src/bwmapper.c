@@ -174,14 +174,11 @@ load_index
    }
 
    // Set C and gsize.
-   index->c = ((uint64_t *) index->occ_file);
-   index->gsize = index->c[NUM_BASES];
+   index->c = (uint64_t *) index->occ_file;
+   // Genome size (Forward strand only).
+   index->gsize = index->c[NUM_BASES]/2;
    // Load occ tables.
-   uint64_t occ_size = index->c[NUM_BASES+1];
-   index->occ   = malloc(NUM_BASES * sizeof(void *));
-   for (int i = 0; i < NUM_BASES; i++) {
-      index->occ[i] = ((uint64_t *) index->occ_file) + NUM_BASES + 2 + i*occ_size;
-   }
+   index->occ = index->c + NUM_BASES + 1;
    // Load SA.
    index->pos = (uint64_t *) index->sa_file;
    // Load genome.
@@ -247,10 +244,6 @@ write_index
    // .OCC FILE
    // Write C
    while (s < (NUM_BASES+1)*sizeof(uint64_t)) s += write(foc, C + s/sizeof(uint64_t), (NUM_BASES+1)*sizeof(uint64_t) - s);
-   stot += s;
-   // Write OCC size.
-   s = 0;
-   while (s < sizeof(uint64_t)) s += write(foc, &occ_size, sizeof(uint64_t));
    stot += s;
    // Write OCC.
    s = 0;

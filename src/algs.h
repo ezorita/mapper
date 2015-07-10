@@ -66,15 +66,15 @@ struct pebble_t {
 };
 
 struct index_t {
-   void      * gen_file;
-   void      * occ_file;
-   void      * sa_file;
-   uint64_t    gsize;
-   uint64_t  * c;
-   char      * genome;
-   uint64_t  * pos;
-   uint64_t ** occ;
-   chr_t     * chr;
+   void     * gen_file;
+   void     * occ_file;
+   void     * sa_file;
+   uint64_t   gsize;
+   uint64_t * c;
+   char     * genome;
+   uint64_t * pos;
+   uint64_t * occ;
+   chr_t    * chr;
 };
 
 struct node_t {
