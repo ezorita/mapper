@@ -1,14 +1,18 @@
 #include "bwmapper.h"
 
-char translate[256] = {[0 ... 255] = 4, ['@'] = 0,
-                           ['a'] = 1, ['c'] = 2, ['g'] = 3, ['n'] = 4, ['t'] = 5,
-                           ['A'] = 1, ['C'] = 2, ['G'] = 3, ['N'] = 4, ['T'] = 5 };
+static const char sa_value[256] = {[0 ... 255] = 5,
+                           ['a'] = 1, ['c'] = 2, ['g'] = 3, ['t'] = 4, ['n'] = 5,
+                           ['A'] = 1, ['C'] = 2, ['G'] = 3, ['T'] = 4, ['N'] = 5 };
 
-char revert[256]  = {[0 ... 255] = 0, [0] = '@', [1] = 'A', [2] = 'C', [3] = 'G', [4] = 'N', [5] = 'T'};
+static const char translate[256] = {[0 ... 255] = 4,
+                           ['a'] = 0, ['c'] = 1, ['g'] = 2, ['t'] = 3, ['n'] = 4,
+                           ['A'] = 0, ['C'] = 1, ['G'] = 2, ['T'] = 3, ['N'] = 4 };
 
-char rcode[256] = {[0 ... 255] = 0,
-                   ['a'] = 'T', ['c'] = 'G', ['g'] = 'C', ['t'] = 'A', ['u'] = 'A', ['n'] = 'N',
-                   ['A'] = 'T', ['C'] = 'G', ['G'] = 'C', ['T'] = 'A', ['U'] = 'A', ['N'] = 'N' };
+static const char revert[256]  = {[0 ... 255] = 'N', [0] = 'A', [1] = 'C', [2] = 'G', [3] = 'T'};
+
+static const char revcomp[256] = {[0 ... 255] = 'N',
+                   ['a'] = 't', ['c'] = 'g', ['g'] = 'c', ['t'] = 'a', ['u'] = 'a',
+                   ['A'] = 'T', ['C'] = 'G', ['G'] = 'C', ['T'] = 'A', ['U'] = 'A' };
 
 /*********************/
 /** query functions **/
@@ -196,11 +200,10 @@ write_index
 
    // Allocate structures.
    uint64_t * C, * pos;
-   uint64_t ** occ = malloc(NUM_BASES * sizeof(vstack_t *));
+   uint64_t * occ;
 
    // Parse genome and convert to integers. (0..NBASES-1)
    char * genome = compact_genome(filename, &gsize);
-   C = compute_c(genome, gsize);
 
    // Output files.
    char * sarfile = malloc(strlen(filename)+5);
@@ -234,36 +237,30 @@ write_index
    free(occfile);
    free(genfile);
 
-   // FM index
+   // FM index (the size of the index is 2*gsize)
    uint64_t occ_size;
-   bwt_index(genome, gsize, &pos, occ, &occ_size);
+   bwt_index(genome, 2*gsize, &pos, &occ, &occ_size, &C);
 
    // Write index.
    size_t s = 0, stot = 0;
    
    // .OCC FILE
    // Write C
-   while (s < NUM_BASES*sizeof(uint64_t)) s += write(foc, C + (NUM_SYMBOLS-NUM_BASES) + s/sizeof(uint64_t), NUM_BASES*sizeof(uint64_t) - s);
-   stot += s;
-   // Write gsize (last value of C).
-   s = 0;
-   while (s < sizeof(uint64_t)) s += write(foc, &gsize, sizeof(uint64_t));
+   while (s < (NUM_BASES+1)*sizeof(uint64_t)) s += write(foc, C + s/sizeof(uint64_t), (NUM_BASES+1)*sizeof(uint64_t) - s);
    stot += s;
    // Write OCC size.
    s = 0;
    while (s < sizeof(uint64_t)) s += write(foc, &occ_size, sizeof(uint64_t));
    stot += s;
    // Write OCC.
-   for (int i = 0; i < NUM_BASES; i++) {
-      s = 0;
-      while (s < occ_size * sizeof(uint64_t)) s += write(foc,occ[i] + s/sizeof(uint64_t), occ_size*sizeof(uint64_t) - s);
-      stot += s;
-   }
+   s = 0;
+   while (s < occ_size * sizeof(uint64_t)) s += write(foc,occ + s/sizeof(uint64_t), occ_size*sizeof(uint64_t) - s);
+   stot += s;
 
    // .GEN FILE
-   // Write genome bases.
+   // Write genome bases (forward and reverse strand).
    s = 0;
-   while (s < gsize*sizeof(char)) s += write(fgn, genome + s/sizeof(char), gsize*sizeof(char) - s);
+   while (s < 2*gsize*sizeof(char)) s += write(fgn, genome + s/sizeof(char), 2*gsize*sizeof(char) - s);
    stot += s;
 
    // .SAR FILE
@@ -304,8 +301,10 @@ compact_genome
    // Genome storage vars
    char * genome = malloc(GENOME_SIZE);
    uint64_t gbufsize = GENOME_SIZE;
-   genome[0] = '@';
-   *genomesize = 1;
+
+   // Initialize size
+   *genomesize = 0;
+
    while ((rlen = getline(&buffer, &sz, input)) != -1) {
       if (buffer[0] == '>') {
          buffer[rlen-1] = 0;
@@ -330,17 +329,19 @@ compact_genome
    }
 
    // Realloc buffer.
-   genome = realloc(genome, *genomesize+1);
-
-   // Reverse genome.
-   uint64_t end = *genomesize - 1;
-   char tmp;
-   for (int i = 0 ; i < *genomesize/2; i++) {
-      tmp = genome[i];
-      genome[i] = genome[end-i];
-      genome[end-i] = tmp;
+   genome = realloc(genome, 2*(*genomesize)+1);
+   if (genome == NULL) {
+      fprintf(stderr, "error in 'compact_genome' (realloc): %s\n", strerror(errno));
+      exit(EXIT_FAILURE);
    }
-   genome[*genomesize] = 0;
+
+   // Reverse complement.
+   uint64_t div = *genomesize;
+   for (int i = 0 ; i < div; i++)
+      genome[div + i] = revcomp[(int)genome[div-i-1]];
+
+   // Insert wilcard at the end.
+   genome[2*div] = 0;
 
    fclose(input);
    fclose(output);
@@ -357,83 +358,87 @@ void
 bwt_index
 (
  char      * genome,
- uint64_t    gsize,
+ uint64_t    idxsize,
  uint64_t ** pos,
- uint64_t ** occ,
- uint64_t  * occ_size
+ uint64_t ** occp,
+ uint64_t  * occ_size,
+ uint64_t ** Cp
 )
 {
    // Sort prefixes
-   uint64_t * values = malloc((gsize+3)*sizeof(long));
-   for (uint64_t i = 0; i < gsize; i++) values[i] = (uint64_t)translate[(int)genome[i]];
-   values[gsize] = values[gsize+1] = values[gsize+2] = 0;
-   uint64_t * sa = malloc(gsize*sizeof(uint64_t));
-   suffixArray((long *)values, (long *)sa, gsize, NUM_BASES);
+   uint64_t * values = malloc((idxsize+3)*sizeof(long));
+   for (uint64_t i = 0; i < idxsize; i++) values[i] = (uint64_t)sa_value[(int)genome[i]];
+   values[idxsize] = values[idxsize+1] = values[idxsize+2] = 0;
+   uint64_t * sa = malloc(idxsize*sizeof(uint64_t));
+   suffixArray((long *)values, (long *)sa, idxsize, NUM_BASES);
    free(values);
    *pos = sa;
 
-   // Compute OCC. (MSB FIRST encoding)
-   uint64_t occ_abs[NUM_BASES];
-   uint64_t occ_intervals = (gsize+OCC_MARK_BITS-1)/OCC_MARK_BITS;
+   // Words, marks and intervals.
+   uint64_t occ_intervals = (idxsize+OCC_MARK_BITS-1)/OCC_MARK_BITS;
    uint64_t occ_words = occ_intervals * OCC_MARK_INTERVAL;
    uint64_t occ_marks = occ_intervals + 1;
+
+   // Alloc variables.
+   uint64_t * occ = *occp = malloc((occ_words+occ_marks)*NUM_BASES*sizeof(uint64_t));
+   uint64_t occ_abs[NUM_BASES];
+   uint64_t occ_tmp[NUM_BASES];
+
    // Initial values.
    for (int i = 0; i < NUM_BASES; i++) {
-      occ_abs[i]  = 0;
-      occ[i] = calloc((occ_words+occ_marks),sizeof(uint64_t));
+      occ_abs[i] = 0;
+      occ_tmp[i] = 0;
+      occ[i] = 0;
    }
-   // Compute occ for the full genome.
-   // Word starts at 1, this is the first mark.
-   uint64_t word = 1;
-   for (uint64_t i = 0, interval = 0; i < gsize; i++) {
+
+   // Compute OCC. (MSB FIRST encoding)
+   // Word starts at NUM_BASES, after the first mark.
+   uint64_t word = NUM_BASES;
+   uint64_t interval = 0;
+   for (uint64_t i = 0; i < idxsize; i++) {
       // Set occ bit.
-      int base = translate[(uint8_t)genome[(sa[i] == 0 ? gsize-1 : sa[i]-1)]];
-      if (base) {
-         occ[base-1][word] |= 1;
-         occ_abs[base-1]++;
-      }
+      int base = translate[(uint8_t)genome[(sa[i] == 0 ? idxsize-1 : sa[i]-1)]];
+      occ_tmp[base] |= 1;
+      occ_abs[base-1]++;
       // Next word.
       if (i % OCC_WORD_SIZE == OCC_WORD_SIZE-1) {
-         word++; interval++;
+         for (int j = 0; j < NUM_BASES; j++) {
+            occ[word++] = occ_tmp[j];
+            occ_tmp[j] = 0;
+         }
+         interval++;
          // Write Mark.
          if (interval == OCC_MARK_INTERVAL) {
-            for (int j = 0; j < NUM_BASES; j++) occ[j][word] = occ_abs[j];
-            word++;
+            for (int j = 0; j < NUM_BASES; j++) occ[word++] = occ_abs[j];
             interval = 0;
          }
       }
       // Shift words.
-      for (int j = 0; j < NUM_BASES; j++) occ[j][word] <<= 1;
+      for (int j = 0; j < NUM_BASES; j++) occ_tmp[j] <<= 1;
    }
    // Shift last word.
-   if (gsize%OCC_WORD_SIZE) {
+   if (idxsize%OCC_WORD_SIZE) {
+      interval++;
       for (int j = 0; j < NUM_BASES; j++)
-         occ[j][word] <<= OCC_WORD_SIZE - 1 - gsize%OCC_WORD_SIZE;
+         occ[word++] = occ_tmp[j] << (OCC_WORD_SIZE - 1 - idxsize%OCC_WORD_SIZE);
    }
-   // Add last interval.
-   for (int j = 0; j < NUM_BASES; j++) occ[j][occ_words+occ_marks-1] = occ_abs[j];
+   // Add last mark.
+   if (interval > 0) {
+      // Fill the last interval with 0.
+      for (int i = interval; i < OCC_MARK_INTERVAL; i++)
+         for (int j = 0; j < NUM_BASES; j++) occ[word++] = 0;
+      // Add mark.
+      for (int j = 0; j < NUM_BASES; j++) occ[word++] = occ_abs[j];
+   }
    // Set occ size.
-   *occ_size = occ_words + occ_marks;
+   //   *occ_size = occ_words + occ_marks;
+   *occ_size = word;
+
+   // Fill C.
+   uint64_t * C = *Cp = malloc((NUM_BASES+1)*sizeof(uint64_t));
+   C[0] = 0;
+   for (int i = 1; i <= NUM_BASES; i++) C[i] = C[i-1] + occ_abs[i-1];
 }
-
-
-uint64_t *
-compute_c
-(
- char * genome,
- long gsize
-)
-{
-   uint64_t * cnt = calloc(NUM_SYMBOLS, sizeof(long));
-   for (uint64_t i = 0; i < gsize; i++) cnt[(int)translate[(int)genome[i]]]++;
-   uint64_t * c = malloc(NUM_SYMBOLS * sizeof(long));
-   c[0] = 0;
-   for (int i = 1; i < NUM_SYMBOLS; i++) c[i] = c[i-1] + cnt[i-1];
-   free(cnt);
-   return c;
-}
-
-
 
 
 /*********************/

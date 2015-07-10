@@ -38,7 +38,7 @@ index_t     * load_index       (char* file);
 chr_t       * read_CHRindex    (char* filename);
 ssize_t       write_index      (char* filename);
 char        * compact_genome   (char* filename, uint64_t* genomesize);
-void          bwt_index        (char* text, uint64_t tlen, uint64_t** pos, uint64_t** occ, uint64_t* occ_size);
+void          bwt_index        (char* text, uint64_t tlen, uint64_t** pos, uint64_t** occ, uint64_t* occ_size, uint64_t ** C);
 uint64_t    * compute_c        (char* genome, long gsize);
 
 // Misc functions.
