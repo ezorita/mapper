@@ -180,7 +180,8 @@ load_index
    // Load occ tables.
    index->occ = index->c + NUM_BASES + 1;
    // Load SA.
-   index->pos = (uint64_t *) index->sa_file;
+   index->sa_bits = (uint64_t *) index->sa_file[0];
+   index->sa      = ((uint64_t *) index->sa_file) + 1;
    // Load genome.
    index->genome = (char *) index->gen_file;
 
@@ -257,9 +258,13 @@ write_index
    stot += s;
 
    // .SAR FILE
-   // Write Suffix Array.
-   int bits = 0;
+   // Write word width.
+   uint64_t bits = 0;
    while (2*gsize < (1 << bits)) bits++;
+   s = 0;
+   while (s < sizeof(uint64_t)) s += write(fsa, bits, sizeof(uint64_t));
+   stot += s;
+   // Write Suffix Array.
    uint64_t sa_size = compact_array(pos, 2*gsize, bits);
    s = 0;
    while (s < sa_size*sizeof(uint64_t)) s += write(fsa, pos + s/sizeof(uint64_t), sa_size*sizeof(uint64_t) - s);

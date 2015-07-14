@@ -25,10 +25,14 @@ typedef struct pstack_t   pstack_t;
 
 typedef struct bwarg_t    bwarg_t;
 typedef struct bwpos_t    bwpos_t;
+typedef struct fmdpos_t   fmdpos_t;
 
 // Definitions
 #define TRIE_SIZE     1024
 #define TRIE_CHILDREN  3
+
+// Function definitions.
+#define get_sar(p,k,b)  ((64-((k)*(b)%64) >= b ? (p[(k)*(b)/64] >> ((k)*(b))%64) : (p[(k)*(b)/64] >> ((k)*(b)%64) | p[(k)*(b)/64+1] << (64-((k)*(b)%64)))) & (0xFFFFFFFFFFFFFFFF >> 64-b))
 
 // Data types
 typedef unsigned int uint;
@@ -59,6 +63,12 @@ struct bwpos_t {
    long ep;
 };
 
+struct fmdpos_t {
+   uint64_t fp;
+   uint64_t rp;
+   int64_t sz;
+};
+
 struct pebble_t {
    long sp;
    long ep;
@@ -72,7 +82,8 @@ struct index_t {
    uint64_t   gsize;
    uint64_t * c;
    char     * genome;
-   uint64_t * pos;
+   uint64_t   sa_bits;
+   uint64_t * sa;
    uint64_t * occ;
    chr_t    * chr;
 };
@@ -146,7 +157,8 @@ void        * _mergesort       (void * args);
 void          radix_sort       (long * a, long * b, long n, long maxval);
 
 // General algorithms.
-uint64_t      compute_occ      (uint64_t ptr, uint64_t * occ);
+uint64_t      compute_occ      (uint64_t ptr, uint64_t * occ, uint64_t * val);
+uint64_t      compute_occ_nt   (uint64_t ptr, uint64_t * occ, int nt);
 long          bisect_search    (long start, long end, long* set, long value);
 uint64_t      compact_array    (uint64_t * array, uint64_t len, int bits);
 

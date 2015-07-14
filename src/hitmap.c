@@ -167,6 +167,7 @@ hitmap
    return 0;
 }
 
+
 int
 bw_search
 (
@@ -199,12 +200,11 @@ bw_search
       int   trail = 0;
 
       // Compute trail depth.
-      /*
       if (i < subseqs->pos - 1) {
          sub_t next = subseqs->sub[i+1];
          while (query.seq[trail] == next.seq[trail] && trail < kmer_size) trail++;
       }
-      */
+   
       // Query index.
       uint64_t    sp = cache[start].sp;
       uint64_t    ep = cache[start].ep;
