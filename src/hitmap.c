@@ -167,7 +167,6 @@ hitmap
    return 0;
 }
 
-
 int
 bw_search
 (
@@ -267,7 +266,6 @@ bw_search
    if (hmargs.verbose) fprintf(stderr, "mapping  ...  [%.3fms]\n", (clock()-tstart)*1000.0/CLOCKS_PER_SEC);
    return 0;
 }
-
 
 int
 poucet_search

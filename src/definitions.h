@@ -8,9 +8,6 @@
 #define MAXTAU    2
 #define MAXSEQOUT 50
 // Index params.
-#define OCC_MARK_INTERVAL 14
-#define OCC_WORD_SIZE     64
-#define OCC_MARK_BITS     (OCC_MARK_INTERVAL * OCC_WORD_SIZE)
 #define MMAP_FLAGS        (MAP_PRIVATE | MAP_POPULATE)
 
 
