@@ -12,15 +12,17 @@
 #include "definitions.h"
 #include "divsufsort.h"
 #include "indexquery.h"
+#include "algs.h"
 
 #define STACK_LCP_INITIAL_SIZE 1024
+#define NAIVE_LCP_MAX_SAMPLES 1000000
 #define BUFFER_SIZE   100
 #define GENOME_SIZE   100000
 
 
 static const char translate[256] = {[0 ... 255] = 4,
                            ['a'] = 0, ['c'] = 1, ['g'] = 2, ['t'] = 3, ['n'] = 4,
-                           ['A'] = 0, ['C'] = 1, ['G'] = 2, ['T'] = 3, ['N'] = 4, ['$'] = 5 };
+                           ['A'] = 0, ['C'] = 1, ['G'] = 2, ['T'] = 3, ['N'] = 4};
 
 static const char revcomp[256] = {[0 ... 255] = 'N',
                    ['a'] = 't', ['c'] = 'g', ['g'] = 'c', ['t'] = 'a', ['u'] = 'a',
@@ -28,7 +30,7 @@ static const char revcomp[256] = {[0 ... 255] = 'N',
 
 static const char uppercase[256] = {[0 ... 255] = 'e',
                            ['a'] = 'a', ['c'] = 'b', ['g'] = 'c', ['t'] = 'd', ['n'] = 'e',
-                           ['A'] = 'a', ['C'] = 'b', ['G'] = 'c', ['T'] = 'd', ['N'] = 'e', ['$'] = '$'};
+                           ['A'] = 'a', ['C'] = 'b', ['G'] = 'c', ['T'] = 'd', ['N'] = 'e'};
 
 typedef struct lcpstack_t  lcpstack_t;
 typedef struct lcpsample_t lcpsample_t;
@@ -37,6 +39,7 @@ typedef struct cstack_t    cstack_t;
 
 struct lcpcorner_t {
    int     lcp;
+   int     lcp_next;
    int64_t pos;
 };
 
@@ -59,7 +62,7 @@ struct lcpsample_t {
 
 int          write_index      (char * filename);
 int64_t    * compute_sa       (char * genome, uint64_t gsize);
-uint64_t   * compute_occ      (char * genome, uint64_t * sa, uint64_t gsize, uint64_t * occ_size, uint64_t * wbwt);
+uint64_t   * compute_occ      (char * genome, uint64_t * sa, uint64_t gsize, uint64_t * occ_size);
 uint64_t   * compute_c        (uint64_t * occ);
 uint64_t   * compute_lut      (uint64_t * c, uint64_t * occ, int depth);
 void         recursive_lut    (uint64_t * c, uint64_t * occ, uint64_t * lut, uint64_t p, int d, int maxd, int * path);

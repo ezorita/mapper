@@ -10,7 +10,7 @@ get_sa
 {
    uint64_t mask = ((uint64_t)0xFFFFFFFFFFFFFFFF) >> (64-bits);
    uint64_t bit = pos*bits;
-   uint64_t word = bits/64;
+   uint64_t word = bit/64;
    bit %= 64;
    if (bit + bits > 64)
       return (((sa[word] >> bit) & mask) | (sa[word+1] & mask) << (64-bit)) & mask;
@@ -120,14 +120,13 @@ extend_bw
    int64_t sz[NUM_BASES];
    get_occ(pos.fp - 1, index->occ, occ_sp);
    get_occ(pos.fp + pos.sz - 1, index->occ, occ_ep);
-   int wilcard = (pos.fp - 1 < index->wilcard_bwt) && (pos.fp + pos.sz - 1 >= index->wilcard_bwt);
    for (int j = 0; j < NUM_BASES; j++) {
       fp[j] = index->c[j] + occ_sp[j];
       sz[j] = occ_ep[j] - occ_sp[j];
    }
    // Intervals of the reverse strand pointer.
    // T
-   rp[3] = pos.rp + wilcard;
+   rp[3] = pos.rp;
    // G-C-A
    for (int j = 2; j >= 0; j--) rp[j] = rp[j+1] + sz[j+1];
    // N

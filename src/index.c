@@ -86,6 +86,7 @@ write_index
    free(lcpfile);
 
    clock_t tstart;
+   size_t s = 0, stot = 0, bytes;
    // Parse genome and reverse complement.
    uint64_t gsize;
    fprintf(stderr, "reading      genome file  ..."); tstart = clock();
@@ -93,18 +94,18 @@ write_index
    fprintf(stderr, " done [%.3fs]\n", (clock()-tstart)*1.0/CLOCKS_PER_SEC);
    // Compute suffix array.
    fprintf(stderr, "computing    suffix array ..."); tstart = clock();
-   uint64_t * sa = (uint64_t *)compute_sa(genome, 2*gsize+1);
+   uint64_t * sa = (uint64_t *)compute_sa(genome, 2*gsize);
    fprintf(stderr, " done [%.3fs]\n", (clock()-tstart)*1.0/CLOCKS_PER_SEC);
    // Compute OCC.
-   uint64_t occ_size, wilcard_bwt;
+   uint64_t occ_size;
    fprintf(stderr, "computing    occ table    ..."); tstart = clock();
-   uint64_t * occ = compute_occ(genome, sa, 2*gsize+1, &occ_size, &wilcard_bwt);
+   uint64_t * occ = compute_occ(genome, sa, 2*gsize, &occ_size);
    fprintf(stderr, " done [%.3fs]\n", (clock()-tstart)*1.0/CLOCKS_PER_SEC);
    // Compress suffix array.
    fprintf(stderr, "compressing  suffix array ..."); tstart = clock();
    uint64_t sa_bits = 0;
    while (2*gsize > (1 << sa_bits)) sa_bits++;
-   uint64_t sa_size = compact_array(sa, 2*gsize+1, sa_bits);
+   uint64_t sa_size = compact_array(sa, 2*gsize, sa_bits);
    sa = realloc(sa, sa_size*sizeof(uint64_t));
    fprintf(stderr, " done [%.3fs]\n", (clock()-tstart)*1.0/CLOCKS_PER_SEC);
    // Compute C.
@@ -121,16 +122,7 @@ write_index
    uint64_t lut_size = compact_array(lut, lut_kmers, sa_bits);
    lut = realloc(lut, lut_size*sizeof(uint64_t));
    fprintf(stderr, " done [%.3fs]\n", (clock()-tstart)*1.0/CLOCKS_PER_SEC);
-   // Compute LCP.
-   //   index_t index = {.size = 2*gsize+1, .c = c, .occ = occ, .wilcard_bwt = wilcard_bwt};
-   uint64_t * lcp_index, lcp_index_size;
-   fprintf(stderr, "computing    LCP intervals..."); tstart = clock();
-   lcpstack_t * lcp = compute_lcp(&lcp_index_size, &lcp_index, LCP_MIN_DEPTH, sa_bits, sa, 2*gsize+1, genome);
-   fprintf(stderr, " done [%.3fs]\n", (clock()-tstart)*1.0/CLOCKS_PER_SEC);
-   
-   // Write index.
-   size_t s = 0, stot = 0, bytes;
-   // .OCC FILE
+   // Write .OCC file
    fprintf(stderr, "writing occ...");
    // Write C
    while (s < (NUM_BASES+1)*sizeof(uint64_t)) s += write(foc, c + s/sizeof(uint64_t), (NUM_BASES+1)*sizeof(uint64_t) - s);
@@ -140,15 +132,27 @@ write_index
    while (s < occ_size * sizeof(uint64_t)) s += write(foc,occ + s/sizeof(uint64_t), occ_size*sizeof(uint64_t) - s);
    stot += s;
    fprintf(stderr, " %ld bytes written.\n",stot);
-
-   // .GEN FILE
+   free(c); free(occ);
+   // Write .LUT file
+   fprintf(stderr, "writing lut...");
+   bytes = s = 0;
+   while (s < lut_size*sizeof(uint64_t)) s += write(flt, lut + s/sizeof(uint64_t), lut_size*sizeof(uint64_t) - s);
+   stot += s;
+   bytes += s;
+   fprintf(stderr, " %ld bytes written.\n",bytes);
+   free(lut);
+   // Compute LCP.
+   uint64_t * lcp_index, lcp_index_size;
+   fprintf(stderr, "computing    LCP intervals..."); tstart = clock();
+   lcpstack_t * lcp = compute_lcp(&lcp_index_size, &lcp_index, LCP_MIN_DEPTH, sa_bits, sa, 2*gsize, genome);
+   fprintf(stderr, " done [%.3fs]\n", (clock()-tstart)*1.0/CLOCKS_PER_SEC);
+   // Write .GEN FILE
    fprintf(stderr, "writing gen...");
    // Write genome bases (forward and reverse strand).
    s = 0;
    while (s < 2*gsize*sizeof(char)) s += write(fgn, genome + s/sizeof(char), 2*gsize*sizeof(char) - s);
    stot += s;
    fprintf(stderr, " %ld bytes written.\n",s);
-
    // .SAR FILE
    fprintf(stderr, "writing sar...");
    // Write sa word width.
@@ -161,16 +165,6 @@ write_index
    stot += s;
    bytes += s;
    fprintf(stderr, " %ld bytes written.\n",bytes);
-
-
-   // .LUT FILE
-   fprintf(stderr, "writing lut...");
-   bytes = s = 0;
-   while (s < lut_size*sizeof(uint64_t)) s += write(flt, lut + s/sizeof(uint64_t), lut_size*sizeof(uint64_t) - s);
-   stot += s;
-   bytes += s;
-   fprintf(stderr, " %ld bytes written.\n",bytes);
-
    // .LCP FILE
    fprintf(stderr, "writing lcp...");
    // LCP index.
@@ -212,8 +206,7 @@ compute_occ
  char     * genome,
  uint64_t * sa,
  uint64_t   gsize,
- uint64_t * occ_size,
- uint64_t * wilcard_bwt
+ uint64_t * occ_size
 )
 {
    // Words, marks and intervals.
@@ -224,8 +217,8 @@ compute_occ
    // Alloc variables.
    uint64_t * occ = malloc((occ_words+occ_marks)*NUM_BASES*sizeof(uint64_t));
    if (occ == NULL) return NULL;
-   uint64_t occ_abs[NUM_BASES+1];
-   uint64_t occ_tmp[NUM_BASES+1];
+   uint64_t occ_abs[NUM_BASES];
+   uint64_t occ_tmp[NUM_BASES];
 
    // Initial values.
    for (int i = 0; i < NUM_BASES; i++) {
@@ -241,7 +234,6 @@ compute_occ
    for (uint64_t i = 0; i < gsize; i++) {
       // Set occ bit.
       int base = translate[(uint8_t)genome[(sa[i] == 0 ? gsize-1 : sa[i]-1)]];
-      if (base == 5) *wilcard_bwt = i;
       occ_tmp[base] |= 1;
       occ_abs[base]++;
       // Next word.
@@ -433,7 +425,7 @@ corner_pop
    if (stack->pos > 0)
       return stack->c[--stack->pos];
    else
-      return (lcpcorner_t){-1,-1};
+      return (lcpcorner_t){-1,-1,-1};
 }
 
 int
@@ -470,6 +462,19 @@ cstack_new
    return stack;
 }
 
+int
+sample_compar
+(
+ const void * a,
+ const void * b,
+ const int c
+)
+{
+   lcpcorner_t * ca = (lcpcorner_t *)a;
+   lcpcorner_t * cb = (lcpcorner_t *)b;
+   return (ca->pos > cb->pos ? 1 : -1);
+}
+
 int64_t
 naive_lcp
 (
@@ -484,61 +489,92 @@ naive_lcp
 {
    cstack_t * top = cstack_new(STACK_LCP_INITIAL_SIZE);
    cstack_t * bottom = cstack_new(STACK_LCP_INITIAL_SIZE);
-   // Add top corner.
-   corner_push(&top, (lcpcorner_t){0,0});
-   // Previous position and lcp (0).
-   uint64_t pp = get_sa(0,sar,sar_bits);
-   int pl = 0;
-   for (uint64_t i = 1; i < idxsize; i++) {
+   cstack_t * samples = cstack_new(STACK_LCP_INITIAL_SIZE);
+   // Push topmost corner.
+   corner_push(&top, (lcpcorner_t){-1, 0, 0});
+   corner_push(&samples, (lcpcorner_t){0, 0, 0});
+   // Compute LCP of i=1, store in previous.
+   uint64_t cp = get_sa(0,sar,sar_bits);
+   int cl = 0;
+   uint64_t pp = get_sa(1,sar,sar_bits);
+   int pl = seq_lcp(genome+pp, genome+cp);
+   for (uint64_t i = 2; i < idxsize; i++) {
       // Current position and lcp.
-      uint64_t cp = get_sa(i,sar,sar_bits);
-      int cl = seq_lcp(genome+pp, genome+cp);
-      // If current LCP > previous LCP -> Top corner.
+      cp = get_sa(i,sar,sar_bits);
+      cl = seq_lcp(genome+pp, genome+cp);
+      // If current LCP > previous LCP -> Previous was top corner.
       if (cl > pl) {
-         // Save sample on top of the top corner stack.
+         // Top corner - save sample.
          lcpcorner_t tcorner = top->c[top->pos-1];
          int offset = tcorner.pos - (i-1);
-         if (offset < -127) {
-            lcp_index_sample(lcpindex, i-1, 1);
-            if (lcp_stack_push32(lcp, pl, offset)) return -1;
-         } else {
-            lcp_index_sample(lcpindex, i-1, 0);
-            if (lcp_stack_push8(lcp, pl, (char)offset)) return -1;
-         }
+         if (cl >= min_depth) corner_push(&samples, (lcpcorner_t){pl, offset, (i-1)});
          // Push corner to the stack.
-         corner_push(&top, (lcpcorner_t){pl, i-1});
-      } else if (cl < pl) {
+         corner_push(&top, (lcpcorner_t){pl, cl, i-1});
+      }
+      // If current LCP < previous LCP -> Previous was bottom corner.
+      else if (cl < pl) {
          while (bottom->pos > 0) {
-            if (bottom->c[bottom->pos-1].lcp <= cl) break;
+            if (bottom->c[bottom->pos-1].lcp_next <= cl) break;
             // Pop sample from bottom stack and save.
             lcpcorner_t bcorner = corner_pop(bottom);
-            int offset = i-1 - bcorner.pos;
-            if (offset > 127) {
-               lcp_index_sample(lcpindex, i-1, 1);
-               if (lcp_stack_push32(lcp, bcorner.lcp, offset)) return -1;
-            } else {
-               lcp_index_sample(lcpindex, i-1, 0);
-               if (lcp_stack_push8(lcp, bcorner.lcp, (char)offset)) return -1;
+            // Bottom corner - save sample.
+            if (bcorner.lcp >= min_depth) {
+               int offset = i-1 - bcorner.pos;
+               corner_push(&samples, (lcpcorner_t){bcorner.lcp, offset, bcorner.pos});
             }
          }
          // Save current bottom corner.
-         corner_push(&bottom, (lcpcorner_t){cl, i-1});
+         corner_push(&bottom, (lcpcorner_t){pl, cl, i-1});
          // Remove top corners from stack.
          while (top->pos > 0) {
             if (top->c[top->pos-1].lcp < cl) break;
             top->pos--;
          }
       }
+
       // Assign previous.
       pp = cp;
       pl = cl;
    }
-   // Save last sample.
-   lcp_index_sample(lcpindex, idxsize-1, 0);
-   lcp_stack_push32(lcp, pl, 0);
-   
-   return 0;
+   // Add remaining bottom nodes.
+   while (bottom->pos > 0) {
+      // Pop sample from bottom stack and save.
+      lcpcorner_t bcorner = corner_pop(bottom);
+      // Bottom corner - save sample.
+      if (bcorner.lcp >= min_depth) {
+         int offset = idxsize-1 - bcorner.pos;
+         corner_push(&samples, (lcpcorner_t){bcorner.lcp, offset, bcorner.pos});
+      }
+   }
 
+   // Add last sample.
+   corner_push(&samples, (lcpcorner_t){pl, 0, idxsize-1});
+
+   // Sort and save samples.
+   if (samples->pos > 0) {
+      // Sort by pos.
+      mergesort_mt(samples->c, samples->pos, sizeof(lcpcorner_t), 0, 1, sample_compar);
+      // Store sorted samples.
+      for (int j = 0; j < samples->pos; j++) {
+         lcpcorner_t c = samples->c[j];
+         // 32-bit offset.
+         if (c.lcp_next > 127 || c.lcp_next < -127) {
+            lcp_index_sample(lcpindex, c.pos, 1);
+            if (lcp_stack_push32(lcp, c.lcp, c.lcp_next)) return -1;
+         }
+         // 8-bit offset.
+         else {
+            lcp_index_sample(lcpindex, c.pos, 0);
+            if (lcp_stack_push8(lcp, c.lcp, (char)c.lcp_next)) return -1;
+         }
+      }
+   }
+   
+   free(top);
+   free(bottom);
+   free(samples);
+  
+   return 0;
 }
 
 
@@ -575,6 +611,7 @@ compute_lcp
    int64_t lcpval = recursive_lcp(root, 0, index, lcpindex, &stack, min_depth);
    */
    /* Naive */
+   //   naive_lcp(min_depth, idxsize, lcpindex, &stack, sar, sar_bits, genome);
    naive_lcp(min_depth, idxsize, lcpindex, &stack, sar, sar_bits, genome);
    /* Recursive
    // Insert sample at index size-1.
@@ -704,7 +741,7 @@ compact_genome
    }
 
    // Realloc buffer.
-   genome = realloc(genome, 2*(*genomesize)+2);
+   genome = realloc(genome, 2*(*genomesize)+1);
    if (genome == NULL) {
       fprintf(stderr, "error in 'compact_genome' (realloc): %s\n", strerror(errno));
       exit(EXIT_FAILURE);
@@ -716,8 +753,7 @@ compact_genome
       genome[div + i] = revcomp[(int)genome[div-i-1]];
 
    // Insert wilcard at the end.
-   genome[2*div] = '$';
-   genome[2*div+1] = 0;
+   genome[2*div] = 0;
 
    fclose(input);
    fclose(output);
@@ -753,7 +789,7 @@ compact_array
       lastbit += bits;
       // Word is full.
       if (lastbit >= 64) {
-         lastbit = 64 - lastbit;
+         lastbit = lastbit - 64;
          // Complete with remainder or set to 0 (if lastbit = 0).
          // This will clear the upper bits of array.
          array[++word] = (current & mask) >> (bits - lastbit);

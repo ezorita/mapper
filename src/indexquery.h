@@ -35,7 +35,6 @@ struct index_t {
    uint64_t   sa_bits;
    uint64_t * sa;
    uint64_t * occ;
-   int64_t    wilcard_bwt;
    chr_t    * chr;
 };
 
