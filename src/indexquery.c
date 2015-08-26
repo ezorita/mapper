@@ -177,7 +177,7 @@ suffix_shrink
 {
    *newpos = pos;
    if (pos.sp == pos.ep)
-      return suffix_ssv_search(pos, newpos, index);
+      return suffix_ssv_search(pos.sp, newpos, index);
    else if (pos.sp > pos.ep)
       return suffix_ssv(pos, newpos, index);
    else return -1;
@@ -214,7 +214,7 @@ suffix_ssv_search
    uint64_t topc = 1, samples = 0;
    uint64_t pptr = ptr + 1, pword = word, pbit = bit;
    while (topc > 0) {
-      lcpval_t val = index->lcp_sample[pptr++];
+      lcpval_t val = index->lcp_sample->lcp[pptr++];
       topc += (val.offset < 0 ? 1 : -1);
       samples++;
    }
@@ -247,7 +247,7 @@ suffix_ssv_search
    uint64_t botc = 1;
    uint64_t nptr = ptr + 1, nword = word, nbit = bit;
    while (botc > 0) {
-      lcpval_t val = index->lcp_sample[nptr--];
+      lcpval_t val = index->lcp_sample->lcp[nptr--];
       botc += (val.offset < 0 ? -1 : 1);
       samples++;
    }
@@ -262,7 +262,7 @@ suffix_ssv_search
       int cnt = __builtin_popcountl(w);
       if (cnt >= samples) {
          while (samples > 0) {
-            samples -= w & ((uint64_t)1 << LCP_WORD_SIZE);
+            samples -= w & ((uint64_t)1 << (LCP_WORD_SIZE-1));
             w <<= 1;
             offset--;
          }
@@ -296,12 +296,12 @@ suffix_ssv
    int32_t  sbit   = pos.sp%LCP_WORD_SIZE;
    sword += smarks;
    uint64_t smark = smarks*(LCP_MARK_INTERVAL+1);
-   if ((index->lcp_sample_idx[sword] >> sbit) & 1 == 0) return -1;
+   if (((index->lcp_sample_idx[sword] >> sbit) & 1) == 0) return -1;
 
    uint64_t ptr = index->lcp_sample_idx[smark];
    for (uint64_t i = smark-1; i > sword; i--)
       ptr -= __builtin_popcountl(index->lcp_sample_idx[i]);
-   ptr -= __builtin_popcountl(index->lcp_sample_idx[sword] >> bit);
+   ptr -= __builtin_popcountl(index->lcp_sample_idx[sword] >> sbit);
 
    lcpval_t sval = index->lcp_sample->lcp[ptr];
    if (sval.offset >= 0) return -1;
@@ -312,12 +312,12 @@ suffix_ssv
    int32_t  ebit   = pos.ep%LCP_WORD_SIZE;
    eword += emarks;
    uint64_t emark = emarks*(LCP_MARK_INTERVAL+1);
-   if ((index->lcp_sample_idx[eword] >> ebit) & 1 == 0) return -1;
+   if (((index->lcp_sample_idx[eword] >> ebit) & 1) == 0) return -1;
 
    ptr = index->lcp_sample_idx[emark];
    for (uint64_t i = emark-1; i > eword; i--)
       ptr -= __builtin_popcountl(index->lcp_sample_idx[i]);
-   ptr -= __builtin_popcountl(index->lcp_sample_idx[eword] >> bit);
+   ptr -= __builtin_popcountl(index->lcp_sample_idx[eword] >> ebit);
 
    lcpval_t eval = index->lcp_sample->lcp[ptr];
    if (eval.offset < 0) return -1;
