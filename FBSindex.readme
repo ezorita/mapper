@@ -119,7 +119,7 @@
      lcp_index|  uint64_t  |   64 bits  |     (**)
      ext_index|  uint64_t  |   64 bits  |     (**)
      lcp_size |  uint64_t  |   64 bits  |      1
-     lcp_array|    int8_t  |    8 btis  | 2*lcp_size
+     lcp_array|    int8_t  |    8 bits  | 2*lcp_size
      ext_size |  uint64_t  |   64 bits  |      1
      ext_array|   int32_t  |   32 bits  |  ext_size
 

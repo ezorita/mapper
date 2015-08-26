@@ -45,19 +45,33 @@ struct chr_t {
 };
 
 struct index_t {
+   // Original file pointers.
    void      * gen_file;
    void      * occ_file;
    void      * sa_file;
+   void      * lcp_file;
+   void      * lut_file;
+   // Gen file.
    uint64_t    size;
-   uint64_t  * c;
    char      * genome;
+   // OCC.
+   uint64_t  * c;
+   uint64_t    occ_mark_int;
+   uint64_t  * occ;
+   // Suffix Array.
    uint64_t    sa_bits;
    uint64_t  * sa;
-   uint64_t  * occ;
+   // Lookup table.
+   uint64_t    lut_kmer;
+   uint64_t  * lut;
+   // LCP index.
+   uint64_t    lcp_mark_int;
+   uint64_t    lcp_min_depth;
    uint64_t  * lcp_sample_idx;
-   lcpdata_t * lcp_sample;
    uint64_t  * lcp_extend_idx;
+   lcpdata_t * lcp_sample;
    list32_t  * lcp_extend;
+   // Chromosome index.
    chr_t     * chr;
 };
 
