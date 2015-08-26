@@ -1,0 +1,128 @@
+.gen file
+     Contents:
+        Genome bases, forward strand then reverse strand.
+
+     Data structure:
+
+        Name  |  data-type |  data-size |  #elements     
+     ------------------------------------------------
+       genome |    char    |    8 bits  |   2*gsize
+
+
+.occ file
+     Contents:
+        C Structure
+        OCC structure
+
+     C structure:
+        The cummulative number of bases in the index, e.g.
+
+        base    A  C  G  T  N  (genome size)
+        C(base) 0  10 31 50 71 100
+        There are 10 A, 21 C, 19 G, 21 T and 29 N, the genome size is
+        100.
+
+     OCC structure:
+        The occurrence count of each base in the index, sorted
+        following the Burrows-Wheeler transform of the index, e.g.
+
+        BWT   OCC: A  C  G  T  N
+        A          1  0  0  0  0
+        C          1  1  0  0  0
+        C          1  2  0  0  0
+        G          1  2  1  0  0
+        T          1  2  1  1  0
+        A          2  2  1  1  0
+
+        The structure is encoded using, for each base, a bitfield with
+        absolute position marks.
+
+     Data structure:
+     
+        Name  |  data-type |  data-size |  #elements     
+     ------------------------------------------------
+     mark_int |  uint64_t  |   64 bits  |      1
+         C    |  uint64_t  |   64 bits  |      6
+        OCC   |  uint64_t  |   64 bits  |     (**)
+
+     (**) 6*(ceil(ceil(C[5]/64)/mark_int)*(mark_int+1) + 1)
+        
+
+.sar file
+     Contents:
+        Compressed suffix array
+
+     Compressed suffix array:
+        The suffix array of the genome forward and reverse strand. The
+        structure is compressed using ceil(log2(2*gsize)) bits per
+        element.
+
+     Data structure:
+
+        Name  |  data-type |  data-size |  #elements     
+     ------------------------------------------------
+        width |  uint64_t  |   64 bits  |      1
+         SA   |    uint    | witdh bits |   2*gsize
+
+
+.lut file
+     Contents:
+        Index lookup table
+
+     Index lookup table:
+        An array containing the FM index pointers for all the
+        sequences of length k (k-mers). The k-mers are encoded using a
+        N-ary to decimal conversion process, only A/0 C/1 G/2 T/3
+        bases are encoded, N is not included.
+
+        For instance, the 5-mer ACTGC FM pointer is at the array position
+        0*4^4 + 1*4^3 + 3*4^2 + 2*4^1 + 1*4^0 = 252
+        A       C       T       G       C
+
+     Data structure:
+        
+        Name  |  data-type |  data-size |  #elements     
+     ------------------------------------------------
+          k   |  uint64_t  |   64 bits  |      1
+         SA   |  uint64_t  |   64 bits  |     4^k
+
+
+.lcp file
+     
+     Contents:
+        LCP sample index
+        EXT offset index
+        LCP sample array
+        EXT offset array
+
+     LCP samples:
+        Sampled positions of the index. Only positions that encode FM
+        intervals of 2+ suffixes are sampled. Each sample contains the
+        longest common prefix (LCP) value of the suffix and the offset
+        to the parent suffix pointer. The sampled positions are
+        encoded in a bitfield with absolute position marks (sample index).
+        
+     EXT offset:
+        Only 8 bits are used to encode the offset between child and
+        parent pointers in the LCP array, this should be enough for
+        the majority of the cases. This structure contains all the
+        offsets bigger than 127 or smaller than -127. The sampled
+        positions are encoded in a bitfield with absolute position
+        marks (EXT offset index).
+
+     Data structure:
+        
+        Name  |  data-type |  data-size |  #elements     
+     ------------------------------------------------
+     mark_int |  uint64_t  |   64 bits  |      1
+     min_depth|  uint64_t  |   64 bits  |      1
+     lcp_index|  uint64_t  |   64 bits  |     (**)
+     ext_index|  uint64_t  |   64 bits  |     (**)
+     lcp_size |  uint64_t  |   64 bits  |      1
+     lcp_array|    int8_t  |    8 btis  | 2*lcp_size
+     ext_size |  uint64_t  |   64 bits  |      1
+     ext_array|   int32_t  |   32 bits  |  ext_size
+
+
+     (**) ceil(ceil(idxsize/64)/mark_int)*(mark_int+1) + 1
+     

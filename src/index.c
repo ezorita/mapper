@@ -129,6 +129,10 @@ write_index
    stot += s;
    // Write OCC.
    s = 0;
+   uint64_t mark_int = OCC_MARK_INTERVAL;
+   while (s < sizeof(uint64_t)) s += write(foc, &mark_int, sizeof(uint64_t));
+   stot += s;
+   s = 0;
    while (s < occ_size * sizeof(uint64_t)) s += write(foc,occ + s/sizeof(uint64_t), occ_size*sizeof(uint64_t) - s);
    stot += s;
    fprintf(stderr, " %ld bytes written.\n",stot);
@@ -136,9 +140,13 @@ write_index
    // Write .LUT file
    fprintf(stderr, "writing lut...");
    bytes = s = 0;
-   while (s < lut_size*sizeof(uint64_t)) s += write(flt, lut + s/sizeof(uint64_t), lut_size*sizeof(uint64_t) - s);
-   stot += s;
+   uint64_t kmer_size = LUT_KMER_SIZE;
+   while (s < sizeof(uint64_t)) s += write(flt, &kmer_size, sizeof(uint64_t));
    bytes += s;
+   s = 0;
+   while (s < lut_size*sizeof(uint64_t)) s += write(flt, lut + s/sizeof(uint64_t), lut_size*sizeof(uint64_t) - s);
+   bytes += s;
+   stot += bytes;
    fprintf(stderr, " %ld bytes written.\n",bytes);
    free(lut);
    // Compute LCP.
@@ -167,6 +175,14 @@ write_index
    fprintf(stderr, "writing lcp...");
    // LCP index.
    bytes = s = 0;
+   mark_int = LCP_MARK_INTERVAL;
+   while (s < sizeof(uint64_t)) s += write(foc, &mark_int, sizeof(uint64_t));
+   bytes += s;
+   s = 0;
+   uint64_t min_depth = LCP_MIN_DEPTH;
+   while (s < sizeof(uint64_t)) s += write(foc, &min_depth, sizeof(uint64_t));
+   bytes += s;
+   s = 0;
    while(s < sizeof(uint64_t)) s += write(flc, &(lcp.idx_size), sizeof(uint64_t));
    bytes += s;
    // Write sample index.
