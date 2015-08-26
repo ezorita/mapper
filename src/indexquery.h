@@ -12,12 +12,31 @@
 #define LCP_MARK_BITS     (LCP_MARK_INTERVAL * LCP_WORD_SIZE)
 #define LCP_MIN_DEPTH     15
 
-typedef struct chr_t    chr_t;
-typedef struct index_t  index_t;
-typedef struct bwpos_t  bwpos_t;
-typedef struct fmdpos_t fmdpos_t;
+#define SSV_DIR_FWD       1
+#define SSV_DIR_BWD       -1
 
+typedef struct chr_t      chr_t;
+typedef struct index_t    index_t;
+typedef struct bwpos_t    bwpos_t;
+typedef struct fmdpos_t   fmdpos_t;
+typedef struct lcpval_t   lcpval_t;
+typedef struct lcpdata_t  lcpdata_t;
+typedef struct list32_t   list32_t;
 
+struct lcpval_t {
+   uint8_t lcp;
+   int8_t  offset;
+};
+
+struct lcpdata_t {
+   uint64_t size;
+   lcpval_t lcp[];
+};
+
+struct list32_t {
+   uint64_t size;
+   int32_t  val[];
+};
 
 struct chr_t {
    int     nchr;
@@ -26,16 +45,20 @@ struct chr_t {
 };
 
 struct index_t {
-   void     * gen_file;
-   void     * occ_file;
-   void     * sa_file;
-   uint64_t   size;
-   uint64_t * c;
-   char     * genome;
-   uint64_t   sa_bits;
-   uint64_t * sa;
-   uint64_t * occ;
-   chr_t    * chr;
+   void      * gen_file;
+   void      * occ_file;
+   void      * sa_file;
+   uint64_t    size;
+   uint64_t  * c;
+   char      * genome;
+   uint64_t    sa_bits;
+   uint64_t  * sa;
+   uint64_t  * occ;
+   uint64_t  * lcp_sample_idx;
+   lcpdata_t * lcp_sample;
+   uint64_t  * lcp_extend_idx;
+   list32_t  * lcp_extend;
+   chr_t     * chr;
 };
 
 struct bwpos_t {
@@ -50,10 +73,12 @@ struct fmdpos_t {
 };
 
 
-uint64_t get_sa     (uint64_t pos, uint64_t * sa, int bits);
-int      get_occ    (int64_t pos, uint64_t * occ, int64_t * val);
-uint64_t get_occ_nt (int64_t pos, uint64_t * occ, int nt);
-fmdpos_t extend_bw  (int nt, fmdpos_t pos, index_t * index);
-fmdpos_t extend_fw  (int nt, fmdpos_t pos, index_t * index);
-bwpos_t  bw_search  (int nt, bwpos_t pos, index_t * index);
-bwpos_t  bw_shrink  (bwpos_t pos, index_t * index);
+uint64_t get_sa            (uint64_t pos, uint64_t * sa, int bits);
+int      get_occ           (int64_t pos, uint64_t * occ, int64_t * val);
+uint64_t get_occ_nt        (int64_t pos, uint64_t * occ, int nt);
+fmdpos_t extend_bw         (int nt, fmdpos_t pos, index_t * index);
+fmdpos_t extend_fw         (int nt, fmdpos_t pos, index_t * index);
+bwpos_t  suffix_extend     (int nt, bwpos_t pos, index_t * index);
+int      suffix_shrink     (bwpos_t pos, bwpos_t * newpos, index_t * index);
+int      suffix_ssv_search (uint64_t pos, bwpos_t * newpos, index_t * index);
+int      suffix_ssv        (bwpos_t pos, bwpos_t * newpos, index_t * index);
