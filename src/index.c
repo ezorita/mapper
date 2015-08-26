@@ -18,7 +18,7 @@ void SIGSEGV_handler(int sig) {
 
 int main(int argc, char *argv[])
 {
-   //   signal(SIGSEGV, SIGSEGV_handler);
+   //signal(SIGSEGV, SIGSEGV_handler);
    if (argc != 2) {
       fprintf(stderr, "usage: buildindex <genome file>\n");
       exit(EXIT_FAILURE);
@@ -142,9 +142,8 @@ write_index
    fprintf(stderr, " %ld bytes written.\n",bytes);
    free(lut);
    // Compute LCP.
-   uint64_t * lcp_index, lcp_index_size;
    fprintf(stderr, "computing    LCP intervals..."); tstart = clock();
-   lcpstack_t * lcp = compute_lcp(&lcp_index_size, &lcp_index, LCP_MIN_DEPTH, sa_bits, sa, 2*gsize, genome);
+   lcp_t lcp = compute_lcp(2*gsize, LCP_MIN_DEPTH, sa_bits, sa, genome);
    fprintf(stderr, " done [%.3fs]\n", (clock()-tstart)*1.0/CLOCKS_PER_SEC);
    // Write .GEN FILE
    fprintf(stderr, "writing gen...");
@@ -159,24 +158,42 @@ write_index
    bytes = s = 0;
    while (s < sizeof(uint64_t)) s += write(fsa, &sa_bits, sizeof(uint64_t));
    bytes += s;
-   stot += s;
    s = 0;
    while (s < sa_size*sizeof(uint64_t)) s += write(fsa, sa + s/sizeof(uint64_t), sa_size*sizeof(uint64_t) - s);
-   stot += s;
    bytes += s;
+   stot += bytes;
    fprintf(stderr, " %ld bytes written.\n",bytes);
    // .LCP FILE
    fprintf(stderr, "writing lcp...");
    // LCP index.
    bytes = s = 0;
-   while(s < lcp_index_size*sizeof(uint64_t)) s += write(flc, lcp_index + s/sizeof(uint64_t), lcp_index_size*sizeof(uint64_t) - s);
-   stot += s;
+   while(s < sizeof(uint64_t)) s += write(flc, &(lcp.idx_size), sizeof(uint64_t));
    bytes += s;
-   // LCP table.
+   // Write sample index.
    s = 0;
-   while(s < lcp->pos) s += write(flc, lcp->lcp + s, lcp->pos - s);
-   stot += s;
+   while(s < lcp.idx_size*sizeof(uint64_t)) s += write(flc, lcp.idx_sample + s/sizeof(uint64_t), lcp.idx_size*sizeof(uint64_t) - s);
    bytes += s;
+   // Write extended index.
+   s = 0;
+   while(s < lcp.idx_size*sizeof(uint64_t)) s += write(flc, lcp.idx_extend + s/sizeof(uint64_t), lcp.idx_size*sizeof(uint64_t) - s);
+   bytes += s;
+   // Write LCP samples.
+   s = 0;
+   uint64_t nsamples = (lcp.lcp_sample)->pos;
+   while(s < sizeof(uint64_t)) s+= write(flc, &nsamples, sizeof(uint64_t));
+   bytes += s;
+   s = 0;
+   while(s < nsamples*sizeof(int8_t)) s += write(flc, (lcp.lcp_sample)->val + s/sizeof(int8_t), nsamples * sizeof(int8_t) - s);
+   bytes += s;
+   // Write ext samples.
+   s = 0;
+   nsamples = (lcp.lcp_extend)->pos;
+   while(s < sizeof(uint64_t)) s+= write(flc, &nsamples, sizeof(uint64_t));
+   bytes += s;
+   s = 0;
+   while(s < nsamples*sizeof(int32_t)) s += write(flc, (lcp.lcp_extend)->val + s/sizeof(int32_t), nsamples * sizeof(int32_t) - s);
+   bytes += s;
+   stot += bytes;
    fprintf(stderr, " %ld bytes written.\n",bytes);
 
    fprintf(stderr, "done. %ld bytes written.\n", stot);
@@ -334,60 +351,37 @@ recursive_lut
    }
 }
 
-int
-lcp_stack_push8
-(
- lcpstack_t ** lcp_stack,
- uint8_t       lcp,
- int8_t        offset
-)
-{
-   lcpstack_t * stack = *lcp_stack;
-   // Realloc stack if full.
-   if (stack->pos + 1 >= stack->size) {
-      uint64_t newsize = stack->size * 2;
-      *lcp_stack = stack = realloc(stack, sizeof(lcpstack_t) + newsize);
-      if (stack == NULL) return -1;
-      stack->size = newsize;
-   }
-   // Save LCP value and offset to parent.
-   stack->lcp[stack->pos++] = lcp;
-   stack->lcp[stack->pos++] = offset;
-   return 0;
-}
 
 int
-lcp_stack_push32
+stack_push_lcp
 (
- lcpstack_t ** lcp_stack,
+ stack8_t **  stackp,
  uint8_t      lcp,
  int32_t      offset
 )
 {
-   lcpstack_t * stack = *lcp_stack;
+   stack8_t * stack = *stackp;
    // Realloc stack if full.
    if (stack->pos + 4 >= stack->size) {
       uint64_t newsize = (stack->size*2 <= stack->pos+4 ? stack->pos+5 : stack->size * 2);
-      *lcp_stack = stack = realloc(stack, sizeof(lcpstack_t) + newsize);
+      *stackp = stack = realloc(stack, sizeof(stack8_t) + newsize);
       if (stack == NULL) return -1;
       stack->size = newsize;
    }
    // Save LCP value.
-   stack->lcp[stack->pos++] = lcp;
+   stack->val[stack->pos++] = lcp;
    // Save extended offset to parent as int32.
-   stack->lcp[stack->pos++] = (offset >> 24) & 0x000000FF;
-   stack->lcp[stack->pos++] = (offset >> 16) & 0x000000FF;
-   stack->lcp[stack->pos++] = (offset >> 8)  & 0x000000FF;
-   stack->lcp[stack->pos++] = offset & 0x000000FF;
+   memcpy(stack->val + stack->pos, &offset, sizeof(int32_t));
+   stack->pos += 4;
+
    return 0;
 }
 
 void
-lcp_index_sample
+lcp_index_set
 (
  uint64_t * lcp_index,
- uint64_t   pos,
- int        size32
+ uint64_t   pos
 )
 {
    // Count number of marks.
@@ -398,10 +392,7 @@ lcp_index_sample
    // ...
    // MSB index 63
    // Set bit.
-   if ((lcp_index[2*word + marks] >> bit) & 1)
-      fprintf(stderr, "repeated LCP!\n");
-   lcp_index[2*word + marks] |= ((uint64_t)(1) << bit);
-   if (size32) lcp_index[2*word + marks + 1] |= ((uint64_t)(1) << bit);
+   lcp_index[word + marks] |= ((uint64_t)(1) << bit);
 }
 
 int
@@ -412,7 +403,7 @@ seq_lcp
 )
 {
    int lcp = 0;
-   while (seq_a[lcp] == seq_b[lcp]) lcp++;
+   while (seq_a[lcp] == seq_b[lcp] && lcp < 255) lcp++;
    return lcp;
 }
 
@@ -475,13 +466,69 @@ sample_compar
    return (ca->pos > cb->pos ? 1 : -1);
 }
 
+stack8_t *
+stack8_new
+(
+ int size
+)
+{
+   stack8_t * stack = malloc(sizeof(stack8_t) + size);
+   if (stack == NULL) return NULL;
+   stack->pos = 0;
+   stack->size = size;
+   return stack;
+}
+
+stack32_t *
+stack32_new
+(
+ int size
+)
+{
+   stack32_t * stack = malloc(sizeof(stack32_t) + size * sizeof(int));
+   if (stack == NULL) return NULL;
+   stack->pos = 0;
+   stack->size = size;
+   return stack;
+}
+
+int32_t
+stack32_push
+(
+ stack32_t ** stackp,
+ int32_t      val
+)
+{
+   stack32_t * stack = *stackp;
+   if (stack->pos >= stack->size) {
+      uint64_t newsize = stack->size * 2;
+      *stackp = stack = realloc(stack, sizeof(stack32_t) + newsize * sizeof(int));
+      if (stack == NULL) return -1;
+      stack->size = newsize;
+   }
+   stack->val[stack->pos++] = val;
+   return 0;
+}
+
+int32_t
+stack32_pop
+(
+ stack32_t * stack
+)
+{
+   return stack->val[--stack->pos];
+}
+
+
 int64_t
 naive_lcp
 (
  int           min_depth,
  uint64_t      idxsize,
- uint64_t    * lcpindex,
- lcpstack_t ** lcp,
+ uint64_t    * lcpsample,
+ uint64_t    * lcpext,
+ stack8_t   ** lcp,
+ stack32_t  ** ext,
  uint64_t    * sar,
  int           sar_bits,
  char        * genome
@@ -489,10 +536,12 @@ naive_lcp
 {
    cstack_t * top = cstack_new(STACK_LCP_INITIAL_SIZE);
    cstack_t * bottom = cstack_new(STACK_LCP_INITIAL_SIZE);
-   cstack_t * samples = cstack_new(STACK_LCP_INITIAL_SIZE);
    // Push topmost corner.
    corner_push(&top, (lcpcorner_t){-1, 0, 0});
-   corner_push(&samples, (lcpcorner_t){0, 0, 0});
+   if (min_depth == 0) {
+      lcp_index_set(lcpsample, 0);
+      if (stack_push_lcp(lcp, 0, -1)) return -1;
+   }
    // Compute LCP of i=1, store in previous.
    uint64_t cp = get_sa(0,sar,sar_bits);
    int cl = 0;
@@ -507,24 +556,34 @@ naive_lcp
          // Top corner - save sample.
          lcpcorner_t tcorner = top->c[top->pos-1];
          int offset = tcorner.pos - (i-1);
-         if (cl >= min_depth) corner_push(&samples, (lcpcorner_t){pl, offset, (i-1)});
+         if (cl >= min_depth) {
+            lcp_index_set(lcpsample, i-1);
+            if (offset < -127) lcp_index_set(lcpext, i-1);
+            if (stack_push_lcp(lcp, pl, offset)) return -1;
+         }
          // Push corner to the stack.
-         corner_push(&top, (lcpcorner_t){pl, cl, i-1});
+         corner_push(&top, (lcpcorner_t){pl, cl, i-1, 0});
       }
       // If current LCP < previous LCP -> Previous was bottom corner.
       else if (cl < pl) {
+         // Bottom corner - save sample.
+         if (pl >= min_depth) {
+            if (stack_push_lcp(lcp, pl, 0xFFFFFFFF)) return -1;
+         }
          while (bottom->pos > 0) {
             if (bottom->c[bottom->pos-1].lcp_next <= cl) break;
             // Pop sample from bottom stack and save.
             lcpcorner_t bcorner = corner_pop(bottom);
-            // Bottom corner - save sample.
+            // Bottom corner - update sample.
             if (bcorner.lcp >= min_depth) {
                int offset = i-1 - bcorner.pos;
-               corner_push(&samples, (lcpcorner_t){bcorner.lcp, offset, bcorner.pos});
+               memcpy((*lcp)->val + bcorner.ptr, &offset, sizeof(int));
+               lcp_index_set(lcpsample, bcorner.pos);
+               if (offset > 127) lcp_index_set(lcpext, bcorner.pos);
             }
          }
          // Save current bottom corner.
-         corner_push(&bottom, (lcpcorner_t){pl, cl, i-1});
+         corner_push(&bottom, (lcpcorner_t){pl, cl, i-1, (*lcp)->pos - 4});
          // Remove top corners from stack.
          while (top->pos > 0) {
             if (top->c[top->pos-1].lcp < cl) break;
@@ -532,158 +591,110 @@ naive_lcp
          }
       }
 
+
       // Assign previous.
       pp = cp;
       pl = cl;
    }
+
    // Add remaining bottom nodes.
    while (bottom->pos > 0) {
       // Pop sample from bottom stack and save.
       lcpcorner_t bcorner = corner_pop(bottom);
-      // Bottom corner - save sample.
+      // Bottom corner - update sample.
       if (bcorner.lcp >= min_depth) {
          int offset = idxsize-1 - bcorner.pos;
-         corner_push(&samples, (lcpcorner_t){bcorner.lcp, offset, bcorner.pos});
+         memcpy((*lcp)->val + bcorner.ptr, &offset, sizeof(int));
+         lcp_index_set(lcpsample, bcorner.pos);
+         if (offset > 127) lcp_index_set(lcpext, bcorner.pos);
       }
    }
 
-   // Add last sample.
-   corner_push(&samples, (lcpcorner_t){pl, 0, idxsize-1});
-
-   // Sort and save samples.
-   if (samples->pos > 0) {
-      // Sort by pos.
-      mergesort_mt(samples->c, samples->pos, sizeof(lcpcorner_t), 0, 1, sample_compar);
-      // Store sorted samples.
-      for (int j = 0; j < samples->pos; j++) {
-         lcpcorner_t c = samples->c[j];
-         // 32-bit offset.
-         if (c.lcp_next > 127 || c.lcp_next < -127) {
-            lcp_index_sample(lcpindex, c.pos, 1);
-            if (lcp_stack_push32(lcp, c.lcp, c.lcp_next)) return -1;
-         }
-         // 8-bit offset.
-         else {
-            lcp_index_sample(lcpindex, c.pos, 0);
-            if (lcp_stack_push8(lcp, c.lcp, (char)c.lcp_next)) return -1;
-         }
-      }
+   if (min_depth == 0) {
+      lcp_index_set(lcpsample, idxsize-1);
+      if (stack_push_lcp(lcp, pl, 0)) return -1;
    }
-   
+
    free(top);
    free(bottom);
-   free(samples);
-  
+
+   // Compact LCP.
+   stack8_t * stack = *lcp;
+   int32_t  val = 0;
+   uint64_t p = 0, i = 0;
+   while (i < stack->pos) {
+      // Save LCP value.
+      stack->val[p++] = stack->val[i++];
+      // Compress offset.
+      memcpy(&val, stack->val + i, sizeof(int32_t));
+      if (val < -127) {
+         stack->val[p++] = (int8_t)-128;
+         stack32_push(ext, val);
+      } else if (val > 127) {
+         stack->val[p++] = (int8_t)127;
+         stack32_push(ext, val);
+      } else {
+         stack->val[p++] = (int8_t)val - (val > 0);
+      }
+      i += 4;
+   }
+
+   stack->pos = p;
+   *lcp = realloc(*lcp, sizeof(stack8_t) + stack->pos*sizeof(int8_t));
+   if (*lcp == NULL) return -1;
+   (*lcp)->size = p;
+
+   *ext = realloc(*ext, sizeof(stack32_t) + (*ext)->pos*sizeof(int32_t));
+   if (*ext == NULL) return -1;
+   (*ext)->size = (*ext)->pos;
    return 0;
 }
 
 
-lcpstack_t *
+lcp_t
 compute_lcp
 (
- uint64_t  * index_size,
- uint64_t ** lcp_index,
+ uint64_t    idxsize,
  int         min_depth,
  int         sar_bits,
  uint64_t  * sar,
- uint64_t    idxsize,
  char      * genome
 )
 {
    // Allocate LCP stack.
-   lcpstack_t * stack = malloc(sizeof(lcpstack_t) + STACK_LCP_INITIAL_SIZE*sizeof(uint8_t));
-   if (stack == NULL) return NULL;
-   stack->pos = 0;
-   stack->size = STACK_LCP_INITIAL_SIZE;
+   stack8_t * stack = stack8_new(STACK_LCP_INITIAL_SIZE);
+   stack32_t * ext  = stack32_new(STACK_LCP_INITIAL_SIZE);
    // Allocate LCP index.
    uint64_t words = (idxsize + LCP_WORD_SIZE - 1)/LCP_WORD_SIZE;
    uint64_t intervals = (words + LCP_MARK_INTERVAL - 1) / LCP_MARK_INTERVAL;
    uint64_t marks = intervals + 1;
-   uint64_t * lcpindex = *lcp_index = calloc(2*intervals*LCP_MARK_INTERVAL + marks,sizeof(uint64_t));
-   *index_size = 2*intervals*LCP_MARK_INTERVAL + marks;
-   /* Recursive
-   // Run recursive search.
-   fmdpos_t root = {.fp = 0, .rp = 0, .sz = index->size};
-   // Insert sample at index 0.
-   lcp_index_sample(lcpindex, 0, 0);
-   lcp_stack_push8 (&stack, 0, (int8_t) 0);
+   uint64_t index_size = intervals*LCP_MARK_INTERVAL + marks;
+   uint64_t * lcp_sample = calloc(index_size,sizeof(uint64_t));
+   uint64_t * lcp_extend = calloc(index_size,sizeof(uint64_t));
 
-   int64_t lcpval = recursive_lcp(root, 0, index, lcpindex, &stack, min_depth);
-   */
-   /* Naive */
-   //   naive_lcp(min_depth, idxsize, lcpindex, &stack, sar, sar_bits, genome);
-   naive_lcp(min_depth, idxsize, lcpindex, &stack, sar, sar_bits, genome);
-   /* Recursive
-   // Insert sample at index size-1.
-   lcp_index_sample(lcpindex, index->size - 1, 0);
-   lcp_stack_push8 (&stack, lcpval, (int8_t) 0);
-   */
-   // Realloc stack.
-   stack = realloc(stack, sizeof(lcpstack_t) + stack->pos);
-   // LCP index marks.
+   naive_lcp(min_depth, idxsize, lcp_sample, lcp_extend, &stack, &ext, sar, sar_bits, genome);
+
+   // LCP sample marks.
    uint64_t abs_pos = 0;
    for (uint64_t i = 0, w = 0; i < words; i++) {
-      if (i%LCP_MARK_INTERVAL == 0) lcpindex[w++] = abs_pos;
-      abs_pos += 2*__builtin_popcountl(lcpindex[w++]);
-      abs_pos += 3*__builtin_popcountl(lcpindex[w++]);
+      if (i%LCP_MARK_INTERVAL == 0) lcp_sample[w++] = abs_pos;
+      abs_pos += __builtin_popcountl(lcp_sample[w++]);
    }
-   lcpindex[*index_size - 1] = abs_pos;
+   lcp_sample[index_size - 1] = abs_pos;
+
+   // LCP ext marks.
+   abs_pos = 0;
+   for (uint64_t i = 0, w = 0; i < words; i++) {
+      if (i%LCP_MARK_INTERVAL == 0) lcp_sample[w++] = abs_pos;
+      abs_pos += __builtin_popcountl(lcp_sample[w++]);
+   }
+   lcp_sample[index_size - 1] = abs_pos;
+
+   lcp_t lcp = {.idx_size = index_size, .idx_sample = lcp_sample, .idx_extend = lcp_extend, .lcp_sample = stack, .lcp_extend = ext};
+
    // Return stack.
-   return stack;
+   return lcp;
 }
-
-int64_t
-recursive_lcp
-(
- fmdpos_t      pos,
- int           depth,
- index_t     * index,
- uint64_t    * lcp_index,
- lcpstack_t ** lcp,
- int           mindepth
-)
-{
-   if (pos.sz == 0) return -1;
-   if (pos.sz == 1) return depth-1;
-   // Maximum depth.
-   if (depth == 255) return depth-1;
-   int64_t lcpval = depth;
-   for (int i = 0; i < NUM_BASES; i++) {
-      // Forward search nucleotide 'i'.
-      fmdpos_t newpos = extend_fw(i, pos, index);
-      // No more Suffixes.
-      if (newpos.sz == 0) continue;
-      // One suffix exists.
-      if (newpos.sz == 1) {
-         lcpval = depth;
-         continue;
-      }
-      // 2+ suffixes exist. (New interval)
-      if ((newpos.fp > pos.fp) && (depth >= mindepth)) {
-         //save sp at depth using offset sp - newsp.
-         int64_t offset = (int64_t)pos.fp - (int64_t)newpos.fp;
-         int ext_size = offset < -127;
-         lcp_index_sample(lcp_index, newpos.fp, ext_size);
-         if (ext_size) lcp_stack_push32(lcp, depth, (int32_t) offset);
-         else          lcp_stack_push8 (lcp, depth, (int8_t)  offset);
-      }
-      // Extend suffix.
-      lcpval = recursive_lcp(newpos, depth+1, index, lcp_index, lcp, mindepth);
-      // Save ep if it does not coincide with last position.
-      if ((newpos.fp + newpos.sz < pos.fp + pos.sz)) {
-         if (lcpval >= mindepth) {
-            int64_t offset = (int64_t)pos.fp + pos.sz - (int64_t)newpos.fp - newpos.sz;
-            int ext_size = offset > 127;
-            uint64_t p = newpos.fp + newpos.sz - 1;
-            lcp_index_sample(lcp_index, p, ext_size);
-            if (ext_size) lcp_stack_push32(lcp, lcpval, (int32_t) offset);
-            else          lcp_stack_push8 (lcp, lcpval, (int8_t)  offset);
-         }
-      } else break;
-   }
-   return lcpval;
-}
-
 
 char *
 compact_genome
