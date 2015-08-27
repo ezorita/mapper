@@ -2,8 +2,8 @@ SRC_DIR= src
 INC_DIR= src
 OBJ_DIR= obj
 OBJECT_FILES= dc3.o align.o
-SOURCE_FILES= mapper.c indexquery.c #mapper-main.c bwmapper.c hitmap.c algs.c poucet.c
-HEADER_FILES= mapper.h indexquery.h #bwmapper.h hitmap.h poucet.h definitions.h
+SOURCE_FILES= mapper.c indexquery.c algs.c #mapper-main.c bwmapper.c hitmap.c  poucet.c
+HEADER_FILES= mapper.h indexquery.h algs.h #bwmapper.h hitmap.h poucet.h definitions.h
 ISOURCE_FILES= index.c indexquery.c divsufsort.c
 IHEADER_FILES= index.h indexquery.h divsufsort.h divsufsort_private.h algs.h
 GSOURCE_FILES= gbrowser.c algs.c
@@ -23,11 +23,11 @@ AHEADERS= $(addprefix $(INC_DIR)/,$(AHEADER_FILES))
 INCLUDES= $(addprefix -I, $(INC_DIR))
 
 CFLAGS= -std=c99 -Wall -g #-O3 -march=core-avx-i -mpopcnt
-LDLIBS= -lm
-ILDLIBS= -lpthread
+LDLIBS= -lm -lpthread
+ILDLIBS= 
 CC= gcc
 
-all: mapper
+all: mapper buildindex
 
 mapper: $(OBJECTS) $(SOURCES) $(HEADERS)
 	$(CC) $(CFLAGS) $(SOURCES) $(OBJECTS) $(LDLIBS) -o $@
@@ -44,4 +44,4 @@ aligner: $(ASOURCES) $(AHEADERS)
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c $(SRC_DIR)/%.h
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 clean:
-	rm -f $(OBJECTS) bwmapper
+	rm -f $(OBJECTS) mapper buildindex

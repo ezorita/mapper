@@ -5,31 +5,30 @@ int main(int argc, char *argv[])
    int opt_verbose = 1;
 
    if (argc != 3) {
-      fprintf(stderr, "usage: bwmapper <file.fastq> <genome index>\n");
+      fprintf(stderr, "usage: bwmapper <query file> <genome index>\n");
       exit(EXIT_FAILURE);
    }
 
    // Parse query filename.
-   /*
    FILE * queryfile = fopen(argv[1], "r");
    if (queryfile == NULL) {
       fprintf(stderr, "error: could not open file: %s (%s).\n", argv[1],strerror(errno));
       return EXIT_FAILURE;
    }
-   */
+
    // Read FM index format.
    if (opt_verbose) fprintf(stderr, "loading index...\n");
    index_t * index = index_format(index_open(argv[2]));
    if(index == NULL) return EXIT_FAILURE;
 
    // Read file.
-   /*
    if (opt_verbose) fprintf(stderr, "reading query file...\n");
-   seqstack_t * seqs = read_file(queryfile, opt_reverse); // TODO: set reverse and verbose options.
+   seqstack_t * seqs = read_file(queryfile); // TODO: set reverse and verbose options.
    if (seqs == NULL) {
       return EXIT_FAILURE;
    }
-   */
+
+   
 
    return 0;
 }
@@ -274,4 +273,116 @@ read_CHRindex
 
    fclose(input);
    return chrindex;
+}
+
+
+seqstack_t *
+read_file
+(
+   FILE      * inputf
+)
+{
+   // TODO: Set a maximum read size in MB, when this limit is reached return.
+   // Once the read sequences are processed, read again and process, continuing
+   // at the point of the file where the last 'read_file' returned.
+
+   // Read first line of the file to guess format.
+   // Store in global variable FORMAT.
+   char c = fgetc(inputf);
+
+   if (c == EOF) return NULL;
+   if (ungetc(c, inputf) == EOF) {
+      return NULL;
+   }
+
+   format_t format;
+
+   switch(c) {
+   case '>':
+      format = FASTA;
+      break;
+   case '@':
+      format = FASTQ;
+      break;
+   default:
+      format = RAW;
+   }
+
+   ssize_t nread;
+   size_t linesz = BUFFER_SIZE;
+   size_t sublinesz = BUFFER_SIZE;
+   size_t tempsz = BUFFER_SIZE;
+   char *line = malloc(BUFFER_SIZE * sizeof(char));
+   char *subline = malloc(BUFFER_SIZE * sizeof(char));
+   char *temp = malloc(BUFFER_SIZE * sizeof(char));
+   if (line == NULL) {
+      return NULL;
+   }
+   seqstack_t *seqstack = new_seqstack(SEQSTACK_SIZE);
+   if (seqstack == NULL) {
+      return NULL;
+   }
+
+   char *seq  = NULL;
+   char *tag  = NULL;
+   char *q    = NULL;
+   int lineno = 0;
+
+   while ((nread = getline(&line, &linesz, inputf)) != -1) {
+      lineno++;
+      if (line[nread-1] == '\n') line[nread-1] = '\0';
+      switch(format) {
+      case RAW:
+         seq = line;
+         tag = line;
+         break;
+      case FASTA:
+         if (line[0] == '>') {
+            if((nread = getline(&subline, &sublinesz, inputf)) == -1) {
+               fprintf(stderr, "incorrect FASTA format: line %d\n", lineno);
+               continue;
+            }
+            lineno++;
+            if (subline[nread-1] == '\n') subline[nread-1] = '\0';
+            tag = line;
+            seq = subline;
+         } else continue;
+         break;
+      case FASTQ:
+         if (line[0] == '@') {
+            if((nread = getline(&subline, &sublinesz, inputf)) == -1) {
+               fprintf(stderr, "incorrect FASTQ format: line %d\n", lineno);
+               continue;
+            }
+            lineno++;
+            if (subline[nread-1] == '\n') subline[nread-1] = '\0';
+            tag = line;
+            seq = subline;
+            for (int i = 0; i < 2; i++) {
+               if((nread = getline(&temp, &tempsz, inputf)) == -1) {
+                  fprintf(stderr, "incorrect FASTQ format: line %d\n", lineno);
+                  continue;
+               }
+               lineno++;
+            }
+            q = temp;
+         } else continue;
+         break;
+      }
+
+      /*size_t seqlen = strlen(seq);
+      if (seqlen > MAXSEQLEN) {
+         fprintf(stderr, "max sequence length exceeded (%d)\n", MAXSEQLEN);
+         fprintf(stderr, "offending sequence:\n%s\n", seq);
+         continue;
+         }*/
+      
+      
+      if (seq_push(&seqstack, tag, seq, q)) return NULL;
+   }
+
+   free(line);
+   free(subline);
+   free(temp);
+   return seqstack;
 }

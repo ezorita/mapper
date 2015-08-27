@@ -11,12 +11,14 @@
 #include <execinfo.h>
 #include <signal.h>
 #include "indexquery.h"
+#include "algs.h"
 
 #ifndef _MAPPER_H
 #define _MAPPER_
 
 #define BUFFER_SIZE   100
 #define CHRSTR_SIZE   50
+#define SEQSTACK_SIZE 1024
 
 typedef struct idxfiles_t idxfiles_t;
 
@@ -42,5 +44,6 @@ struct idxfiles_t {
 idxfiles_t    * index_open    (char * file);
 index_t       * index_format  (idxfiles_t * files);
 chr_t         * read_CHRindex (char * filename);
+seqstack_t    * read_file     (FILE * inputf);
 
 #endif

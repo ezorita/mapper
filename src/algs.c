@@ -34,14 +34,9 @@ seq_push
  seqstack_t ** stackp,
  const char  * tag,
  const char  * seq,
- const char  * q,
- const int     reverse
+ const char  * q
 )
 {
-   char rcode[256] = {[0 ... 255] = 0,
-                   ['a'] = 'T', ['c'] = 'G', ['g'] = 'C', ['t'] = 'A', ['u'] = 'A', ['n'] = 'N',
-                   ['A'] = 'T', ['C'] = 'G', ['G'] = 'C', ['T'] = 'A', ['U'] = 'A', ['N'] = 'N' };
-
    seqstack_t * stack = *stackp;
 
    if (stack->pos >= stack->size) {
@@ -61,17 +56,6 @@ seq_push
    if (q) seqt->q = strdup(q);
    else seqt->q = calloc(strlen(seqt->seq),sizeof(char));
 
-   // Copy sequence (or reverse-complement)
-   if (reverse) {
-      int len = strlen(seq);
-      char * rseq = malloc(len+1);
-      for (int i = 0; i < len; i++)
-         rseq[len-1-i] = rcode[(int)seq[i]];
-      rseq[len] = 0;
-      seqt->rseq = rseq;
-   } else {
-      seqt->rseq = NULL;
-   }
    return 0;
 }
 
