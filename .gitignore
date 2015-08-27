@@ -4,8 +4,10 @@
 *.fmi
 *.index
 bwmapper
+mapper
 gbrowser
 aligner
+buildindex
 tmp/*
 genomes/*
 *.o
