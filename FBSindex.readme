@@ -15,7 +15,7 @@
         OCC structure
 
      C structure:
-        The cummulative number of bases in the index, e.g.
+        The cumulative occurrences of bases in the index, e.g.
 
         base    A  C  G  T  N  (genome size)
         C(base) 0  10 31 50 71 100
@@ -116,8 +116,9 @@
      ------------------------------------------------
      mark_int |  uint64_t  |   64 bits  |      1
      min_depth|  uint64_t  |   64 bits  |      1
-     lcp_index|  uint64_t  |   64 bits  |     (**)
-     ext_index|  uint64_t  |   64 bits  |     (**)
+     idx_size |  uint64_t  |   64 bits  |      1
+     lcp_index|  uint64_t  |   64 bits  |  idx_size
+     ext_index|  uint64_t  |   64 bits  |  idx_size
      lcp_size |  uint64_t  |   64 bits  |      1
      lcp_array|    int8_t  |    8 bits  | 2*lcp_size
      ext_size |  uint64_t  |   64 bits  |      1

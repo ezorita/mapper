@@ -94,18 +94,18 @@ write_index
    fprintf(stderr, " done [%.3fs]\n", (clock()-tstart)*1.0/CLOCKS_PER_SEC);
    // Compute suffix array.
    fprintf(stderr, "computing    suffix array ..."); tstart = clock();
-   uint64_t * sa = (uint64_t *)compute_sa(genome, 2*gsize);
+   uint64_t * sa = (uint64_t *)compute_sa(genome, gsize);
    fprintf(stderr, " done [%.3fs]\n", (clock()-tstart)*1.0/CLOCKS_PER_SEC);
    // Compute OCC.
    uint64_t occ_size;
    fprintf(stderr, "computing    occ table    ..."); tstart = clock();
-   uint64_t * occ = compute_occ(genome, sa, 2*gsize, &occ_size);
+   uint64_t * occ = compute_occ(genome, sa, gsize, &occ_size);
    fprintf(stderr, " done [%.3fs]\n", (clock()-tstart)*1.0/CLOCKS_PER_SEC);
    // Compress suffix array.
    fprintf(stderr, "compressing  suffix array ..."); tstart = clock();
    uint64_t sa_bits = 0;
-   while (2*gsize > (1 << sa_bits)) sa_bits++;
-   uint64_t sa_size = compact_array(sa, 2*gsize, sa_bits);
+   while (gsize > (1 << sa_bits)) sa_bits++;
+   uint64_t sa_size = compact_array(sa, gsize, sa_bits);
    sa = realloc(sa, sa_size*sizeof(uint64_t));
    fprintf(stderr, " done [%.3fs]\n", (clock()-tstart)*1.0/CLOCKS_PER_SEC);
    // Compute C.
@@ -124,14 +124,16 @@ write_index
    fprintf(stderr, " done [%.3fs]\n", (clock()-tstart)*1.0/CLOCKS_PER_SEC);
    // Write .OCC file
    fprintf(stderr, "writing occ...");
-   // Write C
-   while (s < (NUM_BASES+1)*sizeof(uint64_t)) s += write(foc, c + s/sizeof(uint64_t), (NUM_BASES+1)*sizeof(uint64_t) - s);
-   stot += s;
-   // Write OCC.
+   // mark interval
    s = 0;
    uint64_t mark_int = OCC_MARK_INTERVAL;
    while (s < sizeof(uint64_t)) s += write(foc, &mark_int, sizeof(uint64_t));
    stot += s;
+   // Write C
+   s  = 0;
+   while (s < (NUM_BASES+1)*sizeof(uint64_t)) s += write(foc, c + s/sizeof(uint64_t), (NUM_BASES+1)*sizeof(uint64_t) - s);
+   stot += s;
+   // Write OCC.
    s = 0;
    while (s < occ_size * sizeof(uint64_t)) s += write(foc,occ + s/sizeof(uint64_t), occ_size*sizeof(uint64_t) - s);
    stot += s;
@@ -151,13 +153,13 @@ write_index
    free(lut);
    // Compute LCP.
    fprintf(stderr, "computing    LCP intervals..."); tstart = clock();
-   lcp_t lcp = compute_lcp(2*gsize, LCP_MIN_DEPTH, sa_bits, sa, genome);
+   lcp_t lcp = compute_lcp(gsize, LCP_MIN_DEPTH, sa_bits, sa, genome);
    fprintf(stderr, " done [%.3fs]\n", (clock()-tstart)*1.0/CLOCKS_PER_SEC);
    // Write .GEN FILE
    fprintf(stderr, "writing gen...");
    // Write genome bases (forward and reverse strand).
    s = 0;
-   while (s < 2*gsize*sizeof(char)) s += write(fgn, genome + s/sizeof(char), 2*gsize*sizeof(char) - s);
+   while (s < gsize*sizeof(char)) s += write(fgn, genome + s/sizeof(char), gsize*sizeof(char) - s);
    stot += s;
    fprintf(stderr, " %ld bytes written.\n",s);
    // .SAR FILE
@@ -176,11 +178,11 @@ write_index
    // LCP index.
    bytes = s = 0;
    mark_int = LCP_MARK_INTERVAL;
-   while (s < sizeof(uint64_t)) s += write(foc, &mark_int, sizeof(uint64_t));
+   while (s < sizeof(uint64_t)) s += write(flc, &mark_int, sizeof(uint64_t));
    bytes += s;
    s = 0;
    uint64_t min_depth = LCP_MIN_DEPTH;
-   while (s < sizeof(uint64_t)) s += write(foc, &min_depth, sizeof(uint64_t));
+   while (s < sizeof(uint64_t)) s += write(flc, &min_depth, sizeof(uint64_t));
    bytes += s;
    s = 0;
    while(s < sizeof(uint64_t)) s += write(flc, &(lcp.idx_size), sizeof(uint64_t));
@@ -315,7 +317,7 @@ compute_c
    uint64_t * C = malloc((NUM_BASES+1)*sizeof(uint64_t));
    if (C == NULL) return NULL;
    // Count the wildcard before 'A'.
-   C[0] = 1;
+   C[0] = 0;
    for (int i = 1; i <= NUM_BASES; i++) C[i] = C[i-1] + occ[i-1];
    return C;
 }
@@ -778,6 +780,8 @@ compact_genome
    uint64_t div = *genomesize;
    for (int i = 0 ; i < div; i++)
       genome[div + i] = revcomp[(int)genome[div-i-1]];
+
+   *genomesize *= 2;
 
    // Insert wilcard at the end.
    genome[2*div] = 0;

@@ -29,13 +29,13 @@ struct lcpval_t {
 };
 
 struct lcpdata_t {
-   uint64_t size;
-   lcpval_t lcp[];
+   uint64_t   size;
+   lcpval_t * lcp;
 };
 
 struct list32_t {
-   uint64_t size;
-   int32_t  val[];
+   uint64_t   size;
+   int32_t  * val;
 };
 
 struct chr_t {
@@ -45,12 +45,6 @@ struct chr_t {
 };
 
 struct index_t {
-   // Original file pointers.
-   void      * gen_file;
-   void      * occ_file;
-   void      * sa_file;
-   void      * lcp_file;
-   void      * lut_file;
    // Gen file.
    uint64_t    size;
    char      * genome;
