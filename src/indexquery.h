@@ -10,7 +10,7 @@
 #define LCP_MARK_INTERVAL 16
 #define LCP_WORD_SIZE     64
 #define LCP_MARK_BITS     (LCP_MARK_INTERVAL * LCP_WORD_SIZE)
-#define LCP_MIN_DEPTH     15
+#define LCP_MIN_DEPTH     0
 
 #define SSV_DIR_FWD       1
 #define SSV_DIR_BWD       -1
@@ -72,6 +72,7 @@ struct index_t {
 struct bwpos_t {
    int64_t sp;
    int64_t ep;
+   int64_t depth;
 };
 
 struct fmdpos_t {
@@ -86,7 +87,7 @@ int      get_occ           (int64_t pos, uint64_t * occ, int64_t * val);
 uint64_t get_occ_nt        (int64_t pos, uint64_t * occ, int nt);
 fmdpos_t extend_bw         (int nt, fmdpos_t pos, index_t * index);
 fmdpos_t extend_fw         (int nt, fmdpos_t pos, index_t * index);
-bwpos_t  suffix_extend     (int nt, bwpos_t pos, index_t * index);
+int      suffix_extend     (int nt, bwpos_t pos, bwpos_t * newpos, index_t * index);
 int      suffix_shrink     (bwpos_t pos, bwpos_t * newpos, index_t * index);
 int      suffix_ssv_search (uint64_t pos, bwpos_t * newpos, index_t * index);
 int      suffix_ssv        (bwpos_t pos, bwpos_t * newpos, index_t * index);

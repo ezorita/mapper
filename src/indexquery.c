@@ -21,13 +21,13 @@ get_sa
 int
 get_occ
 (
- int64_t   ptr,
+ int64_t    ptr,
  uint64_t * occ,
- int64_t * val
+ int64_t  * val
 )
 {
    if (ptr == -1) {
-      for (int j = 0; j < NUM_BASES; j++) val[j] = 0;
+      for (int j = 0; j < NUM_BASES; j++) val[j] = occ[j];
       return 0;
    }
    int64_t wrdnum = ptr/OCC_WORD_SIZE;
@@ -75,7 +75,7 @@ get_occ_nt
  int       nt
 )
 {
-   if (ptr == -1) return 0;
+   if (ptr == -1) return occ[nt];
    int64_t wrdnum = ptr/OCC_WORD_SIZE;
    int64_t wrdptr = (wrdnum + wrdnum/OCC_MARK_INTERVAL + 1)*NUM_BASES + nt;
    int64_t mrkptr = (((wrdnum + OCC_MARK_INTERVAL/2)/OCC_MARK_INTERVAL)*(OCC_MARK_INTERVAL+1))*NUM_BASES + nt;
@@ -152,18 +152,20 @@ extend_fw
    return (fmdpos_t){newpos.rp, newpos.fp, newpos.sz};
 }
 
-bwpos_t
+int
 suffix_extend
 (
  int       nt,
  bwpos_t   pos,
+ bwpos_t * newpos,
  index_t * index
 )
 {
-   bwpos_t newpos;
-   newpos.sp = index->c[nt] + get_occ_nt(pos.sp - 1, index->occ, nt);
-   newpos.ep = index->c[nt] + get_occ_nt(pos.ep, index->occ, nt) - 1;
-   return newpos;
+   newpos->sp = index->c[nt] + get_occ_nt(pos.sp - 1, index->occ, nt);
+   newpos->ep = index->c[nt] + get_occ_nt(pos.ep, index->occ, nt) - 1;
+   if (newpos->ep >= index->size || newpos->sp >= index->size) return -1;
+   newpos->depth = pos.depth + 1;
+   return 0;
 }
 
 
@@ -178,7 +180,7 @@ suffix_shrink
    *newpos = pos;
    if (pos.sp == pos.ep)
       return suffix_ssv_search(pos.sp, newpos, index);
-   else if (pos.sp > pos.ep)
+   else if (pos.sp < pos.ep)
       return suffix_ssv(pos, newpos, index);
    else return -1;
 }
@@ -196,85 +198,105 @@ suffix_ssv_search
 // bottom corner when searching FWD, then add the offsets obtained
 // from the sample list to reach the parent corner.
 {
-   *newpos = (bwpos_t){pos, pos};
+   *newpos = (bwpos_t){pos, pos, 0};
    uint64_t word  = pos/LCP_WORD_SIZE;
    uint64_t marks = word/LCP_MARK_INTERVAL + 1;
    int32_t  bit   = pos%LCP_WORD_SIZE;
    word += marks;
 
    uint64_t mark = marks * (LCP_MARK_INTERVAL + 1);
-   if ((index->lcp_sample_idx[word] >> bit) & 1) return -1;
 
    uint64_t ptr = index->lcp_sample_idx[mark];
    for (uint64_t i = mark-1; i > word; i--)
       ptr -= __builtin_popcountl(index->lcp_sample_idx[i]);
    ptr -= __builtin_popcountl(index->lcp_sample_idx[word] >> bit);
 
-   // Forward search
-   uint64_t topc = 1, samples = 0;
-   uint64_t pptr = ptr + 1, pword = word, pbit = bit;
-   while (topc > 0) {
-      lcpval_t val = index->lcp_sample->lcp[pptr++];
-      topc += (val.offset < 0 ? 1 : -1);
-      samples++;
-   }
-   // Now find the sample position in the BF.
-   int32_t offset = 0;
-   if (++pbit == LCP_WORD_SIZE) {
-      pbit = 0;
-      pword++;
-   }
-   uint64_t w = index->lcp_sample_idx[pword++] >> pbit;
-   while (samples > 0) {
-      int cnt = __builtin_popcountl(w);
-      if (cnt >= samples) {
-         while (samples > 0) {
-            samples -= w & 1;
-            w >>= 1;
-            offset++;
-         }
+   int is_top = 0, is_bot = 0;
+   if ((index->lcp_sample_idx[word] >> bit) & 1) {
+      // Pointer coincides with a corner.
+      // Top or bottom?
+      if (index->lcp_sample->lcp[ptr].offset < 0) {
+         is_top = 1;
+         // New depth.
+         newpos->depth = index->lcp_sample->lcp[ptr+1].lcp;
       } else {
-         samples -= cnt;
-         offset += LCP_WORD_SIZE - pbit;
-         pbit = 0;
+         is_bot = 1;
+         // New depth.
+         newpos->depth = index->lcp_sample->lcp[ptr].lcp;
       }
-      w = index->lcp_sample_idx[pword++];
+   } else {
+      // Pointer is not a corner.
+      // New depth.
+      newpos->depth = index->lcp_sample->lcp[ptr].lcp;
    }
-   newpos->ep = pos + offset;
+
+   // Forward search.
+   if (!is_bot) {
+      uint64_t topc = 1, samples = 0;
+      uint64_t pptr = ptr + is_top, pword = word, pbit = bit;
+      while (topc > 0) {
+         lcpval_t val = index->lcp_sample->lcp[pptr++];
+         topc += (val.offset < 0 ? 1 : -1);
+         samples++;
+      }
+      // Now find the sample position in the BF.
+      int32_t offset = 0;
+      if (++pbit == LCP_WORD_SIZE) {
+         pbit = 0;
+         pword++;
+      }
+      uint64_t w = index->lcp_sample_idx[pword++] >> pbit;
+      while (samples > 0) {
+         int cnt = __builtin_popcountl(w);
+         if (cnt >= samples) {
+            while (samples > 0) {
+               samples -= w & 1;
+               w >>= 1;
+               offset++;
+            }
+         } else {
+            samples -= cnt;
+            offset += LCP_WORD_SIZE - pbit;
+            pbit = 0;
+         }
+         w = index->lcp_sample_idx[pword++];
+      }
+      newpos->ep = pos + offset;
+   }
 
    // Backward search.
-   samples = 0;
-   uint64_t botc = 1;
-   uint64_t nptr = ptr + 1, nword = word, nbit = bit;
-   while (botc > 0) {
-      lcpval_t val = index->lcp_sample->lcp[nptr--];
-      botc += (val.offset < 0 ? -1 : 1);
-      samples++;
-   }
-   // Now find the sample position in the BF.
-   offset = 0;
-   if (--nbit == -1) {
-      nbit = LCP_WORD_SIZE-1;
-      nword--;
-   }
-   w = index->lcp_sample_idx[nword--] << (LCP_WORD_SIZE - 1 - nbit);
-   while (samples > 0) {
-      int cnt = __builtin_popcountl(w);
-      if (cnt >= samples) {
-         while (samples > 0) {
-            samples -= w & ((uint64_t)1 << (LCP_WORD_SIZE-1));
-            w <<= 1;
-            offset--;
-         }
-      } else {
-         samples -= cnt;
-         offset -= nbit;
-         nbit = LCP_WORD_SIZE;
+   if (!is_top) {
+      uint64_t botc = 1, samples = 0;
+      uint64_t nptr = ptr-1, nword = word, nbit = bit;
+      while (botc > 0) {
+         lcpval_t val = index->lcp_sample->lcp[nptr--];
+         botc += (val.offset < 0 ? -1 : 1);
+         samples++;
       }
-      w = index->lcp_sample_idx[nword--];
+      // Now find the sample position in the BF.
+      int32_t offset = 0;
+      if (--nbit == -1) {
+         nbit = LCP_WORD_SIZE-1;
+         nword--;
+      }
+      uint64_t w = index->lcp_sample_idx[nword--] << (LCP_WORD_SIZE - 1 - nbit);
+      while (samples > 0) {
+         int cnt = __builtin_popcountl(w);
+         if (cnt >= samples) {
+            while (samples > 0) {
+               samples -= (w >> (LCP_WORD_SIZE-1)) & 1;
+               w <<= 1;
+               offset--;
+            }
+         } else {
+            samples -= cnt;
+            offset -= nbit;
+            nbit = LCP_WORD_SIZE;
+         }
+         w = index->lcp_sample_idx[nword--];
+      }
+      newpos->sp = pos + offset;
    }
-
-   newpos->sp = pos + offset;
 
    return 0;
 }
@@ -303,8 +325,9 @@ suffix_ssv
       ptr -= __builtin_popcountl(index->lcp_sample_idx[i]);
    ptr -= __builtin_popcountl(index->lcp_sample_idx[sword] >> sbit);
 
-   lcpval_t sval = index->lcp_sample->lcp[ptr];
-   if (sval.offset >= 0) return -1;
+   uint8_t slcp = index->lcp_sample->lcp[ptr].lcp;
+   int32_t soff = index->lcp_sample->lcp[ptr].offset;
+   if (soff >= 0) return -1;
 
    // End LCP.
    uint64_t eword  = pos.ep/LCP_WORD_SIZE;
@@ -319,33 +342,34 @@ suffix_ssv
       ptr -= __builtin_popcountl(index->lcp_sample_idx[i]);
    ptr -= __builtin_popcountl(index->lcp_sample_idx[eword] >> ebit);
 
-   lcpval_t eval = index->lcp_sample->lcp[ptr];
-   if (eval.offset < 0) return -1;
+   uint8_t elcp = index->lcp_sample->lcp[ptr+1].lcp;
+   int32_t eoff = index->lcp_sample->lcp[ptr].offset;
+   if (eoff < 0) return -1;
 
    // Compare LCP.
-   if (sval.lcp >= eval.lcp) {
-      int32_t offset = sval.offset;
-      if (offset == -128) {
+   if (slcp >= elcp) {
+      if (soff == -128) {
          ptr = index->lcp_extend_idx[smark];
          for (uint64_t i = smark-1; i > sword; i--)
             ptr -= __builtin_popcountl(index->lcp_extend_idx[i]);
          ptr -= __builtin_popcountl(index->lcp_extend_idx[sword] >> sbit);
 
-         offset = index->lcp_extend->val[ptr];
+         soff = index->lcp_extend->val[ptr];
       }
-      newpos->sp = pos.sp + offset;
+      newpos->sp = pos.sp + soff;
+      newpos->depth = slcp;
    }
-   if (sval.lcp <= eval.lcp) {
-      int32_t offset = eval.offset;
-      if (++offset == 128) {
+   if (slcp <= elcp) {
+      if (++eoff == 128) {
          ptr = index->lcp_extend_idx[emark];
          for (uint64_t i = emark-1; i > eword; i--)
             ptr -= __builtin_popcountl(index->lcp_extend_idx[i]);
          ptr -= __builtin_popcountl(index->lcp_extend_idx[eword] >> ebit);
 
-         offset = index->lcp_extend->val[ptr];
+         eoff = index->lcp_extend->val[ptr];
       }
-      newpos->ep = pos.ep + offset;
+      newpos->ep = pos.ep + eoff;
+      newpos->depth = elcp;
    }
    return 0;
 }

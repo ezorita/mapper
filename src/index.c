@@ -252,23 +252,27 @@ compute_occ
    // Alloc variables.
    uint64_t * occ = malloc((occ_words+occ_marks)*NUM_BASES*sizeof(uint64_t));
    if (occ == NULL) return NULL;
-   uint64_t occ_abs[NUM_BASES];
-   uint64_t occ_tmp[NUM_BASES];
+   uint64_t occ_abs[NUM_BASES+1];
+   uint64_t occ_tmp[NUM_BASES+1];
 
    // Initial values.
    for (int i = 0; i < NUM_BASES; i++) {
       occ_abs[i] = 0;
       occ_tmp[i] = 0;
-      occ[i] = 0;
    }
+   // Emulate wildcard.
+   int last_base = translate[(uint8_t)genome[gsize-1]];
+   occ_abs[last_base] = 1;
 
    // Compute OCC. (MSB FIRST encoding)
-   // Word starts at NUM_BASES, after the first mark.
-   uint64_t word = NUM_BASES;
-   uint64_t interval = 0;
+   uint64_t word = 0, interval = 0;
+   // Write first mark.
+   for (int i = 0; i < NUM_BASES; i++)
+      occ[word++] = occ_abs[i];
+
    for (uint64_t i = 0; i < gsize; i++) {
       // Set occ bit.
-      int base = translate[(uint8_t)genome[(sa[i] == 0 ? gsize-1 : sa[i]-1)]];
+      int base = (sa[i] > 0 ? translate[(uint8_t)genome[sa[i]-1]] : NUM_BASES);
       occ_tmp[base] |= 1;
       occ_abs[base]++;
       // Next word.
