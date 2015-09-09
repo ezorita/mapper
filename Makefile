@@ -1,7 +1,7 @@
 SRC_DIR= src
 INC_DIR= src
 OBJ_DIR= obj
-OBJECT_FILES= align.o #dc3.o
+OBJECT_FILES= align.o
 SOURCE_FILES= mapper.c indexquery.c algs.c seed.c #mapper-main.c bwmapper.c hitmap.c  poucet.c
 HEADER_FILES= mapper.h indexquery.h algs.h seed.h #bwmapper.h hitmap.h poucet.h definitions.h
 ISOURCE_FILES= index.c indexquery.c divsufsort.c
