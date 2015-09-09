@@ -198,7 +198,7 @@ suffix_ssv_search
 // bottom corner when searching FWD, then add the offsets obtained
 // from the sample list to reach the parent corner.
 {
-   *newpos = (bwpos_t){pos, pos, 0};
+   *newpos = (bwpos_t){.depth = 0, .sp = pos, .ep = pos};
    uint64_t word  = pos/LCP_WORD_SIZE;
    uint64_t marks = word/LCP_MARK_INTERVAL + 1;
    int32_t  bit   = pos%LCP_WORD_SIZE;

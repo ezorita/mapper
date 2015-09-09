@@ -3,6 +3,22 @@
 #include <stdint.h>
 #include "definitions.h"
 
+#ifndef _INDEXQUERY_H
+#define _INDEXQUERY_H
+
+static const char translate[256] = {[0 ... 255] = 4,
+                           ['a'] = 0, ['c'] = 1, ['g'] = 2, ['t'] = 3, ['n'] = 4, ['$'] = 5,
+                           ['A'] = 0, ['C'] = 1, ['G'] = 2, ['T'] = 3, ['N'] = 4};
+
+static const char revcomp[256] = {[0 ... 255] = 'N',
+                   ['a'] = 't', ['c'] = 'g', ['g'] = 'c', ['t'] = 'a', ['u'] = 'a',
+                   ['A'] = 'T', ['C'] = 'G', ['G'] = 'C', ['T'] = 'A', ['U'] = 'A' };
+
+static const char uppercase[256] = {[0 ... 255] = 'e',
+                           ['a'] = 'a', ['c'] = 'b', ['g'] = 'c', ['t'] = 'd', ['n'] = 'e', ['$'] = '$',
+                           ['A'] = 'a', ['C'] = 'b', ['G'] = 'c', ['T'] = 'd', ['N'] = 'e'};
+
+
 #define LUT_KMER_SIZE     9
 #define OCC_MARK_INTERVAL 14
 #define OCC_WORD_SIZE     64
@@ -70,9 +86,9 @@ struct index_t {
 };
 
 struct bwpos_t {
+   int32_t depth;
    int64_t sp;
    int64_t ep;
-   int64_t depth;
 };
 
 struct fmdpos_t {
@@ -91,3 +107,5 @@ int      suffix_extend     (int nt, bwpos_t pos, bwpos_t * newpos, index_t * ind
 int      suffix_shrink     (bwpos_t pos, bwpos_t * newpos, index_t * index);
 int      suffix_ssv_search (uint64_t pos, bwpos_t * newpos, index_t * index);
 int      suffix_ssv        (bwpos_t pos, bwpos_t * newpos, index_t * index);
+
+#endif
