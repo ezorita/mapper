@@ -1,9 +1,9 @@
 SRC_DIR= src
 INC_DIR= src
 OBJ_DIR= obj
-OBJECT_FILES= dc3.o align.o
-SOURCE_FILES= mapper.c indexquery.c algs.c #mapper-main.c bwmapper.c hitmap.c  poucet.c
-HEADER_FILES= mapper.h indexquery.h algs.h #bwmapper.h hitmap.h poucet.h definitions.h
+OBJECT_FILES= align.o #dc3.o
+SOURCE_FILES= mapper.c indexquery.c algs.c seed.c #mapper-main.c bwmapper.c hitmap.c  poucet.c
+HEADER_FILES= mapper.h indexquery.h algs.h seed.h #bwmapper.h hitmap.h poucet.h definitions.h
 ISOURCE_FILES= index.c indexquery.c divsufsort.c
 IHEADER_FILES= index.h indexquery.h divsufsort.h divsufsort_private.h algs.h
 GSOURCE_FILES= gbrowser.c algs.c
