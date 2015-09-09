@@ -10,17 +10,18 @@
 #include <fcntl.h>
 #include <execinfo.h>
 #include <signal.h>
-#include "indexquery.h"
 #include "algs.h"
+#include "seed.h"
+#include "indexquery.h"
 
 #ifndef _MAPPER_H
-#define _MAPPER_
+#define _MAPPER_H
 
 #define BUFFER_SIZE   100
 #define CHRSTR_SIZE   50
 #define SEQSTACK_SIZE 1024
 
-typedef struct idxfiles_t idxfiles_t;
+typedef struct idxfiles_t  idxfiles_t;
 
 // Input types.
 
