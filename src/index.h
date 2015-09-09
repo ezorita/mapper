@@ -13,23 +13,13 @@
 #include "divsufsort.h"
 #include "indexquery.h"
 
+#ifndef _INDEX_H
+#define _INDEX_H
+
 #define STACK_LCP_INITIAL_SIZE 1024
 #define NAIVE_LCP_MAX_SAMPLES 1000000
 #define BUFFER_SIZE   100
 #define GENOME_SIZE   100000
-
-
-static const char translate[256] = {[0 ... 255] = 4,
-                           ['a'] = 0, ['c'] = 1, ['g'] = 2, ['t'] = 3, ['n'] = 4,
-                           ['A'] = 0, ['C'] = 1, ['G'] = 2, ['T'] = 3, ['N'] = 4};
-
-static const char revcomp[256] = {[0 ... 255] = 'N',
-                   ['a'] = 't', ['c'] = 'g', ['g'] = 'c', ['t'] = 'a', ['u'] = 'a',
-                   ['A'] = 'T', ['C'] = 'G', ['G'] = 'C', ['T'] = 'A', ['U'] = 'A' };
-
-static const char uppercase[256] = {[0 ... 255] = 'e',
-                           ['a'] = 'a', ['c'] = 'b', ['g'] = 'c', ['t'] = 'd', ['n'] = 'e',
-                           ['A'] = 'a', ['C'] = 'b', ['G'] = 'c', ['T'] = 'd', ['N'] = 'e'};
 
 typedef struct stack8_t    stack8_t;
 typedef struct stack32_t   stack32_t;
@@ -98,3 +88,5 @@ stack8_t   * stack8_new       (int size);
 stack32_t  * stack32_new      (int size);
 int32_t      stack32_push     (stack32_t ** stackp, int32_t val);
 int32_t      stack32_pop      (stack32_t * stack);
+
+#endif

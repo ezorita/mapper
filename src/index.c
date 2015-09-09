@@ -92,15 +92,18 @@ write_index
    fprintf(stderr, "reading      genome file  ..."); tstart = clock();
    char * genome = compact_genome(filename, &gsize);
    fprintf(stderr, " done [%.3fs]\n", (clock()-tstart)*1.0/CLOCKS_PER_SEC);
+
    // Compute suffix array.
    fprintf(stderr, "computing    suffix array ..."); tstart = clock();
    uint64_t * sa = (uint64_t *)compute_sa(genome, gsize);
    fprintf(stderr, " done [%.3fs]\n", (clock()-tstart)*1.0/CLOCKS_PER_SEC);
+
    // Compute OCC.
    uint64_t occ_size;
    fprintf(stderr, "computing    occ table    ..."); tstart = clock();
    uint64_t * occ = compute_occ(genome, sa, gsize, &occ_size);
    fprintf(stderr, " done [%.3fs]\n", (clock()-tstart)*1.0/CLOCKS_PER_SEC);
+
    // Compress suffix array.
    fprintf(stderr, "compressing  suffix array ..."); tstart = clock();
    uint64_t sa_bits = 0;
@@ -108,20 +111,24 @@ write_index
    uint64_t sa_size = compact_array(sa, gsize, sa_bits);
    sa = realloc(sa, sa_size*sizeof(uint64_t));
    fprintf(stderr, " done [%.3fs]\n", (clock()-tstart)*1.0/CLOCKS_PER_SEC);
+
    // Compute C.
    fprintf(stderr, "computing    C table      ..."); tstart = clock();
    uint64_t * c = compute_c(occ + occ_size - NUM_BASES);
    fprintf(stderr, " done [%.3fs]\n", (clock()-tstart)*1.0/CLOCKS_PER_SEC);
+
    // Compute LUT.
    fprintf(stderr, "computing    lookup table ..."); tstart = clock();
    uint64_t * lut = compute_lut(c, occ, LUT_KMER_SIZE);
    fprintf(stderr, " done [%.3fs]\n", (clock()-tstart)*1.0/CLOCKS_PER_SEC);
+
    // Compress LUT.
    fprintf(stderr, "compressing  lookup table ..."); tstart = clock();
    uint64_t lut_kmers = 1 << (2*LUT_KMER_SIZE);
    uint64_t lut_size = compact_array(lut, lut_kmers, sa_bits);
    lut = realloc(lut, lut_size*sizeof(uint64_t));
    fprintf(stderr, " done [%.3fs]\n", (clock()-tstart)*1.0/CLOCKS_PER_SEC);
+
    // Write .OCC file
    fprintf(stderr, "writing occ...");
    // mark interval
@@ -259,20 +266,15 @@ compute_occ
    for (int i = 0; i < NUM_BASES; i++) {
       occ_abs[i] = 0;
       occ_tmp[i] = 0;
+      occ[i] = 0;
    }
-   // Emulate wildcard.
-   int last_base = translate[(uint8_t)genome[gsize-1]];
-   occ_abs[last_base] = 1;
 
    // Compute OCC. (MSB FIRST encoding)
-   uint64_t word = 0, interval = 0;
-   // Write first mark.
-   for (int i = 0; i < NUM_BASES; i++)
-      occ[word++] = occ_abs[i];
+   uint64_t word = NUM_BASES, interval = 0;
 
    for (uint64_t i = 0; i < gsize; i++) {
       // Set occ bit.
-      int base = (sa[i] > 0 ? translate[(uint8_t)genome[sa[i]-1]] : NUM_BASES);
+      int base = translate[(uint8_t)genome[(sa[i] > 0 ? sa[i] - 1 : gsize - 1)]];
       occ_tmp[base] |= 1;
       occ_abs[base]++;
       // Next word.
@@ -321,7 +323,7 @@ compute_c
    uint64_t * C = malloc((NUM_BASES+1)*sizeof(uint64_t));
    if (C == NULL) return NULL;
    // Count the wildcard before 'A'.
-   C[0] = 0;
+   C[0] = 1;
    for (int i = 1; i <= NUM_BASES; i++) C[i] = C[i-1] + occ[i-1];
    return C;
 }
@@ -774,7 +776,7 @@ compact_genome
    }
 
    // Realloc buffer.
-   genome = realloc(genome, 2*(*genomesize)+1);
+   genome = realloc(genome, 2*(*genomesize)+2);
    if (genome == NULL) {
       fprintf(stderr, "error in 'compact_genome' (realloc): %s\n", strerror(errno));
       exit(EXIT_FAILURE);
@@ -785,10 +787,11 @@ compact_genome
    for (int i = 0 ; i < div; i++)
       genome[div + i] = revcomp[(int)genome[div-i-1]];
 
-   *genomesize *= 2;
+   *genomesize = *genomesize * 2 + 1;
 
-   // Insert wilcard at the end.
-   genome[2*div] = 0;
+   // Insert wildcard at the end.
+   genome[2*div] = '$';
+   genome[2*div+1] = 0;
 
    fclose(input);
    fclose(output);
