@@ -709,10 +709,10 @@ compute_lcp
    // LCP ext marks.
    abs_pos = 0;
    for (uint64_t i = 0, w = 0; i < words; i++) {
-      if (i%LCP_MARK_INTERVAL == 0) lcp_sample[w++] = abs_pos;
-      abs_pos += __builtin_popcountl(lcp_sample[w++]);
+      if (i%LCP_MARK_INTERVAL == 0) lcp_extend[w++] = abs_pos;
+      abs_pos += __builtin_popcountl(lcp_extend[w++]);
    }
-   lcp_sample[index_size - 1] = abs_pos;
+   lcp_extend[index_size - 1] = abs_pos;
 
    lcp_t lcp = {.idx_size = index_size, .idx_sample = lcp_sample, .idx_extend = lcp_extend, .lcp_sample = stack, .lcp_extend = ext};
 
