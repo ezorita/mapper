@@ -232,13 +232,11 @@ suffix_ssv_search
 
    // Forward search.
    if (!is_bot) {
-      uint64_t topc = 1, samples = 0;
+      uint64_t samples = 0;
       uint64_t pptr = ptr + is_top, pword = word, pbit = bit;
-      while (topc > 0) {
-         lcpval_t val = index->lcp_sample->lcp[pptr++];
-         topc += (val.offset < 0 ? 1 : -1);
-         samples++;
-      }
+      // Find the bottom corner.
+      // iterate until we find a corner with LCP < pos LCP.
+      while (newpos->depth <= index->lcp_sample->lcp[pptr++].lcp) samples++;
       // Now find the sample position in the BF.
       int32_t offset = 0;
       if (++pbit == LCP_WORD_SIZE) {
@@ -266,13 +264,11 @@ suffix_ssv_search
 
    // Backward search.
    if (!is_top) {
-      uint64_t botc = 1, samples = 0;
+      uint64_t samples = 1;
       uint64_t nptr = ptr-1, nword = word, nbit = bit;
-      while (botc > 0) {
-         lcpval_t val = index->lcp_sample->lcp[nptr--];
-         botc += (val.offset < 0 ? -1 : 1);
-         samples++;
-      }
+      // Find the top corner.
+      // iterate until we find a corner with LCP < pos LCP.
+      while (newpos->depth <= index->lcp_sample->lcp[nptr--].lcp) samples++;
       // Now find the sample position in the BF.
       int32_t offset = 0;
       if (--nbit == -1) {
