@@ -26,7 +26,7 @@ static const char uppercase[256] = {[0 ... 255] = 'e',
 #define LCP_MARK_INTERVAL 16
 #define LCP_WORD_SIZE     64
 #define LCP_MARK_BITS     (LCP_MARK_INTERVAL * LCP_WORD_SIZE)
-#define LCP_MIN_DEPTH     10
+#define LCP_MIN_DEPTH     0
 
 #define SSV_DIR_FWD       1
 #define SSV_DIR_BWD       -1
@@ -107,5 +107,6 @@ int      suffix_extend     (int nt, bwpos_t pos, bwpos_t * newpos, index_t * ind
 int      suffix_shrink     (bwpos_t pos, bwpos_t * newpos, index_t * index);
 int      suffix_ssv_search (uint64_t pos, bwpos_t * newpos, index_t * index);
 int      suffix_ssv        (bwpos_t pos, bwpos_t * newpos, index_t * index);
+int      suffix_string     (char * suf, int slen, bwpos_t * newpos, index_t * index);
 
 #endif

@@ -153,6 +153,22 @@ extend_fw
 }
 
 int
+suffix_string
+(
+ char    * suf,
+ int       slen,
+ bwpos_t * newpos,
+ index_t * index
+)
+{
+   bwpos_t pos = (bwpos_t){0,0,index->size - 1};
+   int i = slen-1;
+   while(i >= 0) if(suffix_extend(translate[(int)suf[i--]], pos, &pos, index)) return -1;
+   *newpos = pos;
+   return 0;
+}
+
+int
 suffix_extend
 (
  int       nt,
@@ -286,8 +302,8 @@ suffix_ssv_search
             }
          } else {
             samples -= cnt;
-            offset -= nbit;
-            nbit = LCP_WORD_SIZE;
+            offset -= nbit + 1;
+            nbit = LCP_WORD_SIZE - 1;
          }
          w = index->lcp_sample_idx[nword--];
       }
@@ -316,13 +332,13 @@ suffix_ssv
    uint64_t smark = smarks*(LCP_MARK_INTERVAL+1);
    if (((index->lcp_sample_idx[sword] >> sbit) & 1) == 0) return -1;
 
-   uint64_t ptr = index->lcp_sample_idx[smark];
+   uint64_t sptr = index->lcp_sample_idx[smark];
    for (uint64_t i = smark-1; i > sword; i--)
-      ptr -= __builtin_popcountl(index->lcp_sample_idx[i]);
-   ptr -= __builtin_popcountl(index->lcp_sample_idx[sword] >> sbit);
+      sptr -= __builtin_popcountl(index->lcp_sample_idx[i]);
+   sptr -= __builtin_popcountl(index->lcp_sample_idx[sword] >> sbit);
 
-   uint8_t slcp = index->lcp_sample->lcp[ptr].lcp;
-   int32_t soff = index->lcp_sample->lcp[ptr].offset;
+   uint8_t slcp = index->lcp_sample->lcp[sptr].lcp;
+   int32_t soff = index->lcp_sample->lcp[sptr].offset;
    if (soff >= 0) return -1;
 
    // End LCP.
@@ -333,22 +349,28 @@ suffix_ssv
    uint64_t emark = emarks*(LCP_MARK_INTERVAL+1);
    if (((index->lcp_sample_idx[eword] >> ebit) & 1) == 0) return -1;
 
-   ptr = index->lcp_sample_idx[emark];
+   uint64_t eptr = index->lcp_sample_idx[emark];
    for (uint64_t i = emark-1; i > eword; i--)
-      ptr -= __builtin_popcountl(index->lcp_sample_idx[i]);
-   ptr -= __builtin_popcountl(index->lcp_sample_idx[eword] >> ebit);
+      eptr -= __builtin_popcountl(index->lcp_sample_idx[i]);
+   eptr -= __builtin_popcountl(index->lcp_sample_idx[eword] >> ebit);
 
-   uint8_t elcp = index->lcp_sample->lcp[ptr+1].lcp;
-   int32_t eoff = index->lcp_sample->lcp[ptr].offset;
+   uint8_t elcp = index->lcp_sample->lcp[eptr+1].lcp;
+   int32_t eoff = index->lcp_sample->lcp[eptr].offset;
    if (eoff < 0) return -1;
 
    // Compare LCP.
    if (slcp >= elcp) {
       if (soff == -128) {
-         ptr = index->lcp_extend_idx[smark];
-         for (uint64_t i = smark-1; i > sword; i--)
+         uint64_t extwrd = sptr/LCP_WORD_SIZE;
+         uint64_t extmrks = extwrd/LCP_MARK_INTERVAL + 1;
+         uint64_t extmrk = extmrks*(LCP_MARK_INTERVAL+1);
+         int32_t extbit = sptr%LCP_WORD_SIZE;
+         extwrd += extmrks;
+         // Find position in extended offset sample.
+         uint64_t ptr = index->lcp_extend_idx[extmrk];
+         for (uint64_t i = extmrk-1; i > extwrd; i--)
             ptr -= __builtin_popcountl(index->lcp_extend_idx[i]);
-         ptr -= __builtin_popcountl(index->lcp_extend_idx[sword] >> sbit);
+         ptr -= __builtin_popcountl(index->lcp_extend_idx[extwrd] >> extbit);
 
          soff = index->lcp_extend->val[ptr];
       }
@@ -357,10 +379,16 @@ suffix_ssv
    }
    if (slcp <= elcp) {
       if (++eoff == 128) {
-         ptr = index->lcp_extend_idx[emark];
-         for (uint64_t i = emark-1; i > eword; i--)
+         uint64_t extwrd = eptr/LCP_WORD_SIZE;
+         uint64_t extmrks = extwrd/LCP_MARK_INTERVAL + 1;
+         uint64_t extmrk = extmrks*(LCP_MARK_INTERVAL+1);
+         int32_t extbit = eptr%LCP_WORD_SIZE;
+         extwrd += extmrks;
+         // Find position in extended offset sample.
+         uint64_t ptr = index->lcp_extend_idx[extmrk];
+         for (uint64_t i = extmrk-1; i > extwrd; i--)
             ptr -= __builtin_popcountl(index->lcp_extend_idx[i]);
-         ptr -= __builtin_popcountl(index->lcp_extend_idx[eword] >> ebit);
+         ptr -= __builtin_popcountl(index->lcp_extend_idx[extwrd] >> extbit);
 
          eoff = index->lcp_extend->val[ptr];
       }
