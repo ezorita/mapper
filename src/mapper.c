@@ -1,5 +1,7 @@
 #include "mapper.h"
 
+#include <time.h>
+
 int main(int argc, char *argv[])
 {
    int opt_verbose = 1;
@@ -28,8 +30,111 @@ int main(int argc, char *argv[])
       return EXIT_FAILURE;
    }
 
-   
+   // Test seed function.
 
+   clock_t t = clock();
+   seedopt_t opt = {.min_len = 1, .max_len = 100, .min_loci = 1, .max_loci = 1}; // SMEM
+   int nseeds = 0;
+   for (int i = 0; i < seqs->pos; i++) {
+      // Backward-Shrink SMEMS.
+      seedstack_t * seeds = seed(seqs->seq[i].seq, opt, index);
+      // Naive SMEMS.
+      seedstack_t * nvseeds = naive_smem(seqs->seq[i].seq, opt, index);
+
+      if (seeds->pos != nvseeds->pos) {
+         fprintf(stdout,"different seed number.\n");
+         break;
+      }
+      for (int i = 0; i < seeds->pos; i++) {
+         seed_t ns = nvseeds->seed[i];
+         seed_t s = seeds->seed[i];
+         if (s.qry_pos != ns.qry_pos || s.ref_pos.sp != ns.ref_pos.sp || s.ref_pos.ep != ns.ref_pos.ep || s.ref_pos.depth != ns.ref_pos.depth) {
+            fprintf(stdout,"different seed info.\n");
+            break;
+         }
+      } 
+
+      free(seeds);
+      free(nvseeds);
+      /*
+        for (int i = 0; i < seeds->pos; i++) {
+        seed_t seed = seeds->seed[i];
+        fprintf(stdout, "seed %d: qry_pos = %d, ref_pos = %ld,%ld,%d\n", i, seed.qry_pos, seed.ref_pos.sp, seed.ref_pos.ep, seed.ref_pos.depth);
+        }
+      */
+   }
+   fprintf(stdout, "seeds: %d (%.3fms)\n", nseeds, (clock()-t)*1000.0/CLOCKS_PER_SEC);
+
+   /*
+   bwpos_t pos = {.depth = 0, .sp = 0, .ep = index->size-1};
+   // Extend 'AGCG' then shrink.
+   suffix_extend(2, pos, &pos, index); // 16,22
+   suffix_extend(1, pos, &pos, index); // 10,11
+   suffix_extend(2, pos, &pos, index); // 17,17
+   suffix_extend(0, pos, &pos, index); // 3,3
+   // Pos should be (4,3,3)
+   suffix_shrink(pos, &pos, index); // 3,3,5
+   // Pos should be (3,3,5)
+
+   pos = (bwpos_t) {.depth = 0, .sp = 0, .ep = index->size-1};
+   // Extend 'CTAGT' then shrink.
+   suffix_extend(3, pos, &pos, index); // 23,30
+   suffix_extend(2, pos, &pos, index); // 21,22
+   suffix_extend(0, pos, &pos, index); // 6,6
+   suffix_extend(3, pos, &pos, index); // 27,27
+   suffix_extend(1, pos, &pos, index); // 15,15
+   // Pos should be (5,15,15)
+   suffix_shrink(pos, &pos, index); // 4,12,15
+   // Pos should be (4,12,15)
+
+   pos = (bwpos_t) {.depth = 0, .sp = 0, .ep = index->size-1};
+   // Extend 'TAGCT' then shrink twice.
+   suffix_extend(3, pos, &pos, index); // 22,29
+   suffix_extend(1, pos, &pos, index); // 11,14
+   suffix_extend(2, pos, &pos, index); // 17,19
+   suffix_extend(0, pos, &pos, index); // 3,4
+   suffix_extend(3, pos, &pos, index); // 24,25
+   // Pos should be (24,25,5).
+   suffix_shrink(pos, &pos, index); // 23,25
+   suffix_shrink(pos, &pos, index); // 23,26
+   // Pos should be (23,26,3).
+
+   pos = (bwpos_t) {.depth = 0, .sp = 0, .ep = index->size-1};
+   // Extend 'CTAGCTAGC' then shrink.
+   suffix_extend(1, pos, &pos, index); // 8,14
+   suffix_extend(2, pos, &pos, index); // 16,19
+   suffix_extend(0, pos, &pos, index); // 2,4
+   suffix_extend(3, pos, &pos, index); // 23,25
+   suffix_extend(1, pos, &pos, index); // 11,13
+   suffix_extend(2, pos, &pos, index); // 17,18
+   suffix_extend(0, pos, &pos, index); // 3,3
+   suffix_extend(3, pos, &pos, index); // 24,24
+   suffix_extend(1, pos, &pos, index); // 12,12
+   // Pos should be (12,12,9).
+   suffix_shrink(pos, &pos, index); // 12,13,8
+   suffix_shrink(pos, &pos, index); // 11,13,5
+   suffix_shrink(pos, &pos, index); // 11,14,4
+   suffix_shrink(pos, &pos, index); // 8.14,1
+   // Pos should be (8,14,1).
+
+   pos = (bwpos_t) {.depth = 0, .sp = 0, .ep = index->size-1};
+   // Extend 'GCTAGCTA' then shrink.
+   suffix_extend(0, pos, &pos, index); // 0,7
+   suffix_extend(3, pos, &pos, index); // 23,27
+   suffix_extend(1, pos, &pos, index); // 11,14
+   suffix_extend(2, pos, &pos, index); // 17,19
+   suffix_extend(0, pos, &pos, index); // 3,4
+   suffix_extend(3, pos, &pos, index); // 24,25
+   suffix_extend(1, pos, &pos, index); // 12,13
+   suffix_extend(2, pos, &pos, index); // 18,18
+   // Pos should be (12,12,9).
+   suffix_shrink(pos, &pos, index); // 17,18,6
+   suffix_shrink(pos, &pos, index); // 17,19,5
+   suffix_shrink(pos, &pos, index); // 16,19,2
+   suffix_shrink(pos, &pos, index); // 15,21,1
+   // Pos should be (15,21,1).
+   suffix_shrink(pos, &pos, index); // 0,29,0
+   */
    return 0;
 }
 
@@ -188,16 +293,19 @@ index_format
    uint64_t lcp_idx_size = *((uint64_t *)files->lcp_file + 2);//((2*index->size + LCP_WORD_SIZE - 1)/LCP_WORD_SIZE + index->lcp_mark_int - 1)/index->lcp_mark_int * (index->lcp_mark_int + 1) + 1;
    // index
    index->lcp_sample_idx = ((uint64_t *) files->lcp_file + 3);
-   index->lcp_extend_idx = index->lcp_sample_idx + lcp_idx_size;
+   uint64_t ext_idx_size = *(index->lcp_sample_idx + lcp_idx_size);
+   index->lcp_extend_idx = index->lcp_sample_idx + lcp_idx_size + 1;
    // alloc structures
    index->lcp_sample = malloc(sizeof(lcpdata_t));
    if (index->lcp_sample == NULL) return NULL;
    index->lcp_extend = malloc(sizeof(list32_t));
+   if (index->lcp_extend == NULL) return NULL;
    // data
-   index->lcp_sample->size = *(index->lcp_extend_idx + lcp_idx_size)/2;
-   index->lcp_sample->lcp = (lcpval_t *)(index->lcp_extend_idx + lcp_idx_size + 1);
-   index->lcp_extend->size = *((uint64_t *)(index->lcp_sample->lcp + index->lcp_sample->size));
-   index->lcp_extend->val = ((int32_t *)(index->lcp_sample->lcp + index->lcp_sample->size)) + 1;
+   index->lcp_sample->size = *(index->lcp_extend_idx + ext_idx_size)/2;
+   index->lcp_sample->lcp = (lcpval_t *)(index->lcp_extend_idx + ext_idx_size + 1);
+   uint64_t * lcpext_size = (uint64_t *)(index->lcp_sample->lcp + index->lcp_sample->size);
+   index->lcp_extend->size = *lcpext_size;
+   index->lcp_extend->val = (int32_t *)(lcpext_size + 1);
    //CHR.
    index->chr = files->chr;
    
