@@ -116,9 +116,10 @@
      ------------------------------------------------
      mark_int |  uint64_t  |   64 bits  |      1
      min_depth|  uint64_t  |   64 bits  |      1
-     idx_size |  uint64_t  |   64 bits  |      1
-     lcp_index|  uint64_t  |   64 bits  |  idx_size
-     ext_index|  uint64_t  |   64 bits  |  idx_size
+     ilcp_size|  uint64_t  |   64 bits  |      1
+     lcp_index|  uint64_t  |   64 bits  |  ilcp_size
+     iext_size|  uint64_t  |   64 bits  |      1
+     ext_index|  uint64_t  |   64 bits  |  iext_size
      lcp_size |  uint64_t  |   64 bits  |      1
      lcp_array|    int8_t  |    8 bits  | 2*lcp_size
      ext_size |  uint64_t  |   64 bits  |      1

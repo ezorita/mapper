@@ -29,7 +29,8 @@ typedef struct cstack_t    cstack_t;
 typedef struct lcp_t       lcp_t;
 
 struct lcp_t {
-   uint64_t    idx_size;
+   uint64_t    lcpidx_size;
+   uint64_t    extidx_size;
    uint64_t  * idx_sample;
    stack8_t  * lcp_sample;
    uint64_t  * idx_extend;

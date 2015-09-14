@@ -191,16 +191,21 @@ write_index
    uint64_t min_depth = LCP_MIN_DEPTH;
    while (s < sizeof(uint64_t)) s += write(flc, &min_depth, sizeof(uint64_t));
    bytes += s;
+   // Write sample index szie.
    s = 0;
-   while(s < sizeof(uint64_t)) s += write(flc, &(lcp.idx_size), sizeof(uint64_t));
+   while(s < sizeof(uint64_t)) s += write(flc, &(lcp.lcpidx_size), sizeof(uint64_t));
    bytes += s;
    // Write sample index.
    s = 0;
-   while(s < lcp.idx_size*sizeof(uint64_t)) s += write(flc, lcp.idx_sample + s/sizeof(uint64_t), lcp.idx_size*sizeof(uint64_t) - s);
+   while(s < lcp.lcpidx_size*sizeof(uint64_t)) s += write(flc, lcp.idx_sample + s/sizeof(uint64_t), lcp.lcpidx_size*sizeof(uint64_t) - s);
+   bytes += s;
+   // Write extended index size.
+   s = 0;
+   while(s < sizeof(uint64_t)) s += write(flc, &(lcp.extidx_size), sizeof(uint64_t));
    bytes += s;
    // Write extended index.
    s = 0;
-   while(s < lcp.idx_size*sizeof(uint64_t)) s += write(flc, lcp.idx_extend + s/sizeof(uint64_t), lcp.idx_size*sizeof(uint64_t) - s);
+   while(s < lcp.extidx_size*sizeof(uint64_t)) s += write(flc, lcp.idx_extend + s/sizeof(uint64_t), lcp.extidx_size*sizeof(uint64_t) - s);
    bytes += s;
    // Write LCP samples.
    s = 0;
@@ -582,7 +587,6 @@ naive_lcp
          int offset = tcorner.pos - (i-1);
          if (cl >= min_depth) {
             lcp_index_set(lcpsample, i-1);
-            if (offset < -127) lcp_index_set(lcpext, i-1);
             if (stack_push_lcp(lcp, pl, offset)) return -1;
          }
          // Push corner to the stack.
@@ -603,7 +607,6 @@ naive_lcp
                int offset = i-1 - bcorner.pos;
                memcpy((*lcp)->val + bcorner.ptr, &offset, sizeof(int));
                lcp_index_set(lcpsample, bcorner.pos);
-               if (offset > 127) lcp_index_set(lcpext, bcorner.pos);
             }
          }
          // Save current bottom corner.
@@ -630,7 +633,6 @@ naive_lcp
          int offset = idxsize-1 - bcorner.pos;
          memcpy((*lcp)->val + bcorner.ptr, &offset, sizeof(int));
          lcp_index_set(lcpsample, bcorner.pos);
-         if (offset > 127) lcp_index_set(lcpext, bcorner.pos);
       }
    }
 
@@ -654,9 +656,11 @@ naive_lcp
       if (val < -127) {
          stack->val[p++] = (int8_t)-128;
          stack32_push(ext, val);
+         lcp_index_set(lcpext,p/2);
       } else if (val > 127) {
          stack->val[p++] = (int8_t)127;
          stack32_push(ext, val);
+         lcp_index_set(lcpext,p/2);
       } else {
          stack->val[p++] = (int8_t)val - (val > 0);
       }
@@ -698,6 +702,13 @@ compute_lcp
 
    naive_lcp(min_depth, idxsize, lcp_sample, lcp_extend, &stack, &ext, sar, sar_bits, genome);
 
+   // Resize lcp_extend index.
+   uint64_t lcpext_words = (stack->pos + LCP_WORD_SIZE - 1)/LCP_WORD_SIZE;
+   uint64_t lcpext_ints  = (lcpext_words + LCP_MARK_INTERVAL - 1)/LCP_MARK_INTERVAL;
+   uint64_t lcpext_marks = lcpext_ints + 1;
+   uint64_t lcpext_size = lcpext_ints*LCP_MARK_INTERVAL + lcpext_marks;
+   lcp_extend = realloc(lcp_extend, lcpext_size * sizeof(uint64_t));
+
    // LCP sample marks.
    uint64_t abs_pos = 0;
    for (uint64_t i = 0, w = 0; i < words; i++) {
@@ -708,13 +719,13 @@ compute_lcp
 
    // LCP ext marks.
    abs_pos = 0;
-   for (uint64_t i = 0, w = 0; i < words; i++) {
+   for (uint64_t i = 0, w = 0; i < lcpext_words; i++) {
       if (i%LCP_MARK_INTERVAL == 0) lcp_extend[w++] = abs_pos;
       abs_pos += __builtin_popcountl(lcp_extend[w++]);
    }
-   lcp_extend[index_size - 1] = abs_pos;
+   lcp_extend[lcpext_size - 1] = abs_pos;
 
-   lcp_t lcp = {.idx_size = index_size, .idx_sample = lcp_sample, .idx_extend = lcp_extend, .lcp_sample = stack, .lcp_extend = ext};
+   lcp_t lcp = {.lcpidx_size = index_size, .extidx_size = lcpext_size, .idx_sample = lcp_sample, .idx_extend = lcp_extend, .lcp_sample = stack, .lcp_extend = ext};
 
    // Return stack.
    return lcp;
