@@ -258,6 +258,8 @@ suffix_ssv_search
       if (++pbit == LCP_WORD_SIZE) {
          pbit = 0;
          pword++;
+         if (pword % (LCP_MARK_INTERVAL+1) == 0)
+            pword++;
       }
       uint64_t w = index->lcp_sample_idx[pword++] >> pbit;
       while (samples > 0) {
@@ -273,6 +275,8 @@ suffix_ssv_search
             offset += LCP_WORD_SIZE - pbit;
             pbit = 0;
          }
+         if (pword % (LCP_MARK_INTERVAL+1) == 0)
+            pword++;
          w = index->lcp_sample_idx[pword++];
       }
       newpos->ep = pos + offset;
@@ -290,6 +294,8 @@ suffix_ssv_search
       if (--nbit == -1) {
          nbit = LCP_WORD_SIZE-1;
          nword--;
+         if (nword % (LCP_MARK_INTERVAL+1) == 0)
+            nword--;
       }
       uint64_t w = index->lcp_sample_idx[nword--] << (LCP_WORD_SIZE - 1 - nbit);
       while (samples > 0) {
@@ -305,6 +311,7 @@ suffix_ssv_search
             offset -= nbit + 1;
             nbit = LCP_WORD_SIZE - 1;
          }
+         if (nword % (LCP_MARK_INTERVAL+1) == 0) nword--;
          w = index->lcp_sample_idx[nword--];
       }
       newpos->sp = pos + offset;
