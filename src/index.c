@@ -654,13 +654,13 @@ naive_lcp
       // Compress offset.
       memcpy(&val, stack->val + i, sizeof(int32_t));
       if (val < -127) {
+         lcp_index_set(lcpext,p/2);
          stack->val[p++] = (int8_t)-128;
          stack32_push(ext, val);
-         lcp_index_set(lcpext,p/2);
       } else if (val > 127) {
+         lcp_index_set(lcpext,p/2);
          stack->val[p++] = (int8_t)127;
          stack32_push(ext, val);
-         lcp_index_set(lcpext,p/2);
       } else {
          stack->val[p++] = (int8_t)val - (val > 0);
       }
