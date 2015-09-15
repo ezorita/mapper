@@ -432,7 +432,7 @@ seq_lcp
 )
 {
    int lcp = 0;
-   while (seq_a[lcp] == seq_b[lcp] && lcp < 255) lcp++;
+   while (translate[(int)seq_a[lcp]] == translate[(int)seq_b[lcp]] && lcp < 255) lcp++;
    return lcp;
 }
 
