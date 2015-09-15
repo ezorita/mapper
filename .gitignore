@@ -1,6 +1,6 @@
 \#*\#
 .\#*
-*.fasta*
+*.fast*
 *.fmi
 *.index
 bwmapper
