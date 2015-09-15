@@ -221,7 +221,7 @@ write_index
    while(s < sizeof(uint64_t)) s+= write(flc, &nsamples, sizeof(uint64_t));
    bytes += s;
    s = 0;
-   while(s < nsamples*sizeof(int32_t)) s += write(flc, (lcp.lcp_extend)->val + s/sizeof(int32_t), nsamples * sizeof(int32_t) - s);
+   while(s < nsamples*sizeof(int64_t)) s += write(flc, (lcp.lcp_extend)->val + s/sizeof(int64_t), nsamples * sizeof(int64_t) - s);
    bytes += s;
    stot += bytes;
    fprintf(stderr, " %ld bytes written.\n",bytes);
@@ -386,13 +386,13 @@ stack_push_lcp
 (
  stack8_t **  stackp,
  uint8_t      lcp,
- int32_t      offset
+ int64_t      offset
 )
 {
    stack8_t * stack = *stackp;
    // Realloc stack if full.
-   if (stack->pos + 4 >= stack->size) {
-      uint64_t newsize = (stack->size*2 <= stack->pos+4 ? stack->pos+5 : stack->size * 2);
+   if (stack->pos + sizeof(uint8_t) + sizeof(int64_t) >= stack->size) {
+      uint64_t newsize = (stack->size*2 < stack->pos+sizeof(int64_t)+sizeof(int8_t) ? stack->pos+sizeof(int64_t)+sizeof(int8_t) : stack->size * 2);
       *stackp = stack = realloc(stack, sizeof(stack8_t) + newsize);
       if (stack == NULL) return -1;
       stack->size = newsize;
@@ -400,8 +400,8 @@ stack_push_lcp
    // Save LCP value.
    stack->val[stack->pos++] = lcp;
    // Save extended offset to parent as int32.
-   memcpy(stack->val + stack->pos, &offset, sizeof(int32_t));
-   stack->pos += 4;
+   memcpy(stack->val + stack->pos, &offset, sizeof(int64_t));
+   stack->pos += sizeof(int64_t);
 
    return 0;
 }
@@ -498,7 +498,7 @@ sample_compar
 stack8_t *
 stack8_new
 (
- int size
+ size_t size
 )
 {
    stack8_t * stack = malloc(sizeof(stack8_t) + size);
@@ -508,30 +508,30 @@ stack8_new
    return stack;
 }
 
-stack32_t *
-stack32_new
+stack64_t *
+stack64_new
 (
- int size
+ size_t size
 )
 {
-   stack32_t * stack = malloc(sizeof(stack32_t) + size * sizeof(int));
+   stack64_t * stack = malloc(sizeof(stack64_t) + size * sizeof(int64_t));
    if (stack == NULL) return NULL;
    stack->pos = 0;
    stack->size = size;
    return stack;
 }
 
-int32_t
-stack32_push
+int64_t
+stack64_push
 (
- stack32_t ** stackp,
- int32_t      val
+ stack64_t ** stackp,
+ int64_t      val
 )
 {
-   stack32_t * stack = *stackp;
+   stack64_t * stack = *stackp;
    if (stack->pos >= stack->size) {
       uint64_t newsize = stack->size * 2;
-      *stackp = stack = realloc(stack, sizeof(stack32_t) + newsize * sizeof(int));
+      *stackp = stack = realloc(stack, sizeof(stack64_t) + newsize * sizeof(int64_t));
       if (stack == NULL) return -1;
       stack->size = newsize;
    }
@@ -539,10 +539,10 @@ stack32_push
    return 0;
 }
 
-int32_t
-stack32_pop
+int64_t
+stack64_pop
 (
- stack32_t * stack
+ stack64_t * stack
 )
 {
    return stack->val[--stack->pos];
@@ -557,7 +557,7 @@ naive_lcp
  uint64_t    * lcpsample,
  uint64_t    * lcpext,
  stack8_t   ** lcp,
- stack32_t  ** ext,
+ stack64_t  ** ext,
  uint64_t    * sar,
  int           sar_bits,
  char        * genome
@@ -566,7 +566,7 @@ naive_lcp
    cstack_t * top = cstack_new(STACK_LCP_INITIAL_SIZE);
    cstack_t * bottom = cstack_new(STACK_LCP_INITIAL_SIZE);
    // Push topmost corner.
-   corner_push(&top, (lcpcorner_t){-1, 0, 0});
+   corner_push(&top, (lcpcorner_t){-1, 0, 0, 0});
    if (min_depth == 0) {
       lcp_index_set(lcpsample, 0);
       if (stack_push_lcp(lcp, 0, -1)) return -1;
@@ -584,7 +584,7 @@ naive_lcp
       if (cl > pl) {
          // Top corner - save sample.
          lcpcorner_t tcorner = top->c[top->pos-1];
-         int offset = tcorner.pos - (i-1);
+         int64_t offset = tcorner.pos - (i-1);
          if (cl >= min_depth) {
             lcp_index_set(lcpsample, i-1);
             if (stack_push_lcp(lcp, pl, offset)) return -1;
@@ -604,13 +604,13 @@ naive_lcp
             lcpcorner_t bcorner = corner_pop(bottom);
             // Bottom corner - update sample.
             if (bcorner.lcp >= min_depth) {
-               int offset = i-1 - bcorner.pos;
-               memcpy((*lcp)->val + bcorner.ptr, &offset, sizeof(int));
+               int64_t offset = i-1 - bcorner.pos;
+               memcpy((*lcp)->val + bcorner.ptr, &offset, sizeof(int64_t));
                lcp_index_set(lcpsample, bcorner.pos);
             }
          }
          // Save current bottom corner.
-         corner_push(&bottom, (lcpcorner_t){pl, cl, i-1, (*lcp)->pos - 4});
+         corner_push(&bottom, (lcpcorner_t){pl, cl, i-1, (*lcp)->pos - sizeof(int64_t)});
          // Remove top corners from stack.
          while (top->pos > 0) {
             if (top->c[top->pos-1].lcp < cl) break;
@@ -631,7 +631,7 @@ naive_lcp
       // Bottom corner - update sample.
       if (bcorner.lcp >= min_depth) {
          int offset = idxsize-1 - bcorner.pos;
-         memcpy((*lcp)->val + bcorner.ptr, &offset, sizeof(int));
+         memcpy((*lcp)->val + bcorner.ptr, &offset, sizeof(int64_t));
          lcp_index_set(lcpsample, bcorner.pos);
       }
    }
@@ -646,25 +646,25 @@ naive_lcp
 
    // Compact LCP.
    stack8_t * stack = *lcp;
-   int32_t  val = 0;
+   int64_t  val = 0;
    uint64_t p = 0, i = 0;
    while (i < stack->pos) {
       // Save LCP value.
       stack->val[p++] = stack->val[i++];
       // Compress offset.
-      memcpy(&val, stack->val + i, sizeof(int32_t));
+      memcpy(&val, stack->val + i, sizeof(int64_t));
       if (val < -127) {
          lcp_index_set(lcpext,p/2);
          stack->val[p++] = (int8_t)-128;
-         stack32_push(ext, val);
+         stack64_push(ext, val);
       } else if (val > 127) {
          lcp_index_set(lcpext,p/2);
          stack->val[p++] = (int8_t)127;
-         stack32_push(ext, val);
+         stack64_push(ext, val);
       } else {
          stack->val[p++] = (int8_t)val - (val > 0);
       }
-      i += 4;
+      i += sizeof(int64_t);
    }
 
    stack->pos = p;
@@ -672,7 +672,7 @@ naive_lcp
    if (*lcp == NULL) return -1;
    (*lcp)->size = p;
 
-   *ext = realloc(*ext, sizeof(stack32_t) + (*ext)->pos*sizeof(int32_t));
+   *ext = realloc(*ext, sizeof(stack64_t) + (*ext)->pos*sizeof(int64_t));
    if (*ext == NULL) return -1;
    (*ext)->size = (*ext)->pos;
    return 0;
@@ -691,7 +691,7 @@ compute_lcp
 {
    // Allocate LCP stack.
    stack8_t * stack = stack8_new(STACK_LCP_INITIAL_SIZE);
-   stack32_t * ext  = stack32_new(STACK_LCP_INITIAL_SIZE);
+   stack64_t * ext  = stack64_new(STACK_LCP_INITIAL_SIZE);
    // Allocate LCP index.
    uint64_t words = (idxsize + LCP_WORD_SIZE - 1)/LCP_WORD_SIZE;
    uint64_t intervals = (words + LCP_MARK_INTERVAL - 1) / LCP_MARK_INTERVAL;

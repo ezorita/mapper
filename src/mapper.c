@@ -33,38 +33,27 @@ int main(int argc, char *argv[])
    // Test seed function.
 
    clock_t t = clock();
-   seedopt_t opt = {.min_len = 1, .max_len = 100, .min_loci = 1, .max_loci = 1}; // SMEM
-   int nseeds = 0;
+   seedopt_t opt = {.min_len = 1, .max_len = 1000, .min_loci = 1, .max_loci = 1}; // SMEM
+   uint64_t nseeds = 0;
+
    for (int i = 0; i < seqs->pos; i++) {
       // Backward-Shrink SMEMS.
       seedstack_t * seeds = seed(seqs->seq[i].seq, opt, index);
-      // Naive SMEMS.
-      seedstack_t * nvseeds = naive_smem(seqs->seq[i].seq, opt, index);
-
-      if (seeds->pos != nvseeds->pos) {
-         fprintf(stdout,"different seed number.\n");
-         break;
-      }
-      for (int i = 0; i < seeds->pos; i++) {
-         seed_t ns = nvseeds->seed[i];
-         seed_t s = seeds->seed[i];
-         if (s.qry_pos != ns.qry_pos || s.ref_pos.sp != ns.ref_pos.sp || s.ref_pos.ep != ns.ref_pos.ep || s.ref_pos.depth != ns.ref_pos.depth) {
-            fprintf(stdout,"different seed info.\n");
-            break;
-         }
-      } 
-
+      nseeds += seeds->pos;
       free(seeds);
-      free(nvseeds);
-      /*
-        for (int i = 0; i < seeds->pos; i++) {
-        seed_t seed = seeds->seed[i];
-        fprintf(stdout, "seed %d: qry_pos = %d, ref_pos = %ld,%ld,%d\n", i, seed.qry_pos, seed.ref_pos.sp, seed.ref_pos.ep, seed.ref_pos.depth);
-        }
-      */
    }
-   fprintf(stdout, "seeds: %d (%.3fms)\n", nseeds, (clock()-t)*1000.0/CLOCKS_PER_SEC);
-
+   fprintf(stdout, "seeds: %ld (%.3fms)\n", nseeds, (clock()-t)*1000.0/CLOCKS_PER_SEC);
+   nseeds = 0;
+   /*
+   t = clock();
+   for (int i = 0; i < seqs->pos; i++) {
+      // Naive SMEMS.
+      seedstack_t * seeds = naive_smem(seqs->seq[i].seq, opt, index);
+      nseeds += seeds->pos;
+      free(seeds);
+   }
+   fprintf(stdout, "seeds: %ld (%.3fms)\n", nseeds, (clock()-t)*1000.0/CLOCKS_PER_SEC);
+*/
    /*
    bwpos_t pos = {.depth = 0, .sp = 0, .ep = index->size-1};
    // Extend 'AGCG' then shrink.
@@ -298,14 +287,14 @@ index_format
    // alloc structures
    index->lcp_sample = malloc(sizeof(lcpdata_t));
    if (index->lcp_sample == NULL) return NULL;
-   index->lcp_extend = malloc(sizeof(list32_t));
+   index->lcp_extend = malloc(sizeof(list64_t));
    if (index->lcp_extend == NULL) return NULL;
    // data
    index->lcp_sample->size = *(index->lcp_extend_idx + ext_idx_size)/2;
    index->lcp_sample->lcp = (lcpval_t *)(index->lcp_extend_idx + ext_idx_size + 1);
    uint64_t * lcpext_size = (uint64_t *)(index->lcp_sample->lcp + index->lcp_sample->size);
    index->lcp_extend->size = *lcpext_size;
-   index->lcp_extend->val = (int32_t *)(lcpext_size + 1);
+   index->lcp_extend->val = (int64_t *)(lcpext_size + 1);
    //CHR.
    index->chr = files->chr;
    

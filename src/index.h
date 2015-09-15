@@ -22,7 +22,7 @@
 #define GENOME_SIZE   100000
 
 typedef struct stack8_t    stack8_t;
-typedef struct stack32_t   stack32_t;
+typedef struct stack64_t   stack64_t;
 typedef struct lcpsample_t lcpsample_t;
 typedef struct lcpcorner_t lcpcorner_t;
 typedef struct cstack_t    cstack_t;
@@ -34,13 +34,13 @@ struct lcp_t {
    uint64_t  * idx_sample;
    stack8_t  * lcp_sample;
    uint64_t  * idx_extend;
-   stack32_t * lcp_extend;
+   stack64_t * lcp_extend;
 };
 
-struct stack32_t {
+struct stack64_t {
    uint64_t pos;
    uint64_t size;
-   int32_t  val[];
+   int64_t  val[];
 };
 
 struct stack8_t {
@@ -74,20 +74,20 @@ uint64_t   * compute_occ      (char * genome, uint64_t * sa, uint64_t gsize, uin
 uint64_t   * compute_c        (uint64_t * occ);
 uint64_t   * compute_lut      (uint64_t * c, uint64_t * occ, int depth);
 void         recursive_lut    (uint64_t * c, uint64_t * occ, uint64_t * lut, uint64_t p, int d, int maxd, int * path);
-int          stack_push_lcp   (stack8_t ** lcp_stack, uint8_t lcp, int32_t offset);
+int          stack_push_lcp   (stack8_t ** lcp_stack, uint8_t lcp, int64_t offset);
 void         lcp_index_sample (uint64_t * lcp_index, uint64_t pos, int size32);
 lcp_t        compute_lcp      (uint64_t idxsize, int min_depth, int sar_bits, uint64_t * sar, char * genome);
 char *       compact_genome   (char * filename, uint64_t * genomesize);
 uint64_t     compact_array    (uint64_t * array, uint64_t len, int bits);
-int64_t      naive_lcp        (int min_depth, uint64_t idxsize, uint64_t * lcpsample, uint64_t * lcpext, stack8_t ** lcp, stack32_t ** ext, uint64_t * sar, int sar_bits, char * genome);
+int64_t      naive_lcp        (int min_depth, uint64_t idxsize, uint64_t * lcpsample, uint64_t * lcpext, stack8_t ** lcp, stack64_t ** ext, uint64_t * sar, int sar_bits, char * genome);
 lcpcorner_t  corner_pop       (cstack_t * stack);
 int          corner_push      (cstack_t ** stack, lcpcorner_t c);
 cstack_t   * cstack_new       (int size);
 int          seq_lcp          (char * seq_a, char * seq_b);
 
-stack8_t   * stack8_new       (int size);
-stack32_t  * stack32_new      (int size);
-int32_t      stack32_push     (stack32_t ** stackp, int32_t val);
-int32_t      stack32_pop      (stack32_t * stack);
+stack8_t   * stack8_new       (size_t size);
+stack64_t  * stack64_new      (size_t size);
+int64_t      stack64_push     (stack64_t ** stackp, int64_t val);
+int64_t      stack64_pop      (stack64_t * stack);
 
 #endif

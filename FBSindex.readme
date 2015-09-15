@@ -123,7 +123,7 @@
      lcp_size |  uint64_t  |   64 bits  |      1
      lcp_array|    int8_t  |    8 bits  | 2*lcp_size
      ext_size |  uint64_t  |   64 bits  |      1
-     ext_array|   int32_t  |   32 bits  |  ext_size
+     ext_array|   int64_t  |   64 bits  |  ext_size
 
 
      (**) ceil(ceil(idxsize/64)/mark_int)*(mark_int+1) + 1
