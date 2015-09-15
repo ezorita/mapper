@@ -107,7 +107,7 @@ write_index
    // Compress suffix array.
    fprintf(stderr, "compressing  suffix array ..."); tstart = clock();
    uint64_t sa_bits = 0;
-   while (gsize > (1 << sa_bits)) sa_bits++;
+   while (gsize > ((uint64_t)1 << sa_bits)) sa_bits++;
    uint64_t sa_size = compact_array(sa, gsize, sa_bits);
    sa = realloc(sa, sa_size*sizeof(uint64_t));
    fprintf(stderr, " done [%.3fs]\n", (clock()-tstart)*1.0/CLOCKS_PER_SEC);
