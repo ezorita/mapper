@@ -72,8 +72,6 @@ int          write_index      (char * filename);
 int64_t    * compute_sa       (char * genome, uint64_t gsize);
 uint64_t   * compute_occ      (char * genome, uint64_t * sa, uint64_t gsize, uint64_t * occ_size);
 uint64_t   * compute_c        (uint64_t * occ);
-uint64_t   * compute_lut      (uint64_t * c, uint64_t * occ, int depth);
-void         recursive_lut    (uint64_t * c, uint64_t * occ, uint64_t * lut, uint64_t p, int d, int maxd, int * path);
 int          stack_push_lcp   (stack8_t ** lcp_stack, uint8_t lcp, int64_t offset);
 void         lcp_index_sample (uint64_t * lcp_index, uint64_t pos, int size32);
 lcp_t        compute_lcp      (uint64_t idxsize, int min_depth, int sar_bits, uint64_t * sar, char * genome);
@@ -89,5 +87,9 @@ stack8_t   * stack8_new       (size_t size);
 stack64_t  * stack64_new      (size_t size);
 int64_t      stack64_push     (stack64_t ** stackp, int64_t val);
 int64_t      stack64_pop      (stack64_t * stack);
+
+// Deprecated functions.
+//uint64_t   * compute_lut      (uint64_t * c, uint64_t * occ, int depth);
+//void         recursive_lut    (uint64_t * c, uint64_t * occ, uint64_t * lut, uint64_t p, int d, int maxd, int * path);
 
 #endif

@@ -72,8 +72,8 @@ struct index_t {
    uint64_t    sa_bits;
    uint64_t  * sa;
    // Lookup table.
-   uint64_t    lut_kmer;
-   uint64_t  * lut;
+   //   uint64_t    lut_kmer;
+   //   uint64_t  * lut;
    // LCP index.
    uint64_t    lcp_mark_int;
    uint64_t    lcp_min_depth;
@@ -107,6 +107,9 @@ int      suffix_extend     (int nt, bwpos_t pos, bwpos_t * newpos, index_t * ind
 int      suffix_shrink     (bwpos_t pos, bwpos_t * newpos, index_t * index);
 int      suffix_ssv_search (uint64_t pos, bwpos_t * newpos, index_t * index);
 int      suffix_ssv        (bwpos_t pos, bwpos_t * newpos, index_t * index);
-int      suffix_string     (char * suf, int slen, bwpos_t * newpos, index_t * index);
+int      suffix_string     (char * suf, int slen, uint64_t minloci, bwpos_t * newpos, index_t * index);
+
+// Deprecated functions.
+//int      suffix_lut        (char * suf, int slen, bwpos_t * newpos, index_t * index);
 
 #endif

@@ -44,9 +44,9 @@ write_index
    char * genfile = malloc(strlen(filename)+5);
    strcpy(genfile, filename);
    strcpy(genfile + strlen(filename), ".gen");
-   char * lutfile = malloc(strlen(filename)+5);
-   strcpy(lutfile, filename);
-   strcpy(lutfile + strlen(filename), ".lut");
+   //   char * lutfile = malloc(strlen(filename)+5);
+   //   strcpy(lutfile, filename);
+   //   strcpy(lutfile + strlen(filename), ".lut");
    char * lcpfile = malloc(strlen(filename)+5);
    strcpy(lcpfile, filename);
    strcpy(lcpfile + strlen(filename), ".lcp");
@@ -55,7 +55,7 @@ write_index
    int fsa = open(sarfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
    int foc = open(occfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
    int fgn = open(genfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-   int flt = open(lutfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+   //   int flt = open(lutfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
    int flc = open(lcpfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
    // Error control.
    if (fsa == -1) {
@@ -70,10 +70,12 @@ write_index
       fprintf(stderr, "error in write_index (open %s): %s.\n", genfile, strerror(errno));
       exit(EXIT_FAILURE);
    }
+   /*
    if (flt == -1) {
       fprintf(stderr, "error in write_index (open %s): %s.\n", lutfile, strerror(errno));
       exit(EXIT_FAILURE);
    }
+   */
    if (flc == -1) {
       fprintf(stderr, "error in write_index (open %s): %s.\n", lcpfile, strerror(errno));
       exit(EXIT_FAILURE);
@@ -82,7 +84,7 @@ write_index
    free(sarfile);
    free(occfile);
    free(genfile);
-   free(lutfile);
+   //   free(lutfile);
    free(lcpfile);
 
    clock_t tstart;
@@ -117,7 +119,8 @@ write_index
    uint64_t * c = compute_c(occ + occ_size - NUM_BASES);
    fprintf(stderr, " done [%.3fs]\n", (clock()-tstart)*1.0/CLOCKS_PER_SEC);
 
-   // Compute LUT.
+   // Compute LUT
+   /*
    fprintf(stderr, "computing    lookup table ..."); tstart = clock();
    uint64_t * lut = compute_lut(c, occ, LUT_KMER_SIZE);
    fprintf(stderr, " done [%.3fs]\n", (clock()-tstart)*1.0/CLOCKS_PER_SEC);
@@ -129,6 +132,19 @@ write_index
    lut = realloc(lut, lut_size*sizeof(uint64_t));
    fprintf(stderr, " done [%.3fs]\n", (clock()-tstart)*1.0/CLOCKS_PER_SEC);
 
+   // Write .LUT file
+   fprintf(stderr, "writing lut...");
+   bytes = s = 0;
+   uint64_t kmer_size = LUT_KMER_SIZE;
+   while (s < sizeof(uint64_t)) s += write(flt, &kmer_size, sizeof(uint64_t));
+   bytes += s;
+   s = 0;
+   while (s < lut_size*sizeof(uint64_t)) s += write(flt, lut + s/sizeof(uint64_t), lut_size*sizeof(uint64_t) - s);
+   bytes += s;
+   stot += bytes;
+   fprintf(stderr, " %ld bytes written.\n",bytes);
+   free(lut);
+   */
    // Write .OCC file
    fprintf(stderr, "writing occ...");
    // mark interval
@@ -146,18 +162,6 @@ write_index
    stot += s;
    fprintf(stderr, " %ld bytes written.\n",stot);
    free(c); free(occ);
-   // Write .LUT file
-   fprintf(stderr, "writing lut...");
-   bytes = s = 0;
-   uint64_t kmer_size = LUT_KMER_SIZE;
-   while (s < sizeof(uint64_t)) s += write(flt, &kmer_size, sizeof(uint64_t));
-   bytes += s;
-   s = 0;
-   while (s < lut_size*sizeof(uint64_t)) s += write(flt, lut + s/sizeof(uint64_t), lut_size*sizeof(uint64_t) - s);
-   bytes += s;
-   stot += bytes;
-   fprintf(stderr, " %ld bytes written.\n",bytes);
-   free(lut);
    // Compute LCP.
    fprintf(stderr, "computing    LCP intervals..."); tstart = clock();
    lcp_t lcp = compute_lcp(gsize, LCP_MIN_DEPTH, sa_bits, sa, genome);
@@ -332,54 +336,6 @@ compute_c
    for (int i = 1; i <= NUM_BASES; i++) C[i] = C[i-1] + occ[i-1];
    return C;
 }
-
-uint64_t *
-compute_lut
-(
- uint64_t * c,
- uint64_t * occ,
- int        depth
-)
-{
-   // Alloc LUT table.
-   uint64_t * lut = malloc((1 << (2*depth))*sizeof(uint64_t));
-   if (lut == NULL) return NULL;
-   // Recursively compute k-mer start-end indices.
-   int path[depth];
-   recursive_lut(c,occ,lut,0,0,depth,path);
-
-   return lut;
-}
-
-void
-recursive_lut
-(
- uint64_t * c,
- uint64_t * occ,
- uint64_t * lut,
- uint64_t   ptr,
- int        d,
- int        maxd,
- int      * path
-)
-{
-   if (d == maxd) {
-      // Compute position from path.
-      uint64_t idx = 0;
-      for (int i = 0; i < maxd; i++) {
-         idx += path[i] * (1 << (2*i));
-      }
-      lut[idx] = ptr;
-      return;
-   }
-   // 'N' is not included.
-   for (int i = 0; i < NUM_BASES - 1; i++) {
-      uint64_t newptr = c[i] + get_occ_nt(ptr-1,occ,i);
-      path[d] = i;
-      recursive_lut(c,occ,lut,newptr,d+1,maxd,path);
-   }
-}
-
 
 int
 stack_push_lcp
@@ -847,3 +803,52 @@ compact_array
 
    return word + (lastbit > 0);
 }
+
+/*
+uint64_t *
+compute_lut
+(
+ uint64_t * c,
+ uint64_t * occ,
+ int        depth
+)
+{
+   // Alloc LUT table.
+   uint64_t * lut = malloc((1 << (2*depth))*sizeof(uint64_t));
+   if (lut == NULL) return NULL;
+   // Recursively compute k-mer start-end indices.
+   int path[depth];
+   recursive_lut(c,occ,lut,0,0,depth,path);
+
+   return lut;
+}
+
+void
+recursive_lut
+(
+ uint64_t * c,
+ uint64_t * occ,
+ uint64_t * lut,
+ uint64_t   ptr,
+ int        d,
+ int        maxd,
+ int      * path
+)
+{
+   if (d == maxd) {
+      // Compute position from path.
+      uint64_t idx = 0;
+      for (int i = 0; i < maxd; i++) {
+         idx += path[i] * (1 << (2*i));
+      }
+      lut[idx] = ptr;
+      return;
+   }
+   // 'N' is not included.
+   for (int i = 0; i < NUM_BASES - 1; i++) {
+      uint64_t newptr = c[i] + get_occ_nt(ptr-1,occ,i);
+      path[d] = i;
+      recursive_lut(c,occ,lut,newptr,d+1,maxd,path);
+   }
+}
+*/

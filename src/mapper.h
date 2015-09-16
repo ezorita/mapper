@@ -38,7 +38,7 @@ struct idxfiles_t {
    void      * occ_file;
    void      * sa_file;
    void      * lcp_file;
-   void      * lut_file;
+//   void      * lut_file;
    chr_t     * chr;
 };
 

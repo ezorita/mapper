@@ -192,6 +192,7 @@ index_open
    free(lcp_file);
 
    // Open LUT file.
+   /*
    char * lut_file = malloc(strlen(file)+5);
    strcpy(lut_file, file);
    strcpy(lut_file+strlen(file), ".lut");
@@ -201,7 +202,7 @@ index_open
       return NULL;
    }
    free(lut_file);
-
+   */
    // Load OCC index.
    long idxsize = lseek(fd_occ, 0, SEEK_END);
    lseek(fd_occ, 0, SEEK_SET);
@@ -239,6 +240,7 @@ index_open
       return NULL;
    }
    // Load LUT index.
+   /*
    idxsize = lseek(fd_lut, 0, SEEK_END);
    lseek(fd_lut, 0, SEEK_SET);
    files->lut_file = mmap(NULL, idxsize, PROT_READ, MMAP_FLAGS, fd_lut, 0);
@@ -247,7 +249,7 @@ index_open
       fprintf(stderr, "error mmaping .lut index file: %s.\n", strerror(errno));
       return NULL;
    }
-
+   */
    return files;
 
 }
@@ -273,8 +275,8 @@ index_format
    index->sa_bits = *((uint64_t *) files->sa_file);
    index->sa      = ((uint64_t *) files->sa_file) + 1;
    // LUT.
-   index->lut_kmer = *((uint64_t *) files->lut_file);
-   index->lut = ((uint64_t *) files->lut_file) + 1;
+   //   index->lut_kmer = *((uint64_t *) files->lut_file);
+   //   index->lut = ((uint64_t *) files->lut_file) + 1;
    // LCP.
    // params
    index->lcp_mark_int = *((uint64_t *)files->lcp_file);

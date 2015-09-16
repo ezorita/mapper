@@ -152,19 +152,28 @@ extend_fw
    return (fmdpos_t){newpos.rp, newpos.fp, newpos.sz};
 }
 
+
 int
 suffix_string
 (
  char    * suf,
  int       slen,
+ uint64_t  minloci,
  bwpos_t * newpos,
  index_t * index
 )
+// Extends from *suf until *(suf+slen-1) is reached or loci < minloci.
 {
-   bwpos_t pos = (bwpos_t){0,0,index->size - 1};
-   int i = slen-1;
-   while(i >= 0) if(suffix_extend(translate[(int)suf[i--]], pos, &pos, index)) return -1;
-   *newpos = pos;
+   int64_t loci;
+   int len = slen-1;
+   do {
+      *newpos = (bwpos_t){0,0,index->size - 1};
+      for (int i = len; i >= 0; i--)
+         if(suffix_extend(translate[(int)suf[i]], *newpos, newpos, index)) return -1;
+      loci = (int64_t)newpos->ep - (int64_t)newpos->sp + 1;
+      len--;
+   } while (loci < minloci);
+
    return 0;
 }
 
@@ -193,7 +202,7 @@ suffix_shrink
  index_t  * index
 )
 {
-   *newpos = pos;
+   if (pos.depth < index->lcp_min_depth) return 1;
    if (pos.sp == pos.ep)
       return suffix_ssv_search(pos.sp, newpos, index);
    else if (pos.sp < pos.ep)
@@ -244,6 +253,7 @@ suffix_ssv_search
       // Pointer is not a corner.
       // New depth.
       newpos->depth = index->lcp_sample->lcp[ptr].lcp;
+      if (newpos->depth < index->lcp_min_depth) return 1;
    }
 
    // Forward search.
@@ -330,14 +340,15 @@ suffix_ssv
 )
 {
    *newpos = pos;
-   
+   if (pos.depth < index->lcp_min_depth) return 1;
+
    // Start LCP.
    uint64_t sword  = pos.sp/LCP_WORD_SIZE;
    uint64_t smarks = sword/LCP_MARK_INTERVAL + 1;
    int32_t  sbit   = pos.sp%LCP_WORD_SIZE;
    sword += smarks;
    uint64_t smark = smarks*(LCP_MARK_INTERVAL+1);
-   if (((index->lcp_sample_idx[sword] >> sbit) & 1) == 0) return -1;
+   if (((index->lcp_sample_idx[sword] >> sbit) & (uint64_t)1) == 0) return -1;
 
    uint64_t sptr = index->lcp_sample_idx[smark];
    for (uint64_t i = smark-1; i > sword; i--)
@@ -354,7 +365,7 @@ suffix_ssv
    int32_t  ebit   = pos.ep%LCP_WORD_SIZE;
    eword += emarks;
    uint64_t emark = emarks*(LCP_MARK_INTERVAL+1);
-   if (((index->lcp_sample_idx[eword] >> ebit) & 1) == 0) return -1;
+   if (((index->lcp_sample_idx[eword] >> ebit) & (uint64_t)1) == 0) return -1;
 
    uint64_t eptr = index->lcp_sample_idx[emark];
    for (uint64_t i = emark-1; i > eword; i--)
@@ -404,3 +415,48 @@ suffix_ssv
    }
    return 0;
 }
+
+
+/*
+int
+suffix_lut
+(
+ char    * suf,
+ int       slen,
+ bwpos_t * newpos,
+ index_t * index
+)
+// Remember that 'N' is not supported!
+{
+   int k = index->lut_kmer;
+   int gap = k - slen;
+   int spath[k];
+   int epath[k];
+   int i = 0;
+   for (; i < gap; i++) {
+      spath[i] = 0;
+      epath[i] = 3; // This is 'T'.
+   }
+   for (int j = slen - 1; i < k; i++, j--) {
+      int val = translate[(int)suf[j]];
+      if (val == 4) return -1;
+      spath[i] = epath[i] = val;
+   }
+   // Compute index position.
+   uint64_t sidx = 0, eidx = 0;
+   i = 0;
+   for (; i < slen; i++)
+      sidx += spath[i] * (1 << (2*i));
+   eidx = sidx;
+   for (; i < k; i++) {
+      sidx += spath[i] * (1 << (2*i));
+      eidx += epath[i] * (1 << (2*i));
+   }
+   // Position lookup.
+   newpos->sp = get_sa(sidx,index->lut,index->sa_bits);
+   newpos->ep = get_sa(eidx+1,index->lut,index->sa_bits)-1;
+   newpos->depth = slen;
+   if (newpos->ep >= newpos->sp) return 0;
+   else return -1;
+}
+*/

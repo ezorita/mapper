@@ -65,28 +65,6 @@
          SA   |    uint    | witdh bits |   2*gsize
 
 
-.lut file
-     Contents:
-        Index lookup table
-
-     Index lookup table:
-        An array containing the FM index pointers for all the
-        sequences of length k (k-mers). The k-mers are encoded using a
-        N-ary to decimal conversion process, only A/0 C/1 G/2 T/3
-        bases are encoded, N is not included.
-
-        For instance, the 5-mer ACTGC FM pointer is at the array position
-        0*4^4 + 1*4^3 + 3*4^2 + 2*4^1 + 1*4^0 = 252
-        A       C       T       G       C
-
-     Data structure:
-        
-        Name  |  data-type |  data-size |  #elements     
-     ------------------------------------------------
-          k   |  uint64_t  |   64 bits  |      1
-         SA   |  uint64_t  |   64 bits  |     4^k
-
-
 .lcp file
      
      Contents:
@@ -127,4 +105,27 @@
 
 
      (**) ceil(ceil(idxsize/64)/mark_int)*(mark_int+1) + 1
+
      
+.lut file (deprecated)
+     Contents:
+        Index lookup table
+
+     Index lookup table:
+        An array containing the FM index pointers for all the
+        sequences of length k (k-mers). The k-mers are encoded using a
+        N-ary to decimal conversion process, only A/0 C/1 G/2 T/3
+        bases are encoded, N is not included.
+
+        For instance, the 5-mer ACTGC FM pointer is at the array position
+        0*4^4 + 1*4^3 + 3*4^2 + 2*4^1 + 1*4^0 = 252
+        A       C       T       G       C
+
+     Data structure:
+        
+        Name  |  data-type |  data-size |  #elements     
+     ------------------------------------------------
+          k   |  uint64_t  |   64 bits  |      1
+         lut  |  uint64_t  |   64 bits  |     4^k
+
+
