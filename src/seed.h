@@ -30,6 +30,8 @@ struct seedstack_t {
    seed_t seed[];
 };
 
+seedstack_t  * naive_smem     (char *, seedopt_t, index_t *);
+
 seedstack_t  * seed           (char *, seedopt_t, index_t *);
 seedstack_t  * seedstack_new  (int);
 int            seedstack_push (seed_t, seedstack_t **);
