@@ -37,7 +37,7 @@ typedef struct bwpos_t    bwpos_t;
 typedef struct fmdpos_t   fmdpos_t;
 typedef struct lcpval_t   lcpval_t;
 typedef struct lcpdata_t  lcpdata_t;
-typedef struct list32_t   list32_t;
+typedef struct list64_t   list64_t;
 
 struct lcpval_t {
    uint8_t lcp;
@@ -49,9 +49,9 @@ struct lcpdata_t {
    lcpval_t * lcp;
 };
 
-struct list32_t {
+struct list64_t {
    uint64_t   size;
-   int32_t  * val;
+   int64_t  * val;
 };
 
 struct chr_t {
@@ -80,7 +80,7 @@ struct index_t {
    uint64_t  * lcp_sample_idx;
    uint64_t  * lcp_extend_idx;
    lcpdata_t * lcp_sample;
-   list32_t  * lcp_extend;
+   list64_t  * lcp_extend;
    // Chromosome index.
    chr_t     * chr;
 };
