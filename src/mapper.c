@@ -30,101 +30,422 @@ int main(int argc, char *argv[])
       return EXIT_FAILURE;
    }
 
-   // Test seed function.
+   // Options.
+   seedopt_t seedopt = {.min_len = 1, .max_len = 1000, .min_loci = 1, .max_loci = 1, .aux_loci = 200}; // SMEM
+   alignopt_t alignopt = {
+      .bp_thr       = 10,
+      .bp_max_thr   = 50,
+      .bp_resolution = 1,
+      .bp_period    = 5,
+      .bp_repeats   = 4,
+      .read_error   = 0.05,
+      .rand_error   = 0.50,
+      .width_ratio  = 0.05
+   };
+   mapopt_t mapopt = {
+      .dist_accept = 10,
+      .read_ref_ratio = 0.05,
+      .align_accept_eexp = -30.0,
+      .overlap_max_tolerance = 0.5,
+      .align_seed_filter_thr = 0.5,
+      .align_filter_ident = 0.9,
+      .align_filter_eexp = -10.0,
+      .align = alignopt,
+      .seed = seedopt
+   };
 
-   clock_t t = clock();
-   seedopt_t opt = {.min_len = 1, .max_len = 1000, .min_loci = 1, .max_loci = 1}; // SMEM
-   uint64_t nseeds = 0;
+   int max_align_per_read = 100;
+   double read_ref_ratio = 0.05;
+   int dist_accept = 10;
+   // Data structures.
+   matchlist_t * seed_matches = matchlist_new(max_align_per_read);
+   matchlist_t * map_matches = matchlist_new(64);
+   // Process reads.
+   for (size_t i = 0; i < seqs->pos; i++) {
+      //      clock_t t = clock();
+      //      fprintf(stderr, "%ld/%ld\r",i, seqs->pos);
+      // Seed.
+      seedstack_t * seeds = seed(seqs->seq[i].seq, mapopt.seed, index);
+      // Match seeds.
+      int slen = strlen(seqs->seq[i].seq);
+      seed_matches->pos = 0;
+      match_seeds(seeds, slen, seed_matches, index, dist_accept, read_ref_ratio);
+      // Smith-Waterman alignment.
+      map_matches->pos = 0;
+      align_seeds(seqs->seq[i].seq, seed_matches, &map_matches, index, mapopt);
+      // Sort matches.
+      //      mergesort_mt(map_matches->match, map_matches->pos, sizeof(match_t *), 0, 1, compar_matcheexp);
+      // Print matches.
 
-   for (int i = 0; i < seqs->pos; i++) {
-      // Backward-Shrink SMEMS.
-      seedstack_t * seeds = seed(seqs->seq[i].seq, opt, index);
-      nseeds += seeds->pos;
+      for (size_t j = 0; j < map_matches->pos; j++) {
+         match_t * match = map_matches->match[j];
+         int dir;
+         uint64_t g_start, g_end;
+         if (match->ref_s >= index->size/2) {
+            g_start = index->size - match->ref_e - 2;
+            g_end   = index->size - match->ref_s - 2;
+            dir = 1;
+         } else {
+            g_start = match->ref_s + 1;
+            g_end   = match->ref_e + 1;
+            dir = 0;
+         }
+         int   chrnum = bisect_search(0, index->chr->nchr-1, index->chr->start, g_start+1)-1;
+         // Print results.
+         fprintf(stdout, "%s \t%d\t%d\t%s:%ld-%ld:%c\t%.2f\t%.1f%%\t%c%c\n",
+                 seqs->seq[i].tag,
+                 match->read_s+1, match->read_e+1,
+                 index->chr->name[chrnum],
+                 g_start - index->chr->start[chrnum]+1,
+                 g_end - index->chr->start[chrnum]+1,
+                 dir ? '-' : '+',
+                 match->e_exp,
+                 match->ident*100.0,
+                 (match->flags & WARNING_OVERLAP ? 'o' : '-'),
+                 (match->flags & FLAG_FUSED ? 'f' : '-'));
+      }
+      
+      //fprintf(stdout, "%.4f\t%ld\t%ld\t%ld\n", (clock()-t)*1000000.0/CLOCKS_PER_SEC,seeds->pos, seed_matches->pos, map_matches->pos);
       free(seeds);
    }
-   fprintf(stdout, "seeds: %ld (%.3fms)\n", nseeds, (clock()-t)*1000.0/CLOCKS_PER_SEC);
-   nseeds = 0;
-   /*
-   t = clock();
-   for (int i = 0; i < seqs->pos; i++) {
-      // Naive SMEMS.
-      seedstack_t * seeds = naive_smem(seqs->seq[i].seq, opt, index);
-      nseeds += seeds->pos;
-      free(seeds);
-   }
-   fprintf(stdout, "seeds: %ld (%.3fms)\n", nseeds, (clock()-t)*1000.0/CLOCKS_PER_SEC);
-*/
-   /*
-   bwpos_t pos = {.depth = 0, .sp = 0, .ep = index->size-1};
-   // Extend 'AGCG' then shrink.
-   suffix_extend(2, pos, &pos, index); // 16,22
-   suffix_extend(1, pos, &pos, index); // 10,11
-   suffix_extend(2, pos, &pos, index); // 17,17
-   suffix_extend(0, pos, &pos, index); // 3,3
-   // Pos should be (4,3,3)
-   suffix_shrink(pos, &pos, index); // 3,3,5
-   // Pos should be (3,3,5)
 
-   pos = (bwpos_t) {.depth = 0, .sp = 0, .ep = index->size-1};
-   // Extend 'CTAGT' then shrink.
-   suffix_extend(3, pos, &pos, index); // 23,30
-   suffix_extend(2, pos, &pos, index); // 21,22
-   suffix_extend(0, pos, &pos, index); // 6,6
-   suffix_extend(3, pos, &pos, index); // 27,27
-   suffix_extend(1, pos, &pos, index); // 15,15
-   // Pos should be (5,15,15)
-   suffix_shrink(pos, &pos, index); // 4,12,15
-   // Pos should be (4,12,15)
-
-   pos = (bwpos_t) {.depth = 0, .sp = 0, .ep = index->size-1};
-   // Extend 'TAGCT' then shrink twice.
-   suffix_extend(3, pos, &pos, index); // 22,29
-   suffix_extend(1, pos, &pos, index); // 11,14
-   suffix_extend(2, pos, &pos, index); // 17,19
-   suffix_extend(0, pos, &pos, index); // 3,4
-   suffix_extend(3, pos, &pos, index); // 24,25
-   // Pos should be (24,25,5).
-   suffix_shrink(pos, &pos, index); // 23,25
-   suffix_shrink(pos, &pos, index); // 23,26
-   // Pos should be (23,26,3).
-
-   pos = (bwpos_t) {.depth = 0, .sp = 0, .ep = index->size-1};
-   // Extend 'CTAGCTAGC' then shrink.
-   suffix_extend(1, pos, &pos, index); // 8,14
-   suffix_extend(2, pos, &pos, index); // 16,19
-   suffix_extend(0, pos, &pos, index); // 2,4
-   suffix_extend(3, pos, &pos, index); // 23,25
-   suffix_extend(1, pos, &pos, index); // 11,13
-   suffix_extend(2, pos, &pos, index); // 17,18
-   suffix_extend(0, pos, &pos, index); // 3,3
-   suffix_extend(3, pos, &pos, index); // 24,24
-   suffix_extend(1, pos, &pos, index); // 12,12
-   // Pos should be (12,12,9).
-   suffix_shrink(pos, &pos, index); // 12,13,8
-   suffix_shrink(pos, &pos, index); // 11,13,5
-   suffix_shrink(pos, &pos, index); // 11,14,4
-   suffix_shrink(pos, &pos, index); // 8.14,1
-   // Pos should be (8,14,1).
-
-   pos = (bwpos_t) {.depth = 0, .sp = 0, .ep = index->size-1};
-   // Extend 'GCTAGCTA' then shrink.
-   suffix_extend(0, pos, &pos, index); // 0,7
-   suffix_extend(3, pos, &pos, index); // 23,27
-   suffix_extend(1, pos, &pos, index); // 11,14
-   suffix_extend(2, pos, &pos, index); // 17,19
-   suffix_extend(0, pos, &pos, index); // 3,4
-   suffix_extend(3, pos, &pos, index); // 24,25
-   suffix_extend(1, pos, &pos, index); // 12,13
-   suffix_extend(2, pos, &pos, index); // 18,18
-   // Pos should be (12,12,9).
-   suffix_shrink(pos, &pos, index); // 17,18,6
-   suffix_shrink(pos, &pos, index); // 17,19,5
-   suffix_shrink(pos, &pos, index); // 16,19,2
-   suffix_shrink(pos, &pos, index); // 15,21,1
-   // Pos should be (15,21,1).
-   suffix_shrink(pos, &pos, index); // 0,29,0
-   */
    return 0;
+}
+
+double
+e_value
+(
+ int L,
+ int m,
+ long gsize
+)
+{
+   double E = log10(gsize) + log10(2) * L * (m*3.0/L-2);
+   for (int i = 0; i < m; i++) E += log10((L-i)/(double)(m-i));
+   return E;
+}
+
+int
+align_seeds
+(
+ char         * read,
+ matchlist_t  * seeds,
+ matchlist_t ** seqmatches,
+ index_t      * index,
+ mapopt_t       hmargs
+ )
+{
+   if (seeds->pos == 0) return 0;
+   int significant = 0;
+   int slen = strlen(read);
+   matchlist_t * matches = *seqmatches;
+
+   // Sort by seeded nucleotides.
+   mergesort_mt(seeds->match, seeds->pos, sizeof(match_t *), 0, 1, compar_seedhits);
+
+   for(long k = 0; k < seeds->pos; k++) {
+      // Get next seed.
+      match_t * seed = seeds->match[k];
+
+      // Compute alignment limits.
+      long r_min  = seed->read_e - seed->read_s + 1;
+      long l_min  = 0;
+      long r_qstart = seed->read_s + 1;
+      long l_qstart = align_max(r_qstart - 1,0);
+      long r_rstart = seed->ref_s + 1;
+      long l_rstart = seed->ref_s;
+     
+      // Extend existing mapping.
+      double last_eexp = INFINITY;
+      match_t * extend = NULL;
+      int extend_score = 0;
+      int cancel_align = 0;
+      for (int i = 0; i < matches->pos; i++) {
+         match_t * match = matches->match[i];
+         if (match->e_exp > last_eexp) continue;
+         // Check whether the seed is contiguous.
+         long r_distr = seed->read_e - match->read_e;
+         long g_distr = match->ref_e - seed->ref_e;
+         long r_distl = match->read_s - seed->read_s;
+         long g_distl = seed->ref_s - match->ref_s;
+         long d_accept = hmargs.dist_accept;
+         double rg_ratio = hmargs.read_ref_ratio;
+         int ext_r = g_distr > -d_accept && r_distr > -d_accept && ((g_distr < (r_distr * rg_ratio)) || (g_distr < d_accept && r_distr < d_accept));
+         int ext_l = g_distl > -d_accept && r_distl > -d_accept && ((g_distl < (r_distl * rg_ratio)) || (g_distl < d_accept && r_distl < d_accept));
+         if (ext_r || ext_l) {
+            r_min  = (ext_r ? r_distr : 0);
+            l_min  = (ext_l ? r_distl : 0);
+            r_qstart = match->read_e + 1;
+            r_rstart = match->ref_e + 1;
+            l_qstart = match->read_s - 1;
+            l_rstart = match->ref_s - 1;
+            last_eexp = match->e_exp;
+            extend = match;
+            extend_score = match->score;
+         } else if (match->e_exp < hmargs.align_accept_eexp) {
+            // Check overlap
+            int span = align_min(seed->read_e - seed->read_s, match->read_e - match->read_s);
+            int overlap = align_max(0, align_min(seed->read_e, match->read_e) - align_max(seed->read_s, match->read_s));
+            overlap = overlap > span*hmargs.overlap_max_tolerance;
+            int seed_ratio = seed->hits < match->hits*hmargs.align_seed_filter_thr;
+            // If overlap is higher than the maximum overlap tolerance, cancel the alignment.
+            if (overlap && seed_ratio) {
+               cancel_align = 1;
+               break;
+            }
+         } else {
+            if (r_distr < 0) {r_distr = -r_distr; g_distr = -g_distr;}
+            if (r_distl < 0) {r_distl = -r_distl; g_distl = -g_distl;}
+            int same_align = (g_distr > -d_accept && (g_distr < (r_distr*rg_ratio) || g_distr < d_accept)) || (g_distl > -d_accept && (g_distl < (r_distl*rg_ratio) || g_distl < d_accept));
+            if (same_align) {
+               cancel_align = 1;
+               break;
+            }
+         }
+      }
+      long r_qlen = slen - r_qstart;
+      long l_qlen = l_qstart + 1;
+      if (cancel_align || (!r_qlen && !l_qlen)) continue;
+      long r_rlen = align_min((long)(r_qlen * (1 + hmargs.align.width_ratio)), index->size - r_rstart);
+      long l_rlen = align_min((long)(l_qlen * (1 + hmargs.align.width_ratio)), r_qstart);
+      char * r_qry = read + r_qstart;
+      char * l_qry = read + l_qstart;
+      char * r_ref = index->genome + r_rstart;
+      char * l_ref = index->genome + l_rstart;
+      
+      // Align forward and backward starting from (read_s, ref_s).
+      long read_s, read_e, ref_s, ref_e;
+      path_t align_r = (path_t){0,0,0}, align_l = (path_t){0,0,0};
+      // Forward alignment (right).
+      if(r_qlen) {
+         align_r = dbf_align(r_qlen, r_qry, r_rlen, r_ref, r_min, ALIGN_FORWARD, ALIGN_FORWARD, hmargs.align);
+         read_e = r_qstart + align_r.row;
+         ref_e = r_rstart + align_r.col;
+      }
+      else {
+         read_e = r_qstart - 1;
+         ref_e  = r_rstart - 1;
+      }
+      // Backward alignment (left).
+      if(l_qlen) {
+         align_l = dbf_align(l_qlen, l_qry, l_rlen, l_ref, l_min, ALIGN_BACKWARD, ALIGN_BACKWARD, hmargs.align);
+         read_s =  l_qstart - align_l.row;
+         ref_s = l_rstart - align_l.col;
+      }
+      else {
+         read_s = l_qstart + 1;
+         ref_s  = l_rstart + 1;
+      }
+      
+      // Compute significance.
+      long score = extend_score + align_l.score + align_r.score;
+      double ident = 1.0 - (score*1.0)/(align_max(read_e-read_s+1,ref_e-ref_s+1));
+      double e_exp = INFINITY;
+      if (ident > hmargs.align_filter_ident) 
+         e_exp = e_value(ref_e - ref_s + 1, extend_score + align_l.score + align_r.score, index->size);
+
+      // If significant, store.
+      if (e_exp < hmargs.align_filter_eexp) {
+         match_t * hit;
+         if (extend != NULL) {
+            hit = extend;
+            hit->hits += seed->hits;
+         }
+         else {
+            hit = malloc(sizeof(match_t));
+            hit->repeats = matchlist_new(REPEATS_SIZE);
+            hit->flags  = 0;
+            hit->hits   = seed->hits;
+         }
+
+         // Fill/Update hit.
+         hit->score  = score;
+         hit->ident  = ident;
+         hit->ref_e  = ref_e;
+         hit->ref_s  = ref_s;
+         hit->read_e = read_e;
+         hit->read_s = read_s;
+         hit->e_exp  = e_exp;
+
+         // Add to significant matchlist.
+         significant = 1;
+         if (extend == NULL) {
+            matchlist_add(seqmatches, hit);
+            matches = *seqmatches;
+         }
+      }
+            
+      free(seed);
+   }
+
+   return significant;
+}
+
+matchlist_t *
+matchlist_new
+(
+ int elements
+)
+{
+   if (elements < 1) elements = 1;
+   matchlist_t * list = malloc(sizeof(matchlist_t) + elements*sizeof(match_t *));
+   if (list == NULL) return NULL;
+   list->pos  = 0;
+   list->size = elements;
+   return list;
+}
+
+int
+matchlist_add
+(
+ matchlist_t ** listp,
+ match_t      * match
+)
+{
+   matchlist_t * list = *listp;
+
+   // Check whether stack is full.
+   if (list->pos >= list->size) {
+      int newsize = list->size * 2;
+      *listp = list = realloc(list, sizeof(matchlist_t) + newsize * sizeof(match_t *));
+      if (list == NULL) return -1;
+      list->size = newsize;
+   }
+
+   // Add new match to the stack.
+   list->match[list->pos++] = match;
+
+   return 0;
+}
+
+
+hit_t *
+compute_hits
+(
+ seedstack_t * seeds,
+ index_t     * index,
+ uint64_t    * hit_cnt
+)
+{
+   // Count loci.
+   uint64_t cnt = 0;
+   for (size_t i = 0; i < seeds->pos; i++) cnt += seeds->seed[i].ref_pos.ep - seeds->seed[i].ref_pos.sp + 1;
+   *hit_cnt = cnt;
+
+   // Find loci in Suffix Array.
+   hit_t * hits = malloc(cnt * sizeof(hit_t));
+   size_t l = 0;
+   for (size_t i = 0; i < seeds->pos; i++) {
+      seed_t seed = seeds->seed[i];
+      for (size_t j = seed.ref_pos.sp; j <= seed.ref_pos.ep; j++) {
+         hits[l++] = (hit_t) {.locus = get_sa(j,index->sa,index->sa_bits), .qrypos = seed.qry_pos, .depth = seed.ref_pos.depth, .bulk = seed.bulk};
+      }
+   }
+   
+   return hits;
+}
+
+int
+match_seeds
+(
+ seedstack_t * seeds,
+ int           seqlen,
+ matchlist_t * matchlist,
+ index_t     * index,
+ int           dist_accept,
+ double        read_ref_ratio
+)
+{
+   if (matchlist->size < 1) return -1;
+
+   // Convert seeds to hits.
+   uint64_t hit_count;
+   hit_t * hits = compute_hits(seeds, index, &hit_count);
+
+   // Merge-sort hits.
+   mergesort_mt(hits, hit_count, sizeof(hit_t), 0, 1, compar_hit_locus);
+
+   // Reset matchlist.
+   matchlist->pos = 0;
+
+   // Aux variables.
+   long minv = 0;
+   int  min  = 0;
+   size_t i = 0;
+
+   while (i < hit_count) {
+      // Match start.
+      int64_t span   = hits[i].depth;
+      int64_t lstart = hits[i].locus;
+      int64_t lend   = lstart + span;
+      int64_t rstart = hits[i].qrypos;
+      int64_t rend   = rstart + span;
+      int     bulk   = hits[i].bulk;
+      i++;
+      // Extend match.
+      while (i < hit_count) {
+         // Compare genome and read distances.
+         int64_t g_dist = (int64_t)hits[i].locus - (int64_t)hits[i-1].locus;
+         int64_t r_dist = (int64_t)hits[i].qrypos - (int64_t)hits[i-1].qrypos;
+         if (r_dist > 0 && (g_dist < (read_ref_ratio * r_dist) || (g_dist < dist_accept && r_dist < dist_accept))) {
+            span += hits[i].depth - (lend - (int64_t)hits[i].locus > 0 ? lend - (int64_t)hits[i].locus : 0);
+            lend = hits[i].locus + hits[i].depth;
+            rend = hits[i].qrypos + hits[i].depth;
+            bulk *= hits[i].bulk;
+            i++;
+         } else break;
+      }
+      // Store match.
+      // Non-significant streaks (bulk) will not be saved.
+      if (span > minv && bulk == 0) {
+         // Allocate match.
+         match_t * match = malloc(sizeof(match_t));
+         match->ref_e  = lend;
+         match->read_e = rend;
+         match->ref_s  = lstart;
+         match->read_s = rstart;
+         match->hits   = span;
+         match->flags  = 0;
+         match->score  = -1;
+
+         // Append if list not yet full, replace the minimum value otherwise.
+         if (matchlist->pos < matchlist->size) {
+            matchlist->match[matchlist->pos++] = match;
+         }
+         else {
+            match_t * match_min = matchlist->match[min];
+            free(match_min);
+            matchlist->match[min] = match;
+         }
+               
+         // Find the minimum that will be substituted next.
+         if (matchlist->pos == matchlist->size) {
+            minv = matchlist->match[0]->hits;
+            for (int j = 1 ; j < matchlist->pos; j++) {
+               if (minv > matchlist->match[j]->hits) {
+                  min  = j;
+                  minv = matchlist->match[j]->hits;
+               }
+            }
+         }
+      }
+   }
+   return 0;
+}
+
+int
+compar_hit_locus
+(
+ const void * a,
+ const void * b,
+ const int param
+)
+{
+   hit_t * ha = (hit_t *)a;
+   hit_t * hb = (hit_t *)b;
+   if (ha->locus > hb->locus) return 1;
+   else if (ha->locus < hb->locus) return -1;
+   else return (ha->qrypos > hb->qrypos ? 1 : -1);
 }
 
 idxfiles_t *
@@ -484,4 +805,34 @@ read_file
    free(subline);
    free(temp);
    return seqstack;
+}
+
+int
+compar_seedhits
+(
+ const void * a,
+ const void * b,
+ const int   param
+)
+{
+   match_t * ma = *((match_t **) a);
+   match_t * mb = *((match_t **) b);
+   
+   if (ma->hits < mb->hits) return 1;
+   else return -1;
+}
+
+int
+compar_matcheexp
+(
+ const void * a,
+ const void * b,
+ const int   param
+)
+{
+   match_t * ma = *((match_t **) a);
+   match_t * mb = *((match_t **) b);
+
+   if (mb->e_exp < ma->e_exp) return 1;
+   else return -1;
 }

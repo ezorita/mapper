@@ -17,9 +17,11 @@ struct seedopt_t {
    int32_t max_len;
    int32_t min_loci;
    int32_t max_loci;
+   int32_t aux_loci;
 };
 
 struct seed_t {
+   int32_t bulk;
    int32_t qry_pos;
    bwpos_t ref_pos;
 };

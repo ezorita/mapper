@@ -30,9 +30,9 @@ seed
          // Check previous suffix.
          uint64_t loci = (pos.ep < pos.sp ? 0 : pos.ep - pos.sp + 1);
          int32_t qry_pos = qry_end + 1 - pos.depth;
-         if (loci <= opt.max_loci && pos.depth >= opt.min_len && qry_pos < last_qry_pos) {
+         if (loci <= opt.aux_loci && pos.depth >= opt.min_len && qry_pos < last_qry_pos) {
             // Seed found.
-            seed_t seed = (seed_t) {.qry_pos = qry_pos, .ref_pos = pos};
+            seed_t seed = (seed_t) {.bulk = (loci > opt.max_loci), .qry_pos = qry_pos, .ref_pos = pos};
             seedstack_push(seed, &stack);
             last_qry_pos = qry_pos;
          }
@@ -55,9 +55,9 @@ seed
          pos = newpos;
          // Check options.
          int32_t qry_pos = qry_end + 1 - pos.depth;
-         if (new_loci <= opt.max_loci && qry_pos < last_qry_pos) {
+         if (new_loci <= opt.aux_loci && qry_pos < last_qry_pos) {
             // Seed found.
-            seed_t seed = (seed_t) {.qry_pos = qry_pos, .ref_pos = pos};
+            seed_t seed = (seed_t) {.bulk = (new_loci > opt.max_loci), .qry_pos = qry_pos, .ref_pos = pos};
             seedstack_push(seed, &stack);
             last_qry_pos = qry_pos;
             if (i == 0) break;
