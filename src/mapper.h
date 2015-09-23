@@ -24,6 +24,9 @@
 
 #define REPEATS_SIZE 16
 
+#define map_min(x,y) ((x) < (y) ? (x) : (y))
+#define map_max(x,y) ((x) > (y) ? (x) : (y))
+
 // Flags definition.
 #define WARNING_OVERLAP 0x00000001
 #define FLAG_FUSED      0x00000002
@@ -69,6 +72,7 @@ struct match_t {
    int hits;
    int score;
    int flags;
+   int interval;
    double ident;
    double e_exp;
    matchlist_t * repeats;
@@ -82,6 +86,7 @@ struct matchlist_t {
 
 struct mapopt_t {
    long dist_accept;
+   long max_align_per_read;
    double read_ref_ratio;
    double align_accept_eexp;
    double overlap_max_tolerance;
@@ -109,9 +114,13 @@ int             align_seeds      (char *, matchlist_t *, matchlist_t **, index_t
 int             align_simple     (char *, matchlist_t *, matchlist_t **, index_t *, mapopt_t);
 double          e_value          (int L, int m, long gsize);
 
+// Post-processing functions.
+matchlist_t **  merge_intervals  (matchlist_t *, double, int32_t *);
+
 // Compar functions.
 int             compar_hit_locus (const void * a, const void * b, const int param);
 int             compar_seedhits  (const void * a, const void * b, const int param);
 int             compar_matcheexp (const void * a, const void * b, const int param);
+int             compar_intvstart (const void * a, const void * b, const int param);
 
 #endif

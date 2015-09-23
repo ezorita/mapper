@@ -45,7 +45,8 @@ int main(int argc, char *argv[])
    };
    mapopt_t mapopt = {
       .dist_accept = 10,
-      .read_ref_ratio = 0.05,
+      .max_align_per_read = 200,
+      .read_ref_ratio = 1.05,
       .align_accept_eexp = -100.0,
       .overlap_max_tolerance = 0.5,
       .align_seed_filter_thr = 0.0,
@@ -55,11 +56,9 @@ int main(int argc, char *argv[])
       .seed = seedopt
    };
 
-   int max_align_per_read = 100;
-   double read_ref_ratio = 0.05;
    int dist_accept = 10;
    // Data structures.
-   matchlist_t * seed_matches = matchlist_new(max_align_per_read);
+   matchlist_t * seed_matches = matchlist_new(mapopt.max_align_per_read);
    matchlist_t * map_matches = matchlist_new(64);
    fprintf(stderr, "mapping...");
    clock_t t = clock();   
@@ -72,48 +71,124 @@ int main(int argc, char *argv[])
       // Match seeds.
       int slen = strlen(seqs->seq[i].seq);
       seed_matches->pos = 0;
-      match_seeds(seeds, slen, seed_matches, index, dist_accept, read_ref_ratio);
+      match_seeds(seeds, slen, seed_matches, index, dist_accept, mapopt.read_ref_ratio);
       // Smith-Waterman alignment.
       map_matches->pos = 0;
       align_seeds(seqs->seq[i].seq, seed_matches, &map_matches, index, mapopt);
-      // Sort matches.
-      //      mergesort_mt(map_matches->match, map_matches->pos, sizeof(match_t *), 0, 1, compar_matcheexp);
+      // Merge intervals.
+      int32_t n_ints;
+      matchlist_t ** intervals = merge_intervals(map_matches, 0.8, &n_ints);
       // Print matches.
-      for (size_t j = 0; j < map_matches->pos; j++) {
-         match_t match = map_matches->match[j];
-         int dir;
-         uint64_t g_start, g_end;
-         if (match.ref_s >= index->size/2) {
-            g_start = index->size - match.ref_e - 2;
-            g_end   = index->size - match.ref_s - 2;
-            dir = 1;
-         } else {
-            g_start = match.ref_s + 1;
-            g_end   = match.ref_e + 1;
-            dir = 0;
-         }
+      for (int32_t k = 0; k < n_ints; k++) {
+         int itv = (k+1)%n_ints;
+         matchlist_t * matches = intervals[itv];
+         for (size_t j = 0; j < matches->pos; j++) {
+            match_t match = matches->match[j];
+            int dir;
+            uint64_t g_start, g_end;
+            if (match.ref_s >= index->size/2) {
+               g_start = index->size - match.ref_e - 2;
+               g_end   = index->size - match.ref_s - 2;
+               dir = 1;
+            } else {
+               g_start = match.ref_s + 1;
+               g_end   = match.ref_e + 1;
+               dir = 0;
+            }
 
-         int   chrnum = bisect_search(0, index->chr->nchr-1, index->chr->start, g_start+1)-1;
-         // Print results.
-         fprintf(stdout, "%s \t%d\t%d\t%s:%ld-%ld:%c\t%.2f\t%.1f%%\t%c%c\n",
-                 seqs->seq[i].tag,
-                 match.read_s+1, match.read_e+1,
-                 index->chr->name[chrnum],
-                 g_start - index->chr->start[chrnum]+1,
-                 g_end - index->chr->start[chrnum]+1,
-                 dir ? '-' : '+',
-                 match.e_exp,
-                 match.ident*100.0,
-                 (match.flags & WARNING_OVERLAP ? 'o' : '-'),
-                 (match.flags & FLAG_FUSED ? 'f' : '-'));
+            int   chrnum = bisect_search(0, index->chr->nchr-1, index->chr->start, g_start+1)-1;
+            // Print results.
+            fprintf(stdout, "%s \t%d\t%d\t%d\t%s:%ld-%ld:%c\t%.2f\t%.1f%%\t%c%c\n",
+                    seqs->seq[i].tag, itv,
+                    match.read_s+1, match.read_e+1,
+                    index->chr->name[chrnum],
+                    g_start - index->chr->start[chrnum]+1,
+                    g_end - index->chr->start[chrnum]+1,
+                    dir ? '-' : '+',
+                    match.e_exp,
+                    match.ident*100.0,
+                    (match.flags & WARNING_OVERLAP ? 'o' : '-'),
+                    (match.flags & FLAG_FUSED ? 'f' : '-'));
+         }
+         free(matches);
       }
       fprintf(stdout, "\n");
       //fprintf(stdout, "%.4f\t%ld\t%ld\t%ld\n", (clock()-t)*1000000.0/CLOCKS_PER_SEC,seeds->pos, seed_matches->pos, map_matches->pos);
       free(seeds);
+      free(intervals);
    }
    fprintf(stderr, "%.3fs\n",(clock()-t)*1.0/CLOCKS_PER_SEC);
 
    return 0;
+}
+
+matchlist_t **
+merge_intervals
+(
+ matchlist_t * matches,
+ double        overlap_ratio,
+ int32_t     * nintervals
+)
+{
+   // Sort candidate matches by size.
+   mergesort_mt(matches->match, matches->pos, sizeof(match_t), 0, 1, compar_matcheexp);
+
+   // Allocate interval list.
+   int32_t n = 0;
+   matchlist_t ** intervals = malloc((matches->pos+1)*sizeof(matchlist_t *));
+
+   // Interval 0 is for overlapping matches.
+   intervals[n++] = matchlist_new(matches->pos);
+
+   // Compute intervals.
+   for (int i = 0; i < matches->pos; i++) {
+      match_t match = matches->match[i];
+      int new = 1, total_overlap = 0;
+      for (int j = 1; j < n; j++) {
+         // Compare with the heads of other intervals.
+         match_t ref = intervals[j]->match[0];
+         // Continue if there is no overlap.
+         if (ref.read_e <= match.read_s || match.read_e <= ref.read_s) continue;
+         // Match is contained in ref.
+         else if (ref.read_s <= match.read_s && match.read_e <= ref.read_e) {
+            new = 0;
+            matchlist_add(intervals+j, match);
+            matches->match[i].interval = j;
+            break;
+         }
+         // Match is partially contained in ref.
+         else {
+            int overlap = map_min(match.read_e - ref.read_s, ref.read_e - match.read_s);
+            int    span = map_min(match.read_e - match.read_s, ref.read_e - ref.read_s);
+            if (overlap*1.0/span >= overlap_ratio) {
+               new = 0;
+               matchlist_add(intervals+j, match);
+               matches->match[i].interval = j;
+               break;
+            }
+            total_overlap += overlap;
+         }
+      }
+      if (new) {
+         if (total_overlap*1.0/(match.read_e - match.read_s) > (1 - overlap_ratio)) {
+            // Overlapped interval.
+            matchlist_add(intervals, match);
+            matches->match[i].interval = 0;
+         } else {
+            // New interval.
+            intervals[n] = matchlist_new(matches->pos-i);
+            matchlist_add(intervals + n, match);
+            matches->match[i].interval = n;
+            n++;
+         }
+      }
+   }
+
+   *nintervals = n;
+   // Sort intervals by start position.
+   mergesort_mt(intervals+1, n-1, sizeof(matchlist_t *), 0, 1, compar_intvstart);
+
+   return intervals;
 }
 
 double
@@ -171,6 +246,7 @@ align_simple
       hit.ref_s  = ref_s;
       hit.read_e = read_e;
       hit.read_s = read_s;
+      hit.interval = 0;
       hit.e_exp  = e_value(ref_e - ref_s + 1, align_l.score + align_r.score, index->size);
 
       // Add to significant matchlist.
@@ -886,5 +962,21 @@ compar_matcheexp
    match_t * mb = (match_t *) b;
 
    if (mb->e_exp < ma->e_exp) return 1;
+   else return -1;
+}
+
+int
+compar_intvstart
+(
+ const void * a,
+ const void * b,
+ const int   param
+)
+{
+   matchlist_t * ma = *(matchlist_t **) a;
+   matchlist_t * mb = *(matchlist_t **) b;
+   if (ma->pos == 0) return 1;
+   if (mb->pos == 0) return -1;
+   if (mb->match[0].read_s < ma->match[0].read_s) return 1;
    else return -1;
 }
