@@ -3,6 +3,7 @@
 *.fast*
 *.fmi
 *.index
+*.out
 bwmapper
 mapper
 gbrowser
