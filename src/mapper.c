@@ -31,25 +31,26 @@ int main(int argc, char *argv[])
    }
 
    // Options.
-   seedopt_t seedopt = {.min_len = 1, .max_len = 1000, .min_loci = 1, .max_loci = 1, .aux_loci = 200}; // SMEM
+   seedopt_t seedopt = {.min_len = 1, .max_len = 1000, .min_loci = 1, .max_loci = 100, .aux_loci = 500}; // SMEM
    alignopt_t alignopt = {
+      .bp_diagonal  = 1,
       .bp_thr       = 10,
       .bp_max_thr   = 50,
       .bp_resolution = 1,
       .bp_period    = 5,
-      .bp_repeats   = 4,
-      .read_error   = 0.05,
+      .bp_repeats   = 2,
+      .read_error   = 0.02,
       .rand_error   = 0.50,
       .width_ratio  = 0.05
    };
    mapopt_t mapopt = {
       .dist_accept = 10,
       .read_ref_ratio = 0.05,
-      .align_accept_eexp = -30.0,
+      .align_accept_eexp = -100.0,
       .overlap_max_tolerance = 0.5,
-      .align_seed_filter_thr = 0.5,
+      .align_seed_filter_thr = 0.0,
       .align_filter_ident = 0.9,
-      .align_filter_eexp = -10.0,
+      .align_filter_eexp = 0.0,
       .align = alignopt,
       .seed = seedopt
    };
@@ -60,9 +61,11 @@ int main(int argc, char *argv[])
    // Data structures.
    matchlist_t * seed_matches = matchlist_new(max_align_per_read);
    matchlist_t * map_matches = matchlist_new(64);
+   fprintf(stderr, "mapping...");
+   clock_t t = clock();   
    // Process reads.
    for (size_t i = 0; i < seqs->pos; i++) {
-      //      clock_t t = clock();
+
       //      fprintf(stderr, "%ld/%ld\r",i, seqs->pos);
       // Seed.
       seedstack_t * seeds = seed(seqs->seq[i].seq, mapopt.seed, index);
@@ -76,7 +79,6 @@ int main(int argc, char *argv[])
       // Sort matches.
       //      mergesort_mt(map_matches->match, map_matches->pos, sizeof(match_t *), 0, 1, compar_matcheexp);
       // Print matches.
-
       for (size_t j = 0; j < map_matches->pos; j++) {
          match_t * match = map_matches->match[j];
          int dir;
@@ -90,6 +92,7 @@ int main(int argc, char *argv[])
             g_end   = match->ref_e + 1;
             dir = 0;
          }
+
          int   chrnum = bisect_search(0, index->chr->nchr-1, index->chr->start, g_start+1)-1;
          // Print results.
          fprintf(stdout, "%s \t%d\t%d\t%s:%ld-%ld:%c\t%.2f\t%.1f%%\t%c%c\n",
@@ -104,10 +107,11 @@ int main(int argc, char *argv[])
                  (match->flags & WARNING_OVERLAP ? 'o' : '-'),
                  (match->flags & FLAG_FUSED ? 'f' : '-'));
       }
-      
+      fprintf(stdout, "\n");
       //fprintf(stdout, "%.4f\t%ld\t%ld\t%ld\n", (clock()-t)*1000000.0/CLOCKS_PER_SEC,seeds->pos, seed_matches->pos, map_matches->pos);
       free(seeds);
    }
+   fprintf(stderr, "%.3fs\n",(clock()-t)*1.0/CLOCKS_PER_SEC);
 
    return 0;
 }
@@ -126,6 +130,57 @@ e_value
 }
 
 int
+align_simple
+(
+ char         * read,
+ matchlist_t  * seeds,
+ matchlist_t ** seqmatches,
+ index_t      * index,
+ mapopt_t       opt
+)
+{
+   if (seeds->pos == 0) return 0;
+   for (size_t i = 0; i < seeds->pos; i++) {
+      match_t * seed = seeds->match[i];
+      // Find the start point (center of seed).
+      uint64_t r_start = (seed->read_s + seed->read_e)/2;
+      uint64_t g_start = (seed->ref_s + seed->ref_e)/2;
+      // Extend right.
+      int alen = strlen(read) - r_start;
+      path_t align_r = dbf_align_bp(alen, read+r_start, alen, index->genome+g_start, 0, ALIGN_FORWARD, ALIGN_FORWARD, opt.align);
+      uint64_t read_e = r_start + align_r.row;
+      uint64_t ref_e = g_start + align_r.col;
+      // Extend left.
+      r_start--; g_start--;      
+      alen = r_start;
+      path_t align_l = dbf_align_bp(alen, read+r_start, alen, index->genome+g_start, 0, ALIGN_BACKWARD, ALIGN_BACKWARD, opt.align);
+      uint64_t read_s = r_start - align_r.row;
+      uint64_t ref_s = g_start - align_r.col;
+
+      long score = align_l.score + align_r.score;
+      double ident = 1.0 - (score*1.0)/(align_max(read_e-read_s+1,ref_e-ref_s+1));
+
+      match_t * hit = malloc(sizeof(match_t));
+      hit->repeats = matchlist_new(REPEATS_SIZE);
+      hit->flags  = 0;
+      hit->hits   = seed->hits;
+      // Fill/Update hit.
+      hit->score  = score;
+      hit->ident  = ident;
+      hit->ref_e  = ref_e;
+      hit->ref_s  = ref_s;
+      hit->read_e = read_e;
+      hit->read_s = read_s;
+      hit->e_exp  = e_value(ref_e - ref_s + 1, align_l.score + align_r.score, index->size);
+
+      // Add to significant matchlist.
+      matchlist_add(seqmatches, hit);
+   }
+
+   return 0;
+}
+
+int
 align_seeds
 (
  char         * read,
@@ -133,7 +188,7 @@ align_seeds
  matchlist_t ** seqmatches,
  index_t      * index,
  mapopt_t       hmargs
- )
+)
 {
    if (seeds->pos == 0) return 0;
    int significant = 0;
@@ -218,7 +273,7 @@ align_seeds
       path_t align_r = (path_t){0,0,0}, align_l = (path_t){0,0,0};
       // Forward alignment (right).
       if(r_qlen) {
-         align_r = dbf_align(r_qlen, r_qry, r_rlen, r_ref, r_min, ALIGN_FORWARD, ALIGN_FORWARD, hmargs.align);
+         align_r = dbf_align_bp(r_qlen, r_qry, r_rlen, r_ref, r_min, ALIGN_FORWARD, ALIGN_FORWARD, hmargs.align);
          read_e = r_qstart + align_r.row;
          ref_e = r_rstart + align_r.col;
       }
@@ -228,7 +283,7 @@ align_seeds
       }
       // Backward alignment (left).
       if(l_qlen) {
-         align_l = dbf_align(l_qlen, l_qry, l_rlen, l_ref, l_min, ALIGN_BACKWARD, ALIGN_BACKWARD, hmargs.align);
+         align_l = dbf_align_bp(l_qlen, l_qry, l_rlen, l_ref, l_min, ALIGN_BACKWARD, ALIGN_BACKWARD, hmargs.align);
          read_s =  l_qstart - align_l.row;
          ref_s = l_rstart - align_l.col;
       }

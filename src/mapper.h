@@ -106,6 +106,7 @@ int             matchlist_add    (matchlist_t ** listp, match_t * match);
 
 // Aligning
 int             align_seeds      (char *, matchlist_t *, matchlist_t **, index_t *, mapopt_t);
+int             align_simple     (char *, matchlist_t *, matchlist_t **, index_t *, mapopt_t);
 double          e_value          (int L, int m, long gsize);
 
 // Compar functions.
