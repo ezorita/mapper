@@ -77,7 +77,7 @@ struct match_t {
 struct matchlist_t {
    int       size;
    int       pos;
-   match_t * match[];
+   match_t   match[];
 };
 
 struct mapopt_t {
@@ -102,7 +102,7 @@ seqstack_t    * read_file       (FILE * inputf);
 hit_t         * compute_hits    (seedstack_t * seeds, index_t * index, uint64_t * hit_cnt);
 int             match_seeds     (seedstack_t *, int, matchlist_t *, index_t *, int, double);
 matchlist_t   * matchlist_new    (int elements);
-int             matchlist_add    (matchlist_t ** listp, match_t * match);
+int             matchlist_add    (matchlist_t ** listp, match_t match);
 
 // Aligning
 int             align_seeds      (char *, matchlist_t *, matchlist_t **, index_t *, mapopt_t);

@@ -80,16 +80,16 @@ int main(int argc, char *argv[])
       //      mergesort_mt(map_matches->match, map_matches->pos, sizeof(match_t *), 0, 1, compar_matcheexp);
       // Print matches.
       for (size_t j = 0; j < map_matches->pos; j++) {
-         match_t * match = map_matches->match[j];
+         match_t match = map_matches->match[j];
          int dir;
          uint64_t g_start, g_end;
-         if (match->ref_s >= index->size/2) {
-            g_start = index->size - match->ref_e - 2;
-            g_end   = index->size - match->ref_s - 2;
+         if (match.ref_s >= index->size/2) {
+            g_start = index->size - match.ref_e - 2;
+            g_end   = index->size - match.ref_s - 2;
             dir = 1;
          } else {
-            g_start = match->ref_s + 1;
-            g_end   = match->ref_e + 1;
+            g_start = match.ref_s + 1;
+            g_end   = match.ref_e + 1;
             dir = 0;
          }
 
@@ -97,15 +97,15 @@ int main(int argc, char *argv[])
          // Print results.
          fprintf(stdout, "%s \t%d\t%d\t%s:%ld-%ld:%c\t%.2f\t%.1f%%\t%c%c\n",
                  seqs->seq[i].tag,
-                 match->read_s+1, match->read_e+1,
+                 match.read_s+1, match.read_e+1,
                  index->chr->name[chrnum],
                  g_start - index->chr->start[chrnum]+1,
                  g_end - index->chr->start[chrnum]+1,
                  dir ? '-' : '+',
-                 match->e_exp,
-                 match->ident*100.0,
-                 (match->flags & WARNING_OVERLAP ? 'o' : '-'),
-                 (match->flags & FLAG_FUSED ? 'f' : '-'));
+                 match.e_exp,
+                 match.ident*100.0,
+                 (match.flags & WARNING_OVERLAP ? 'o' : '-'),
+                 (match.flags & FLAG_FUSED ? 'f' : '-'));
       }
       fprintf(stdout, "\n");
       //fprintf(stdout, "%.4f\t%ld\t%ld\t%ld\n", (clock()-t)*1000000.0/CLOCKS_PER_SEC,seeds->pos, seed_matches->pos, map_matches->pos);
@@ -141,10 +141,10 @@ align_simple
 {
    if (seeds->pos == 0) return 0;
    for (size_t i = 0; i < seeds->pos; i++) {
-      match_t * seed = seeds->match[i];
+      match_t seed = seeds->match[i];
       // Find the start point (center of seed).
-      uint64_t r_start = (seed->read_s + seed->read_e)/2;
-      uint64_t g_start = (seed->ref_s + seed->ref_e)/2;
+      uint64_t r_start = (seed.read_s + seed.read_e)/2;
+      uint64_t g_start = (seed.ref_s + seed.ref_e)/2;
       // Extend right.
       int alen = strlen(read) - r_start;
       path_t align_r = dbf_align_bp(alen, read+r_start, alen, index->genome+g_start, 0, ALIGN_FORWARD, ALIGN_FORWARD, opt.align);
@@ -160,18 +160,18 @@ align_simple
       long score = align_l.score + align_r.score;
       double ident = 1.0 - (score*1.0)/(align_max(read_e-read_s+1,ref_e-ref_s+1));
 
-      match_t * hit = malloc(sizeof(match_t));
-      hit->repeats = matchlist_new(REPEATS_SIZE);
-      hit->flags  = 0;
-      hit->hits   = seed->hits;
+      match_t hit;
+      hit.repeats = matchlist_new(REPEATS_SIZE);
+      hit.flags  = 0;
+      hit.hits   = seed.hits;
       // Fill/Update hit.
-      hit->score  = score;
-      hit->ident  = ident;
-      hit->ref_e  = ref_e;
-      hit->ref_s  = ref_s;
-      hit->read_e = read_e;
-      hit->read_s = read_s;
-      hit->e_exp  = e_value(ref_e - ref_s + 1, align_l.score + align_r.score, index->size);
+      hit.score  = score;
+      hit.ident  = ident;
+      hit.ref_e  = ref_e;
+      hit.ref_s  = ref_s;
+      hit.read_e = read_e;
+      hit.read_s = read_s;
+      hit.e_exp  = e_value(ref_e - ref_s + 1, align_l.score + align_r.score, index->size);
 
       // Add to significant matchlist.
       matchlist_add(seqmatches, hit);
@@ -196,33 +196,33 @@ align_seeds
    matchlist_t * matches = *seqmatches;
 
    // Sort by seeded nucleotides.
-   mergesort_mt(seeds->match, seeds->pos, sizeof(match_t *), 0, 1, compar_seedhits);
+   mergesort_mt(seeds->match, seeds->pos, sizeof(match_t), 0, 1, compar_seedhits);
 
    for(long k = 0; k < seeds->pos; k++) {
       // Get next seed.
-      match_t * seed = seeds->match[k];
+      match_t seed = seeds->match[k];
 
       // Compute alignment limits.
-      long r_min  = seed->read_e - seed->read_s + 1;
+      long r_min  = seed.read_e - seed.read_s + 1;
       long l_min  = 0;
-      long r_qstart = seed->read_s + 1;
+      long r_qstart = seed.read_s + 1;
       long l_qstart = align_max(r_qstart - 1,0);
-      long r_rstart = seed->ref_s + 1;
-      long l_rstart = seed->ref_s;
+      long r_rstart = seed.ref_s + 1;
+      long l_rstart = seed.ref_s;
      
       // Extend existing mapping.
       double last_eexp = INFINITY;
-      match_t * extend = NULL;
+      int extend = 0;
       int extend_score = 0;
       int cancel_align = 0;
       for (int i = 0; i < matches->pos; i++) {
-         match_t * match = matches->match[i];
-         if (match->e_exp > last_eexp) continue;
+         match_t match = matches->match[i];
+         if (match.e_exp > last_eexp) continue;
          // Check whether the seed is contiguous.
-         long r_distr = seed->read_e - match->read_e;
-         long g_distr = match->ref_e - seed->ref_e;
-         long r_distl = match->read_s - seed->read_s;
-         long g_distl = seed->ref_s - match->ref_s;
+         long r_distr = seed.read_e - match.read_e;
+         long g_distr = match.ref_e - seed.ref_e;
+         long r_distl = match.read_s - seed.read_s;
+         long g_distl = seed.ref_s - match.ref_s;
          long d_accept = hmargs.dist_accept;
          double rg_ratio = hmargs.read_ref_ratio;
          int ext_r = g_distr > -d_accept && r_distr > -d_accept && ((g_distr < (r_distr * rg_ratio)) || (g_distr < d_accept && r_distr < d_accept));
@@ -230,19 +230,19 @@ align_seeds
          if (ext_r || ext_l) {
             r_min  = (ext_r ? r_distr : 0);
             l_min  = (ext_l ? r_distl : 0);
-            r_qstart = match->read_e + 1;
-            r_rstart = match->ref_e + 1;
-            l_qstart = match->read_s - 1;
-            l_rstart = match->ref_s - 1;
-            last_eexp = match->e_exp;
-            extend = match;
-            extend_score = match->score;
-         } else if (match->e_exp < hmargs.align_accept_eexp) {
+            r_qstart = match.read_e + 1;
+            r_rstart = match.ref_e + 1;
+            l_qstart = match.read_s - 1;
+            l_rstart = match.ref_s - 1;
+            last_eexp = match.e_exp;
+            extend = i;
+            extend_score = match.score;
+         } else if (match.e_exp < hmargs.align_accept_eexp) {
             // Check overlap
-            int span = align_min(seed->read_e - seed->read_s, match->read_e - match->read_s);
-            int overlap = align_max(0, align_min(seed->read_e, match->read_e) - align_max(seed->read_s, match->read_s));
+            int span = align_min(seed.read_e - seed.read_s, match.read_e - match.read_s);
+            int overlap = align_max(0, align_min(seed.read_e, match.read_e) - align_max(seed.read_s, match.read_s));
             overlap = overlap > span*hmargs.overlap_max_tolerance;
-            int seed_ratio = seed->hits < match->hits*hmargs.align_seed_filter_thr;
+            int seed_ratio = seed.hits < match.hits*hmargs.align_seed_filter_thr;
             // If overlap is higher than the maximum overlap tolerance, cancel the alignment.
             if (overlap && seed_ratio) {
                cancel_align = 1;
@@ -301,36 +301,35 @@ align_seeds
 
       // If significant, store.
       if (e_exp < hmargs.align_filter_eexp) {
-         match_t * hit;
-         if (extend != NULL) {
-            hit = extend;
-            hit->hits += seed->hits;
+         match_t hit;
+         if (extend) {
+            hit = matches->match[extend];
+            hit.hits += seed.hits;
          }
          else {
-            hit = malloc(sizeof(match_t));
-            hit->repeats = matchlist_new(REPEATS_SIZE);
-            hit->flags  = 0;
-            hit->hits   = seed->hits;
+            hit.repeats = matchlist_new(REPEATS_SIZE);
+            hit.flags  = 0;
+            hit.hits   = seed.hits;
          }
 
          // Fill/Update hit.
-         hit->score  = score;
-         hit->ident  = ident;
-         hit->ref_e  = ref_e;
-         hit->ref_s  = ref_s;
-         hit->read_e = read_e;
-         hit->read_s = read_s;
-         hit->e_exp  = e_exp;
+         hit.score  = score;
+         hit.ident  = ident;
+         hit.ref_e  = ref_e;
+         hit.ref_s  = ref_s;
+         hit.read_e = read_e;
+         hit.read_s = read_s;
+         hit.e_exp  = e_exp;
 
          // Add to significant matchlist.
          significant = 1;
-         if (extend == NULL) {
+         if (extend) {
+            matches->match[extend] = hit;
+         } else {
             matchlist_add(seqmatches, hit);
             matches = *seqmatches;
          }
       }
-            
-      free(seed);
    }
 
    return significant;
@@ -343,7 +342,7 @@ matchlist_new
 )
 {
    if (elements < 1) elements = 1;
-   matchlist_t * list = malloc(sizeof(matchlist_t) + elements*sizeof(match_t *));
+   matchlist_t * list = malloc(sizeof(matchlist_t) + elements*sizeof(match_t));
    if (list == NULL) return NULL;
    list->pos  = 0;
    list->size = elements;
@@ -354,7 +353,7 @@ int
 matchlist_add
 (
  matchlist_t ** listp,
- match_t      * match
+ match_t        match
 )
 {
    matchlist_t * list = *listp;
@@ -362,7 +361,7 @@ matchlist_add
    // Check whether stack is full.
    if (list->pos >= list->size) {
       int newsize = list->size * 2;
-      *listp = list = realloc(list, sizeof(matchlist_t) + newsize * sizeof(match_t *));
+      *listp = list = realloc(list, sizeof(matchlist_t) + newsize * sizeof(match_t));
       if (list == NULL) return -1;
       list->size = newsize;
    }
@@ -454,32 +453,30 @@ match_seeds
       // Non-significant streaks (bulk) will not be saved.
       if (span > minv && bulk == 0) {
          // Allocate match.
-         match_t * match = malloc(sizeof(match_t));
-         match->ref_e  = lend;
-         match->read_e = rend;
-         match->ref_s  = lstart;
-         match->read_s = rstart;
-         match->hits   = span;
-         match->flags  = 0;
-         match->score  = -1;
+         match_t match;
+         match.ref_e  = lend;
+         match.read_e = rend;
+         match.ref_s  = lstart;
+         match.read_s = rstart;
+         match.hits   = span;
+         match.flags  = 0;
+         match.score  = -1;
 
          // Append if list not yet full, replace the minimum value otherwise.
          if (matchlist->pos < matchlist->size) {
             matchlist->match[matchlist->pos++] = match;
          }
          else {
-            match_t * match_min = matchlist->match[min];
-            free(match_min);
             matchlist->match[min] = match;
          }
                
          // Find the minimum that will be substituted next.
          if (matchlist->pos == matchlist->size) {
-            minv = matchlist->match[0]->hits;
+            minv = matchlist->match[0].hits;
             for (int j = 1 ; j < matchlist->pos; j++) {
-               if (minv > matchlist->match[j]->hits) {
+               if (minv > matchlist->match[j].hits) {
                   min  = j;
-                  minv = matchlist->match[j]->hits;
+                  minv = matchlist->match[j].hits;
                }
             }
          }
@@ -870,8 +867,8 @@ compar_seedhits
  const int   param
 )
 {
-   match_t * ma = *((match_t **) a);
-   match_t * mb = *((match_t **) b);
+   match_t * ma = (match_t *) a;
+   match_t * mb = (match_t *) b;
    
    if (ma->hits < mb->hits) return 1;
    else return -1;
@@ -885,8 +882,8 @@ compar_matcheexp
  const int   param
 )
 {
-   match_t * ma = *((match_t **) a);
-   match_t * mb = *((match_t **) b);
+   match_t * ma = (match_t *) a;
+   match_t * mb = (match_t *) b;
 
    if (mb->e_exp < ma->e_exp) return 1;
    else return -1;
