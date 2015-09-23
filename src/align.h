@@ -47,6 +47,7 @@ struct align_t {
 struct alignopt_t {
    double bp_thr;
    double bp_max_thr;
+   int    bp_diagonal;
    int    bp_period;
    int    bp_resolution;
    int    bp_repeats;
@@ -62,6 +63,7 @@ struct path_t {
 };
 
 
-path_t dbf_align (int qlen,char* query,int rlen,char* ref,int min_len,int dir_r,int dir_q,alignopt_t opt);
+path_t dbf_align_bp (int qlen,char* query,int rlen,char* ref,int min_len,int dir_r,int dir_q,alignopt_t opt);
+path_t dbf_align    (int qlen,char* query,int rlen,char* ref,int dir_r,int dir_q, double width_ratio);
 
 #endif

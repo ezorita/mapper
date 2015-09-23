@@ -118,7 +118,7 @@ dbf_find_min
 }
 
 path_t
-dbf_align
+dbf_align_bp
 (
  int         qlen,
  char      * qry,
@@ -234,7 +234,11 @@ char translate[256] = {[0 ... 255] = 4,
       Mb[j] = (Mb[j] >> 1) | (Mhc << (WORD_SIZE-1));
 
       if (i%opt.bp_resolution == 0) {
-         bp_path[bp_pos] = dbf_find_min(i,score,awords,Pr,Mr,Pb,Mb);
+         if (opt.bp_diagonal) {
+            bp_path[bp_pos] = (path_t) {score, i, i};
+         } else {
+            bp_path[bp_pos] = dbf_find_min(i,score,awords,Pr,Mr,Pb,Mb);
+         }
          if ((period++)%opt.bp_period == 1 || opt.bp_period == opt.bp_resolution) {
             // Compute likelihood of current reference.
             int Ee = bp_path[bp_pos].score - bp_path[bp_ref].score;
@@ -306,4 +310,129 @@ char translate[256] = {[0 ... 255] = 4,
 
 
    return best_bp;
+}
+
+
+path_t
+dbf_align
+(
+ int         qlen,
+ char      * qry,
+ int         rlen,
+ char      * ref,
+ int         dir_q,
+ int         dir_r,
+ double      width_ratio
+ )
+{
+
+char translate[256] = {[0 ... 255] = 4,
+                       ['a'] = 0, ['c'] = 1, ['g'] = 2, ['t'] = 3,
+                       ['A'] = 0, ['C'] = 1, ['G'] = 2, ['T'] = 3 };
+
+   if (qlen < 1 || rlen < 1) return (path_t){0,0,0};
+   int a_len = align_max(qlen,rlen);
+   int align_w = (int)(a_len*width_ratio);
+   if (align_w < (qlen > rlen ? qlen - rlen : rlen - qlen)) return (path_t){-1,0,0};
+   // Reduce width if align_w is bigger than the available query words.
+   if (align_w > a_len) align_w = a_len;
+   int awords = (align_w + WORD_SIZE - 1)/WORD_SIZE;
+   align_w = awords * WORD_SIZE;
+
+   // Number of Eq words.
+   int eqwords = awords + (a_len + WORD_SIZE - 1)/WORD_SIZE;
+   // Precompute query eq values.
+   uint64_t ** Peq = malloc((eqwords+1)*sizeof(uint64_t*)); // Alloc 1 more to avoid segfault when shifting bits.
+   for (int i = 0; i <= eqwords; i++) Peq[i] = calloc(4, sizeof(uint64_t));
+   dbf_fill_eq(Peq + awords, qry, qlen, dir_q);
+   // Precompute ref eq values.
+   uint64_t ** Req = malloc((eqwords+1)*sizeof(uint64_t*));
+   for (int i = 0; i <= eqwords; i++) Req[i] = calloc(4, sizeof(uint64_t));
+   dbf_fill_eq(Req + awords, ref, rlen, dir_r);
+
+   // Initialize
+   // Right bitfield.
+   uint64_t * Pr = calloc(awords, sizeof(uint64_t));
+   uint64_t * Mr = malloc(awords * sizeof(uint64_t));
+   memset(Mr, 0xFF, awords * sizeof(uint64_t));
+   // Bottom bitfield.
+   uint64_t * Pb = calloc(awords, sizeof(uint64_t));
+   uint64_t * Mb = malloc(awords * sizeof(uint64_t));
+   memset(Mb, 0xFF, awords * sizeof(uint64_t));
+
+   // Alloc words for shifted Eq values.
+   uint64_t * Eqr = malloc(awords * sizeof(uint64_t));
+   uint64_t * Eqb = malloc(awords * sizeof(uint64_t));
+
+   // Horizontal/vertical input deltas.
+   uint8_t Phinr, Mhinr, Phinb, Mhinb;
+   uint32_t score = 0;
+
+   for (int i = 0; i < a_len; i++) {
+      Phinr = Phinb = 1;
+      Mhinr = Mhinb = 0;
+
+      // Update Eq.
+      int b = i%WORD_SIZE;
+      int w = i/WORD_SIZE;
+      if (b) {
+         for (int j = 0; j < awords; j++)
+            Eqr[j] = (Peq[w+j][(int)translate[(uint8_t)ref[dir_r*i]]] >> b) | (Peq[w+j+1][(int)translate[(uint8_t)ref[dir_r*i]]] << (WORD_SIZE - b));
+         for (int j = 0; j < awords; j++)
+            Eqb[j] = (Req[w+j][(int)translate[(uint8_t)qry[dir_q*i]]] >> b) | (Req[w+j+1][(int)translate[(uint8_t)qry[dir_q*i]]] << (WORD_SIZE - b));
+      }
+      else {
+         for (int j = 0; j < awords; j++) Eqr[j] = Peq[w+j][(int)translate[(uint8_t)ref[dir_r*i]]];
+         for (int j = 0; j < awords; j++) Eqb[j] = Req[w+j][(int)translate[(uint8_t)qry[dir_q*i]]];
+      }
+
+      // Update bitfields.
+      for (int j = 0; j < awords; j++) dbf_update(Eqr[j], Pr+j, Mr+j, &Phinr, &Mhinr);
+      for (int j = 0; j < awords; j++) dbf_update(Eqb[j], Pb+j, Mb+j, &Phinb, &Mhinb);
+
+      // Compute the central cell.
+      uint64_t Pvc, Mvc, Phc, Mhc;
+      int cref = translate[(uint8_t)ref[dir_r*i]];
+      int cqry = translate[(uint8_t)qry[dir_q*i]];
+      if (cref == cqry && cref < 4) {
+         Mhc = Phinb;
+         Phc = Mhinb;
+         Mvc = Phinr;
+         Pvc = Mhinr;
+      } else {
+         Mhc = Phinb & Mhinr;
+         Phc = (!Phinb) & (Mhinb | (!Mhinr));
+         Mvc = Phinr & Mhinb;
+         Pvc = (!Phinr) & (Mhinr | (!Mhinb));
+      }
+
+      score += Phinr - Mhinr + Pvc - Mvc;
+
+      // Now shift the bitfields and insert center cell.
+      int j;
+      for (j=0; j < awords-1; j++) Pr[j] = (Pr[j] >> 1) | (Pr[j+1] << (WORD_SIZE-1));
+      Pr[j] = (Pr[j] >> 1) | (Pvc << (WORD_SIZE-1));
+      for (j=0; j < awords-1; j++) Mr[j] = (Mr[j] >> 1) | (Mr[j+1] << (WORD_SIZE-1));
+      Mr[j] = (Mr[j] >> 1) | (Mvc << (WORD_SIZE-1));
+      for (j=0; j < awords-1; j++) Pb[j] = (Pb[j] >> 1) | (Pb[j+1] << (WORD_SIZE-1));
+      Pb[j] = (Pb[j] >> 1) | (Phc << (WORD_SIZE-1));
+      for (j=0; j < awords-1; j++) Mb[j] = (Mb[j] >> 1) | (Mb[j+1] << (WORD_SIZE-1));
+      Mb[j] = (Mb[j] >> 1) | (Mhc << (WORD_SIZE-1));
+   }
+
+   path_t path = dbf_find_min(a_len-1,score,awords,Pr,Mr,Pb,Mb);
+
+
+   // Free memory.
+   free(Eqr);
+   free(Eqb);
+   dbf_free_eq(Peq, eqwords);
+   dbf_free_eq(Req, eqwords);
+   free(Mr); free(Pr); free(Mb); free(Pb);
+
+   if (path.row >= qlen) path.row = qlen-1;
+   if (path.col >= rlen) path.row = rlen-1;
+
+
+   return path;
 }
