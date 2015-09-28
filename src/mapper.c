@@ -56,7 +56,9 @@ int main(int argc, char *argv[])
       .seed = seedopt
    };
 
-   int dist_accept = 10;
+   double mapq_evalue_ratio = 0.5;
+   double print_mapq_thr = 20;
+
    // Data structures.
    matchlist_t * seed_matches = matchlist_new(mapopt.max_align_per_read);
    matchlist_t * map_matches = matchlist_new(64);
@@ -71,19 +73,22 @@ int main(int argc, char *argv[])
       // Match seeds.
       int slen = strlen(seqs->seq[i].seq);
       seed_matches->pos = 0;
-      match_seeds(seeds, slen, seed_matches, index, dist_accept, mapopt.read_ref_ratio);
+      match_seeds(seeds, slen, seed_matches, index, mapopt.dist_accept, mapopt.read_ref_ratio);
       // Smith-Waterman alignment.
       map_matches->pos = 0;
       align_seeds(seqs->seq[i].seq, seed_matches, &map_matches, index, mapopt);
       // Merge intervals.
       int32_t n_ints;
       matchlist_t ** intervals = merge_intervals(map_matches, 0.8, &n_ints);
+      // Compute map qualities.
+      compute_mapq(intervals, n_ints, mapq_evalue_ratio, seqs->seq[i], index);
       // Print matches.
       for (int32_t k = 0; k < n_ints; k++) {
          int itv = (k+1)%n_ints;
          matchlist_t * matches = intervals[itv];
          for (size_t j = 0; j < matches->pos; j++) {
             match_t match = matches->match[j];
+            if (match.mapq < print_mapq_thr && (j > 0 || itv == 0)) continue;
             int dir;
             uint64_t g_start, g_end;
             if (match.ref_s >= index->size/2) {
@@ -98,13 +103,14 @@ int main(int argc, char *argv[])
 
             int   chrnum = bisect_search(0, index->chr->nchr-1, index->chr->start, g_start+1)-1;
             // Print results.
-            fprintf(stdout, "%s \t%d\t%d\t%d\t%s:%ld-%ld:%c\t%.2f\t%.1f%%\t%c%c\n",
+            fprintf(stdout, "%s \t%d\t%d\t%d\t%s:%ld-%ld:%c\t%d\t%.2f\t%.1f%%\t%c%c\n",
                     seqs->seq[i].tag, itv,
                     match.read_s+1, match.read_e+1,
                     index->chr->name[chrnum],
                     g_start - index->chr->start[chrnum]+1,
                     g_end - index->chr->start[chrnum]+1,
                     dir ? '-' : '+',
+                    (int)match.mapq,
                     match.e_exp,
                     match.ident*100.0,
                     (match.flags & WARNING_OVERLAP ? 'o' : '-'),
@@ -112,13 +118,67 @@ int main(int argc, char *argv[])
          }
          free(matches);
       }
-      fprintf(stdout, "\n");
+      //      fprintf(stdout, "\n");
       //fprintf(stdout, "%.4f\t%ld\t%ld\t%ld\n", (clock()-t)*1000000.0/CLOCKS_PER_SEC,seeds->pos, seed_matches->pos, map_matches->pos);
       free(seeds);
       free(intervals);
    }
    fprintf(stderr, "%.3fs\n",(clock()-t)*1.0/CLOCKS_PER_SEC);
 
+   return 0;
+}
+
+int
+compute_mapq
+(
+ matchlist_t ** intervals,
+ int n_int,
+ double e_ratio,
+ seq_t seq,
+ index_t * index
+)
+{
+   for (int i = 1; i < n_int; i++) {
+      matchlist_t * interval = intervals[i];
+      if (interval->pos < 2) {
+         double e_exp = -10*interval->match[0].e_exp - 3;
+         interval->match[0].mapq = (e_exp < 60 ? e_exp : 60);
+         continue;
+      }
+      match_t match = interval->match[0];
+      double exp_thr = match.e_exp * e_ratio;
+      int beg = match.read_s;
+      int len = match.read_e - match.read_s + 1;
+
+      double psum = 0.0;
+      if (interval->match[1].e_exp < exp_thr) {
+         double mapq = mapq_align(seq.seq + beg, seq.q + beg, index->genome + match.ref_s, len, len*0.02);
+         // Assign mapq.
+         interval->match[0].mapq = pow(10.0, -mapq);
+         psum += interval->match[0].mapq;
+      } else {
+         double e_exp = -10*interval->match[0].e_exp - 3;
+         interval->match[0].mapq = (e_exp < 60 ? e_exp : 60);
+         continue;
+      }
+      
+      int j = 1;
+      for (; j < interval->pos; j++) {
+         match_t match = interval->match[j];         
+         if (interval->match[j].e_exp < exp_thr) {
+            char * ref_ptr = index->genome + match.ref_s + beg - match.read_s;
+            double mapq = mapq_align(seq.seq + beg, seq.q + beg, ref_ptr, len, len*0.02);
+            interval->match[j].mapq = pow(10.0, -mapq);
+            psum += interval->match[j].mapq;
+         } else break;
+      }
+      for (j = (j >= interval->pos ? interval->pos - 1 : j); j >= 0; j--) {
+         double p_exp = (int)(-10*log10(1-interval->match[j].mapq/psum));
+         double e_exp = (int)(-10*interval->match[j].e_exp) - 3;
+         double quality = (p_exp < e_exp ? p_exp : e_exp);
+         interval->match[j].mapq = quality > 60 ? 60 : quality;
+      }
+   }
    return 0;
 }
 
@@ -199,7 +259,7 @@ e_value
  long gsize
 )
 {
-   double E = log10(gsize) + log10(2) * L * (m*3.0/L-2);
+   double E = log10(gsize) + log10(2) * (m*3.0-2*L);
    for (int i = 0; i < m; i++) E += log10((L-i)/(double)(m-i));
    return E;
 }
@@ -248,6 +308,7 @@ align_simple
       hit.read_s = read_s;
       hit.interval = 0;
       hit.e_exp  = e_value(ref_e - ref_s + 1, align_l.score + align_r.score, index->size);
+      hit.mapq = 0;
 
       // Add to significant matchlist.
       matchlist_add(seqmatches, hit);

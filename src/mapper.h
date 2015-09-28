@@ -75,6 +75,7 @@ struct match_t {
    int interval;
    double ident;
    double e_exp;
+   double mapq;
    matchlist_t * repeats;
 };
 
@@ -116,6 +117,7 @@ double          e_value          (int L, int m, long gsize);
 
 // Post-processing functions.
 matchlist_t **  merge_intervals  (matchlist_t *, double, int32_t *);
+int             compute_mapq     (matchlist_t **, int, double, seq_t, index_t *);
 
 // Compar functions.
 int             compar_hit_locus (const void * a, const void * b, const int param);

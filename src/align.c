@@ -36,13 +36,13 @@ dbf_update
 void
 dbf_fill_eq
 (
- uint64_t ** Peq,
- char      * text,
- int         len,
- int         dir
+ uint64_t  ** Peq,
+ const char * text,
+ const int    len,
+ const int    dir
 )
 {
-char translate[256] = {[0 ... 255] = 4,
+static const char translate[256] = {[0 ... 255] = 4,
                        ['a'] = 0, ['c'] = 1, ['g'] = 2, ['t'] = 3,
                        ['A'] = 0, ['C'] = 1, ['G'] = 2, ['T'] = 3};
 
@@ -435,4 +435,55 @@ char translate[256] = {[0 ... 255] = 4,
 
 
    return path;
+}
+
+
+
+double
+mapq_align
+(
+ const char * qry,
+ const char * qlt,
+ const char * ref,
+ const int    len,
+ const int    w
+)
+{
+
+   static const char t[256] = {[0 ... 255] = 4,
+                  ['a'] = 0, ['c'] = 1, ['g'] = 2, ['t'] = 3,
+                  ['A'] = 0, ['C'] = 1, ['G'] = 2, ['T'] = 3 };
+
+   double i_p = 2.0; // Indel penalty
+   double m_p[256];  // Mismatch penalty
+   for (int i = 0; i < 256; i++) m_p[i] = (i-33.0)/10;
+   double * cells = malloc((2*w+3)*sizeof(double));
+   double * c = cells + w + 1;
+   // Initialize scores.
+   c[0] = 0;
+   for (int i = 1; i <= w+1; i++) c[-i] = c[i] = i * i_p;
+
+   for (int32_t i = 0; i < len; i++) {
+      // Horizontal.
+      for (int32_t j = (i < w ? -i : -w); j < 0; j++) {
+         double indel = align_min(c[j+1], c[j-1]) + i_p;
+         double match = c[j] + (t[(int)qry[i+j]] == t[(int)ref[i]] ? 0 : m_p[(int)qlt[i+j]]);
+         c[j] = align_min(indel, match);
+      }
+      // Vertical and center.
+      double mp = m_p[(int)qlt[i]];
+      for (int32_t j = (i < w ? i : w); j >= 0; j--) {
+         double indel = align_min(c[j+1], c[j-1]) + i_p;
+         double match = c[j] + (t[(int)qry[i]] == t[(int)ref[i-j]] ? 0 : mp);
+         c[j] = align_min(indel, match);
+      }
+   }
+
+   // Find minimum and return.
+   double mapq = c[w];
+   for (int i = -w; i < w; i++) {
+      if (c[i] < mapq) mapq = c[i];
+   }
+
+   return mapq;
 }
