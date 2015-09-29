@@ -5,7 +5,7 @@
 int main(int argc, char *argv[])
 {
    int opt_verbose = 1;
-   int n_threads = 16;
+   int n_threads = 1;
    size_t seqs_per_thread = 1000;
 
    if (argc != 3) {
@@ -22,7 +22,8 @@ int main(int argc, char *argv[])
 
    // Read FM index format.
    if (opt_verbose) fprintf(stderr, "loading index...\n");
-   index_t * index = index_format(index_open(argv[2]));
+   idxfiles_t * files = index_open(argv[2]);
+   index_t * index = index_format(files);
    if(index == NULL) return EXIT_FAILURE;
 
    // Read file.
@@ -31,6 +32,7 @@ int main(int argc, char *argv[])
    if (seqs == NULL) {
       return EXIT_FAILURE;
    }
+   fclose(queryfile);
 
    // Options.
    seedopt_t seedopt = { // MEM
@@ -63,7 +65,7 @@ int main(int argc, char *argv[])
       .width_ratio  = 0.05
    };
    formatopt_t formatopt = {
-      .print_first = 0,
+      .print_first = 1,
       .mapq_thr = 20
    };
    mapopt_t mapopt = {
@@ -75,6 +77,20 @@ int main(int argc, char *argv[])
 
    // Run thread scheduler.
    mt_scheduler(seqs, &mapopt, index, n_threads, seqs_per_thread);
+
+   // Free memory.
+   free(seqs);
+   free(index->lcp_sample);
+   free(index->lcp_extend);
+   free(index);
+   free(files->chr->start);
+   free(files->chr->name);
+   free(files->chr);
+   munmap(files->gen_file, files->gen_len);
+   munmap(files->occ_file, files->occ_len);
+   munmap(files->lcp_file, files->lcp_len);
+   munmap(files->sa_file, files->sa_len);
+   free(files);
 
    return 0;
 }
@@ -144,6 +160,11 @@ mt_scheduler
 
    // Verbose.
    fprintf(stderr, "progress: 100%% (%.2f%% mapped) in %.3fs\n",control->mapped*100.0/seqs->pos,(clock()-t)*1.0/CLOCKS_PER_SEC);   
+
+   // Free structs.
+   free(control);
+   free(mutex);
+   free(monitor);
    return 0;
 }
 
@@ -281,36 +302,36 @@ index_open
    free(lut_file);
    */
    // Load OCC index.
-   long idxsize = lseek(fd_occ, 0, SEEK_END);
+   files->occ_len = lseek(fd_occ, 0, SEEK_END);
    lseek(fd_occ, 0, SEEK_SET);
-   files->occ_file = mmap(NULL, idxsize, PROT_READ, MMAP_FLAGS, fd_occ, 0);
+   files->occ_file = mmap(NULL, files->occ_len, PROT_READ, MMAP_FLAGS, fd_occ, 0);
    close(fd_occ);
    if (files->occ_file == NULL) {
       fprintf(stderr, "error mmaping .occ index file: %s.\n", strerror(errno));
       return NULL;
    }
    // Load SA index.
-   idxsize = lseek(fd_sa, 0, SEEK_END);
+   files->sa_len = lseek(fd_sa, 0, SEEK_END);
    lseek(fd_sa, 0, SEEK_SET);
-   files->sa_file = mmap(NULL, idxsize, PROT_READ, MMAP_FLAGS, fd_sa, 0);
+   files->sa_file = mmap(NULL, files->sa_len, PROT_READ, MMAP_FLAGS, fd_sa, 0);
    close(fd_sa);
    if (files->sa_file == NULL) {
       fprintf(stderr, "error mmaping .sar index file: %s.\n", strerror(errno));
       return NULL;
    }
    // Load GEN index.
-   idxsize = lseek(fd_gen, 0, SEEK_END);
+   files->gen_len = lseek(fd_gen, 0, SEEK_END);
    lseek(fd_gen, 0, SEEK_SET);
-   files->gen_file = mmap(NULL, idxsize, PROT_READ, MMAP_FLAGS, fd_gen, 0);
+   files->gen_file = mmap(NULL, files->gen_len, PROT_READ, MMAP_FLAGS, fd_gen, 0);
    close(fd_gen);
    if (files->gen_file == NULL) {
       fprintf(stderr, "error mmaping .gen index file: %s.\n", strerror(errno));
       return NULL;
    }
    // Load LCP index.
-   idxsize = lseek(fd_lcp, 0, SEEK_END);
+   files->lcp_len = lseek(fd_lcp, 0, SEEK_END);
    lseek(fd_lcp, 0, SEEK_SET);
-   files->lcp_file = mmap(NULL, idxsize, PROT_READ, MMAP_FLAGS, fd_lcp, 0);
+   files->lcp_file = mmap(NULL, files->lcp_len, PROT_READ, MMAP_FLAGS, fd_lcp, 0);
    close(fd_lcp);
    if (files->lcp_file == NULL) {
       fprintf(stderr, "error mmaping .lcp index file: %s.\n", strerror(errno));

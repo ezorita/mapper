@@ -223,7 +223,7 @@ char translate[256] = {[0 ... 255] = 4,
       score += Phinr - Mhinr + Pvc - Mvc;
 
       // Now shift the bitfields and insert center cell.
-      int j;
+      int j = 0;
       for (j=0; j < awords-1; j++) Pr[j] = (Pr[j] >> 1) | (Pr[j+1] << (WORD_SIZE-1));
       Pr[j] = (Pr[j] >> 1) | (Pvc << (WORD_SIZE-1));
       for (j=0; j < awords-1; j++) Mr[j] = (Mr[j] >> 1) | (Mr[j+1] << (WORD_SIZE-1));

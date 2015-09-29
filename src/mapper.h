@@ -55,9 +55,13 @@ struct mtcontrol_t {
 struct idxfiles_t {
    // Original file pointers.
    void      * gen_file;
+   size_t      gen_len;
    void      * occ_file;
+   size_t      occ_len;
    void      * sa_file;
+   size_t      sa_len;
    void      * lcp_file;
+   size_t      lcp_len;
 //   void      * lut_file;
    chr_t     * chr;
 };
