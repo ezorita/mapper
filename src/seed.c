@@ -83,6 +83,121 @@ seed
    return stack;
 }
 
+
+hit_t *
+compute_hits
+(
+ seedstack_t * seeds,
+ index_t     * index,
+ uint64_t    * hit_cnt
+)
+{
+   // Count loci.
+   uint64_t cnt = 0;
+   for (size_t i = 0; i < seeds->pos; i++) cnt += seeds->seed[i].ref_pos.ep - seeds->seed[i].ref_pos.sp + 1;
+   *hit_cnt = cnt;
+
+   // Find loci in Suffix Array.
+   hit_t * hits = malloc(cnt * sizeof(hit_t));
+   size_t l = 0;
+   for (size_t i = 0; i < seeds->pos; i++) {
+      seed_t seed = seeds->seed[i];
+      for (size_t j = seed.ref_pos.sp; j <= seed.ref_pos.ep; j++) {
+         hits[l++] = (hit_t) {.locus = get_sa(j,index->sa,index->sa_bits), .qrypos = seed.qry_pos, .depth = seed.ref_pos.depth, .bulk = seed.bulk};
+      }
+   }
+   
+   return hits;
+}
+
+
+int
+match_seeds
+(
+ seedstack_t * seeds,
+ int           seqlen,
+ matchlist_t * matchlist,
+ index_t     * index,
+ int           dist_accept,
+ double        read_ref_ratio
+)
+{
+   if (matchlist->size < 1) return -1;
+
+   // Convert seeds to hits.
+   uint64_t hit_count;
+   hit_t * hits = compute_hits(seeds, index, &hit_count);
+
+   // Merge-sort hits.
+   mergesort_mt(hits, hit_count, sizeof(hit_t), 0, 1, compar_hit_locus);
+
+   // Reset matchlist.
+   matchlist->pos = 0;
+
+   // Aux variables.
+   long minv = 0;
+   int  min  = 0;
+   size_t i = 0;
+
+   while (i < hit_count) {
+      // Match start.
+      int64_t span   = hits[i].depth;
+      int64_t lstart = hits[i].locus;
+      int64_t lend   = lstart + span;
+      int64_t rstart = hits[i].qrypos;
+      int64_t rend   = rstart + span;
+      int     bulk   = hits[i].bulk;
+      i++;
+      // Extend match.
+      while (i < hit_count) {
+         // Compare genome and read distances.
+         int64_t g_dist = (int64_t)hits[i].locus - (int64_t)hits[i-1].locus;
+         int64_t r_dist = (int64_t)hits[i].qrypos - (int64_t)hits[i-1].qrypos;
+         if (r_dist > 0 && (g_dist < (read_ref_ratio * r_dist) || (g_dist < dist_accept && r_dist < dist_accept))) {
+            span += hits[i].depth - (lend - (int64_t)hits[i].locus > 0 ? lend - (int64_t)hits[i].locus : 0);
+            lend = hits[i].locus + hits[i].depth;
+            rend = hits[i].qrypos + hits[i].depth;
+            bulk *= hits[i].bulk;
+            i++;
+         } else break;
+      }
+      // Store match.
+      // Non-significant streaks (bulk) will not be saved.
+      if (span > minv && bulk == 0) {
+         // Allocate match.
+         match_t match;
+         match.ref_e  = lend;
+         match.read_e = rend;
+         match.ref_s  = lstart;
+         match.read_s = rstart;
+         match.hits   = span;
+         match.flags  = 0;
+         match.score  = -1;
+
+         // Append if list not yet full, replace the minimum value otherwise.
+         if (matchlist->pos < matchlist->size) {
+            matchlist->match[matchlist->pos++] = match;
+         }
+         else {
+            matchlist->match[min] = match;
+         }
+               
+         // Find the minimum that will be substituted next.
+         if (matchlist->pos == matchlist->size) {
+            minv = matchlist->match[0].hits;
+            for (int j = 1 ; j < matchlist->pos; j++) {
+               if (minv > matchlist->match[j].hits) {
+                  min  = j;
+                  minv = matchlist->match[j].hits;
+               }
+            }
+         }
+      }
+   }
+   return 0;
+}
+
+
 seedstack_t *
 naive_smem
 (
@@ -175,3 +290,18 @@ seedstack_push
    stack->seed[stack->pos++] = seed;
    return 0;
 } 
+
+int
+compar_hit_locus
+(
+ const void * a,
+ const void * b,
+ const int param
+)
+{
+   hit_t * ha = (hit_t *)a;
+   hit_t * hb = (hit_t *)b;
+   if (ha->locus > hb->locus) return 1;
+   else if (ha->locus < hb->locus) return -1;
+   else return (ha->qrypos > hb->qrypos ? 1 : -1);
+}

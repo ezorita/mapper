@@ -25,13 +25,30 @@ int main(int argc, char *argv[])
 
    // Read file.
    if (opt_verbose) fprintf(stderr, "reading query file...\n");
-   seqstack_t * seqs = read_file(queryfile); // TODO: set reverse and verbose options.
+   seqstack_t * seqs = read_file(queryfile);
    if (seqs == NULL) {
       return EXIT_FAILURE;
    }
 
    // Options.
-   seedopt_t seedopt = {.min_len = 1, .max_len = 1000, .min_loci = 1, .max_loci = 100, .aux_loci = 500}; // SMEM
+   seedopt_t seedopt = { // MEM
+      .min_len = 1,
+      .max_len = 1000,
+      .min_loci = 1,
+      .max_loci = 100,
+      .aux_loci = 500
+   };
+   filteropt_t filteropt = {
+      .dist_accept = 10,
+      .max_align_per_read = 200,
+      .read_ref_ratio = 1.05,
+      .align_accept_eexp = -100.0,
+      .overlap_max_tolerance = 0.5,
+      .align_seed_filter_thr = 0.0,
+      .align_filter_ident = 0.9,
+      .align_filter_eexp = 0.0,
+      .mapq_evalue_ratio = 0.5
+   };
    alignopt_t alignopt = {
       .bp_diagonal  = 1,
       .bp_thr       = 10,
@@ -43,28 +60,22 @@ int main(int argc, char *argv[])
       .rand_error   = 0.50,
       .width_ratio  = 0.05
    };
+   formatopt_t formatopt = {
+      .mapq_thr = 20
+   };
    mapopt_t mapopt = {
-      .dist_accept = 10,
-      .max_align_per_read = 200,
-      .read_ref_ratio = 1.05,
-      .align_accept_eexp = -100.0,
-      .overlap_max_tolerance = 0.5,
-      .align_seed_filter_thr = 0.0,
-      .align_filter_ident = 0.9,
-      .align_filter_eexp = 0.0,
+      .seed = seedopt,
       .align = alignopt,
-      .seed = seedopt
+      .filter = filteropt,
+      .format = formatopt
    };
 
-   double mapq_evalue_ratio = 0.5;
-   double print_mapq_thr = 20;
-   uint64_t map_cnt = 0;
-
    // Data structures.
-   matchlist_t * seed_matches = matchlist_new(mapopt.max_align_per_read);
+   matchlist_t * seed_matches = matchlist_new(filteropt.max_align_per_read);
    matchlist_t * map_matches = matchlist_new(64);
 
    // Process reads.
+   uint64_t map_cnt = 0;
    clock_t t = clock();
    for (size_t i = 0; i < seqs->pos; i++) {
       if(i%1000 == 0) fprintf(stderr, "progress: %.2f%% (%.2f%% mapped)\r",i*100.0/seqs->pos,map_cnt*100.0/i);
@@ -73,61 +84,18 @@ int main(int argc, char *argv[])
       // Match seeds.
       int slen = strlen(seqs->seq[i].seq);
       seed_matches->pos = 0;
-      match_seeds(seeds, slen, seed_matches, index, mapopt.dist_accept, mapopt.read_ref_ratio);
+      match_seeds(seeds, slen, seed_matches, index, filteropt.dist_accept, filteropt.read_ref_ratio);
       // Smith-Waterman alignment.
       map_matches->pos = 0;
-      align_seeds(seqs->seq[i].seq, seed_matches, &map_matches, index, mapopt);
+      align_seeds(seqs->seq[i].seq, seed_matches, &map_matches, index, mapopt.filter, mapopt.align);
       // Merge intervals.
       int32_t n_ints;
       matchlist_t ** intervals = merge_intervals(map_matches, 0.8, &n_ints);
       // Compute map qualities.
-      compute_mapq(intervals, n_ints, mapq_evalue_ratio, seqs->seq[i], index);
+      compute_mapq(intervals, n_ints, filteropt.mapq_evalue_ratio, seqs->seq[i], index);
       // Print matches.
-      int mapped = 0;
-      for (int32_t k = 0; k < n_ints; k++) {
-         int itv = (k+1)%n_ints;
-         matchlist_t * matches = intervals[itv];
-         for (size_t j = 0; j < matches->pos; j++) {
-            // Retrieve match.
-            match_t match = matches->match[j];
-            // Check mapping quality.
-            if (match.mapq < print_mapq_thr) {
-               if (j > 0 || itv == 0) continue;
-            }
-            else mapped = 1;
-            // Format output.
-            int dir;
-            uint64_t g_start, g_end;
-            if (match.ref_s >= index->size/2) {
-               g_start = index->size - match.ref_e - 2;
-               g_end   = index->size - match.ref_s - 2;
-               dir = 1;
-            } else {
-               g_start = match.ref_s + 1;
-               g_end   = match.ref_e + 1;
-               dir = 0;
-            }
-            // Search chromosome name.
-            int   chrnum = bisect_search(0, index->chr->nchr-1, index->chr->start, g_start+1)-1;
-            // Print results.
-            fprintf(stdout, "%s \t%d\t%d\t%d\t%s:%ld-%ld:%c\t%d\t%.2f\t%.1f%%\t%c%c\n",
-                    seqs->seq[i].tag, itv,
-                    match.read_s+1, match.read_e+1,
-                    index->chr->name[chrnum],
-                    g_start - index->chr->start[chrnum]+1,
-                    g_end - index->chr->start[chrnum]+1,
-                    dir ? '-' : '+',
-                    (int)match.mapq,
-                    match.e_exp,
-                    match.ident*100.0,
-                    (match.flags & WARNING_OVERLAP ? 'o' : '-'),
-                    (match.flags & FLAG_FUSED ? 'f' : '-'));
-         }
-         free(matches);
-      }
-      map_cnt += mapped;
-      //      fprintf(stdout, "\n");
-      //fprintf(stdout, "%.4f\t%ld\t%ld\t%ld\n", (clock()-t)*1000000.0/CLOCKS_PER_SEC,seeds->pos, seed_matches->pos, map_matches->pos);
+      map_cnt += print_and_free(seqs->seq[i], intervals, n_ints, index, formatopt);
+      // Free structs.
       free(seeds);
       free(intervals);
    }
@@ -135,514 +103,6 @@ int main(int argc, char *argv[])
    return 0;
 }
 
-int
-compute_mapq
-(
- matchlist_t ** intervals,
- int n_int,
- double e_ratio,
- seq_t seq,
- index_t * index
-)
-{
-   for (int i = 1; i < n_int; i++) {
-      matchlist_t * interval = intervals[i];
-      if (interval->pos < 2) {
-         double e_exp = -10*interval->match[0].e_exp - 3;
-         interval->match[0].mapq = (e_exp < 60 ? e_exp : 60);
-         continue;
-      }
-      match_t match = interval->match[0];
-      double exp_thr = match.e_exp * e_ratio;
-      int beg = match.read_s;
-      int len = match.read_e - match.read_s + 1;
-
-      double psum = 0.0;
-      if (interval->match[1].e_exp < exp_thr) {
-         double mapq = mapq_align(seq.seq + beg, seq.q + beg, index->genome + match.ref_s, len, len*0.02);
-         // Assign mapq.
-         interval->match[0].mapq = pow(10.0, -mapq);
-         psum += interval->match[0].mapq;
-      } else {
-         double e_exp = -10*interval->match[0].e_exp - 3;
-         interval->match[0].mapq = (e_exp < 60 ? e_exp : 60);
-         continue;
-      }
-      
-      int j = 1;
-      for (; j < interval->pos; j++) {
-         match_t match = interval->match[j];         
-         if (interval->match[j].e_exp < exp_thr) {
-            char * ref_ptr = index->genome + match.ref_s + beg - match.read_s;
-            double mapq = mapq_align(seq.seq + beg, seq.q + beg, ref_ptr, len, len*0.02);
-            interval->match[j].mapq = pow(10.0, -mapq);
-            psum += interval->match[j].mapq;
-         } else break;
-      }
-      for (j = (j >= interval->pos ? interval->pos - 1 : j); j >= 0; j--) {
-         double p_exp = (int)(-10*log10(1-interval->match[j].mapq/psum));
-         double e_exp = (int)(-10*interval->match[j].e_exp) - 3;
-         double quality = (p_exp < e_exp ? p_exp : e_exp);
-         interval->match[j].mapq = quality > 60 ? 60 : quality;
-      }
-   }
-   return 0;
-}
-
-matchlist_t **
-merge_intervals
-(
- matchlist_t * matches,
- double        overlap_ratio,
- int32_t     * nintervals
-)
-{
-   // Sort candidate matches by size.
-   mergesort_mt(matches->match, matches->pos, sizeof(match_t), 0, 1, compar_matcheexp);
-
-   // Allocate interval list.
-   int32_t n = 0;
-   matchlist_t ** intervals = malloc((matches->pos+1)*sizeof(matchlist_t *));
-
-   // Interval 0 is for overlapping matches.
-   intervals[n++] = matchlist_new(matches->pos);
-
-   // Compute intervals.
-   for (int i = 0; i < matches->pos; i++) {
-      match_t match = matches->match[i];
-      int new = 1, total_overlap = 0;
-      for (int j = 1; j < n; j++) {
-         // Compare with the heads of other intervals.
-         match_t ref = intervals[j]->match[0];
-         // Continue if there is no overlap.
-         if (ref.read_e <= match.read_s || match.read_e <= ref.read_s) continue;
-         // Match is contained in ref.
-         else if (ref.read_s <= match.read_s && match.read_e <= ref.read_e) {
-            new = 0;
-            matchlist_add(intervals+j, match);
-            matches->match[i].interval = j;
-            break;
-         }
-         // Match is partially contained in ref.
-         else {
-            int overlap = map_min(match.read_e - ref.read_s, ref.read_e - match.read_s);
-            int    span = map_min(match.read_e - match.read_s, ref.read_e - ref.read_s);
-            if (overlap*1.0/span >= overlap_ratio) {
-               new = 0;
-               matchlist_add(intervals+j, match);
-               matches->match[i].interval = j;
-               break;
-            }
-            total_overlap += overlap;
-         }
-      }
-      if (new) {
-         if (total_overlap*1.0/(match.read_e - match.read_s) > (1 - overlap_ratio)) {
-            // Overlapped interval.
-            matchlist_add(intervals, match);
-            matches->match[i].interval = 0;
-         } else {
-            // New interval.
-            intervals[n] = matchlist_new(matches->pos-i);
-            matchlist_add(intervals + n, match);
-            matches->match[i].interval = n;
-            n++;
-         }
-      }
-   }
-
-   *nintervals = n;
-   // Sort intervals by start position.
-   mergesort_mt(intervals+1, n-1, sizeof(matchlist_t *), 0, 1, compar_intvstart);
-
-   return intervals;
-}
-
-double
-e_value
-(
- int L,
- int m,
- long gsize
-)
-{
-   double E = log10(gsize) + log10(2) * (m*3.0-2*L);
-   for (int i = 0; i < m; i++) E += log10((L-i)/(double)(m-i));
-   return E;
-}
-
-int
-align_simple
-(
- char         * read,
- matchlist_t  * seeds,
- matchlist_t ** seqmatches,
- index_t      * index,
- mapopt_t       opt
-)
-{
-   if (seeds->pos == 0) return 0;
-   for (size_t i = 0; i < seeds->pos; i++) {
-      match_t seed = seeds->match[i];
-      // Find the start point (center of seed).
-      uint64_t r_start = (seed.read_s + seed.read_e)/2;
-      uint64_t g_start = (seed.ref_s + seed.ref_e)/2;
-      // Extend right.
-      int alen = strlen(read) - r_start;
-      path_t align_r = dbf_align_bp(alen, read+r_start, alen, index->genome+g_start, 0, ALIGN_FORWARD, ALIGN_FORWARD, opt.align);
-      uint64_t read_e = r_start + align_r.row;
-      uint64_t ref_e = g_start + align_r.col;
-      // Extend left.
-      r_start--; g_start--;      
-      alen = r_start;
-      path_t align_l = dbf_align_bp(alen, read+r_start, alen, index->genome+g_start, 0, ALIGN_BACKWARD, ALIGN_BACKWARD, opt.align);
-      uint64_t read_s = r_start - align_r.row;
-      uint64_t ref_s = g_start - align_r.col;
-
-      long score = align_l.score + align_r.score;
-      double ident = 1.0 - (score*1.0)/(align_max(read_e-read_s+1,ref_e-ref_s+1));
-
-      match_t hit;
-      hit.repeats = matchlist_new(REPEATS_SIZE);
-      hit.flags  = 0;
-      hit.hits   = seed.hits;
-      // Fill/Update hit.
-      hit.score  = score;
-      hit.ident  = ident;
-      hit.ref_e  = ref_e;
-      hit.ref_s  = ref_s;
-      hit.read_e = read_e;
-      hit.read_s = read_s;
-      hit.interval = 0;
-      hit.e_exp  = e_value(ref_e - ref_s + 1, align_l.score + align_r.score, index->size);
-      hit.mapq = 0;
-
-      // Add to significant matchlist.
-      matchlist_add(seqmatches, hit);
-   }
-
-   return 0;
-}
-
-int
-align_seeds
-(
- char         * read,
- matchlist_t  * seeds,
- matchlist_t ** seqmatches,
- index_t      * index,
- mapopt_t       hmargs
-)
-{
-   if (seeds->pos == 0) return 0;
-   int significant = 0;
-   int slen = strlen(read);
-   matchlist_t * matches = *seqmatches;
-
-   // Sort by seeded nucleotides.
-   mergesort_mt(seeds->match, seeds->pos, sizeof(match_t), 0, 1, compar_seedhits);
-
-   for(long k = 0; k < seeds->pos; k++) {
-      // Get next seed.
-      match_t seed = seeds->match[k];
-
-      // Compute alignment limits.
-      long r_min  = seed.read_e - seed.read_s + 1;
-      long l_min  = 0;
-      long r_qstart = seed.read_s + 1;
-      long l_qstart = align_max(r_qstart - 1,0);
-      long r_rstart = seed.ref_s + 1;
-      long l_rstart = seed.ref_s;
-     
-      // Extend existing mapping.
-      double last_eexp = INFINITY;
-      int extend = 0;
-      int extend_score = 0;
-      int cancel_align = 0;
-      for (int i = 0; i < matches->pos; i++) {
-         match_t match = matches->match[i];
-         if (match.e_exp > last_eexp) continue;
-         // Check whether the seed is contiguous.
-         long r_distr = seed.read_e - match.read_e;
-         long g_distr = match.ref_e - seed.ref_e;
-         long r_distl = match.read_s - seed.read_s;
-         long g_distl = seed.ref_s - match.ref_s;
-         long d_accept = hmargs.dist_accept;
-         double rg_ratio = hmargs.read_ref_ratio;
-         int ext_r = g_distr > -d_accept && r_distr > -d_accept && ((g_distr < (r_distr * rg_ratio)) || (g_distr < d_accept && r_distr < d_accept));
-         int ext_l = g_distl > -d_accept && r_distl > -d_accept && ((g_distl < (r_distl * rg_ratio)) || (g_distl < d_accept && r_distl < d_accept));
-         if (ext_r || ext_l) {
-            r_min  = (ext_r ? r_distr : 0);
-            l_min  = (ext_l ? r_distl : 0);
-            r_qstart = match.read_e + 1;
-            r_rstart = match.ref_e + 1;
-            l_qstart = match.read_s - 1;
-            l_rstart = match.ref_s - 1;
-            last_eexp = match.e_exp;
-            extend = i;
-            extend_score = match.score;
-         } else if (match.e_exp < hmargs.align_accept_eexp) {
-            // Check overlap
-            int span = align_min(seed.read_e - seed.read_s, match.read_e - match.read_s);
-            int overlap = align_max(0, align_min(seed.read_e, match.read_e) - align_max(seed.read_s, match.read_s));
-            overlap = overlap > span*hmargs.overlap_max_tolerance;
-            int seed_ratio = seed.hits < match.hits*hmargs.align_seed_filter_thr;
-            // If overlap is higher than the maximum overlap tolerance, cancel the alignment.
-            if (overlap && seed_ratio) {
-               cancel_align = 1;
-               break;
-            }
-         } else {
-            if (r_distr < 0) {r_distr = -r_distr; g_distr = -g_distr;}
-            if (r_distl < 0) {r_distl = -r_distl; g_distl = -g_distl;}
-            int same_align = (g_distr > -d_accept && (g_distr < (r_distr*rg_ratio) || g_distr < d_accept)) || (g_distl > -d_accept && (g_distl < (r_distl*rg_ratio) || g_distl < d_accept));
-            if (same_align) {
-               cancel_align = 1;
-               break;
-            }
-         }
-      }
-      long r_qlen = slen - r_qstart;
-      long l_qlen = l_qstart + 1;
-      if (cancel_align || (!r_qlen && !l_qlen)) continue;
-      long r_rlen = align_min((long)(r_qlen * (1 + hmargs.align.width_ratio)), index->size - r_rstart);
-      long l_rlen = align_min((long)(l_qlen * (1 + hmargs.align.width_ratio)), r_qstart);
-      char * r_qry = read + r_qstart;
-      char * l_qry = read + l_qstart;
-      char * r_ref = index->genome + r_rstart;
-      char * l_ref = index->genome + l_rstart;
-      
-      // Align forward and backward starting from (read_s, ref_s).
-      long read_s, read_e, ref_s, ref_e;
-      path_t align_r = (path_t){0,0,0}, align_l = (path_t){0,0,0};
-      // Forward alignment (right).
-      if(r_qlen) {
-         align_r = dbf_align_bp(r_qlen, r_qry, r_rlen, r_ref, r_min, ALIGN_FORWARD, ALIGN_FORWARD, hmargs.align);
-         read_e = r_qstart + align_r.row;
-         ref_e = r_rstart + align_r.col;
-      }
-      else {
-         read_e = r_qstart - 1;
-         ref_e  = r_rstart - 1;
-      }
-      // Backward alignment (left).
-      if(l_qlen) {
-         align_l = dbf_align_bp(l_qlen, l_qry, l_rlen, l_ref, l_min, ALIGN_BACKWARD, ALIGN_BACKWARD, hmargs.align);
-         read_s =  l_qstart - align_l.row;
-         ref_s = l_rstart - align_l.col;
-      }
-      else {
-         read_s = l_qstart + 1;
-         ref_s  = l_rstart + 1;
-      }
-      
-      // Compute significance.
-      long score = extend_score + align_l.score + align_r.score;
-      double ident = 1.0 - (score*1.0)/(align_max(read_e-read_s+1,ref_e-ref_s+1));
-      double e_exp = INFINITY;
-      if (ident > hmargs.align_filter_ident) 
-         e_exp = e_value(ref_e - ref_s + 1, extend_score + align_l.score + align_r.score, index->size);
-
-      // If significant, store.
-      if (e_exp < hmargs.align_filter_eexp) {
-         match_t hit;
-         if (extend) {
-            hit = matches->match[extend];
-            hit.hits += seed.hits;
-         }
-         else {
-            hit.repeats = matchlist_new(REPEATS_SIZE);
-            hit.flags  = 0;
-            hit.hits   = seed.hits;
-         }
-
-         // Fill/Update hit.
-         hit.score  = score;
-         hit.ident  = ident;
-         hit.ref_e  = ref_e;
-         hit.ref_s  = ref_s;
-         hit.read_e = read_e;
-         hit.read_s = read_s;
-         hit.e_exp  = e_exp;
-
-         // Add to significant matchlist.
-         significant = 1;
-         if (extend) {
-            matches->match[extend] = hit;
-         } else {
-            matchlist_add(seqmatches, hit);
-            matches = *seqmatches;
-         }
-      }
-   }
-
-   return significant;
-}
-
-matchlist_t *
-matchlist_new
-(
- int elements
-)
-{
-   if (elements < 1) elements = 1;
-   matchlist_t * list = malloc(sizeof(matchlist_t) + elements*sizeof(match_t));
-   if (list == NULL) return NULL;
-   list->pos  = 0;
-   list->size = elements;
-   return list;
-}
-
-int
-matchlist_add
-(
- matchlist_t ** listp,
- match_t        match
-)
-{
-   matchlist_t * list = *listp;
-
-   // Check whether stack is full.
-   if (list->pos >= list->size) {
-      int newsize = list->size * 2;
-      *listp = list = realloc(list, sizeof(matchlist_t) + newsize * sizeof(match_t));
-      if (list == NULL) return -1;
-      list->size = newsize;
-   }
-
-   // Add new match to the stack.
-   list->match[list->pos++] = match;
-
-   return 0;
-}
-
-
-hit_t *
-compute_hits
-(
- seedstack_t * seeds,
- index_t     * index,
- uint64_t    * hit_cnt
-)
-{
-   // Count loci.
-   uint64_t cnt = 0;
-   for (size_t i = 0; i < seeds->pos; i++) cnt += seeds->seed[i].ref_pos.ep - seeds->seed[i].ref_pos.sp + 1;
-   *hit_cnt = cnt;
-
-   // Find loci in Suffix Array.
-   hit_t * hits = malloc(cnt * sizeof(hit_t));
-   size_t l = 0;
-   for (size_t i = 0; i < seeds->pos; i++) {
-      seed_t seed = seeds->seed[i];
-      for (size_t j = seed.ref_pos.sp; j <= seed.ref_pos.ep; j++) {
-         hits[l++] = (hit_t) {.locus = get_sa(j,index->sa,index->sa_bits), .qrypos = seed.qry_pos, .depth = seed.ref_pos.depth, .bulk = seed.bulk};
-      }
-   }
-   
-   return hits;
-}
-
-int
-match_seeds
-(
- seedstack_t * seeds,
- int           seqlen,
- matchlist_t * matchlist,
- index_t     * index,
- int           dist_accept,
- double        read_ref_ratio
-)
-{
-   if (matchlist->size < 1) return -1;
-
-   // Convert seeds to hits.
-   uint64_t hit_count;
-   hit_t * hits = compute_hits(seeds, index, &hit_count);
-
-   // Merge-sort hits.
-   mergesort_mt(hits, hit_count, sizeof(hit_t), 0, 1, compar_hit_locus);
-
-   // Reset matchlist.
-   matchlist->pos = 0;
-
-   // Aux variables.
-   long minv = 0;
-   int  min  = 0;
-   size_t i = 0;
-
-   while (i < hit_count) {
-      // Match start.
-      int64_t span   = hits[i].depth;
-      int64_t lstart = hits[i].locus;
-      int64_t lend   = lstart + span;
-      int64_t rstart = hits[i].qrypos;
-      int64_t rend   = rstart + span;
-      int     bulk   = hits[i].bulk;
-      i++;
-      // Extend match.
-      while (i < hit_count) {
-         // Compare genome and read distances.
-         int64_t g_dist = (int64_t)hits[i].locus - (int64_t)hits[i-1].locus;
-         int64_t r_dist = (int64_t)hits[i].qrypos - (int64_t)hits[i-1].qrypos;
-         if (r_dist > 0 && (g_dist < (read_ref_ratio * r_dist) || (g_dist < dist_accept && r_dist < dist_accept))) {
-            span += hits[i].depth - (lend - (int64_t)hits[i].locus > 0 ? lend - (int64_t)hits[i].locus : 0);
-            lend = hits[i].locus + hits[i].depth;
-            rend = hits[i].qrypos + hits[i].depth;
-            bulk *= hits[i].bulk;
-            i++;
-         } else break;
-      }
-      // Store match.
-      // Non-significant streaks (bulk) will not be saved.
-      if (span > minv && bulk == 0) {
-         // Allocate match.
-         match_t match;
-         match.ref_e  = lend;
-         match.read_e = rend;
-         match.ref_s  = lstart;
-         match.read_s = rstart;
-         match.hits   = span;
-         match.flags  = 0;
-         match.score  = -1;
-
-         // Append if list not yet full, replace the minimum value otherwise.
-         if (matchlist->pos < matchlist->size) {
-            matchlist->match[matchlist->pos++] = match;
-         }
-         else {
-            matchlist->match[min] = match;
-         }
-               
-         // Find the minimum that will be substituted next.
-         if (matchlist->pos == matchlist->size) {
-            minv = matchlist->match[0].hits;
-            for (int j = 1 ; j < matchlist->pos; j++) {
-               if (minv > matchlist->match[j].hits) {
-                  min  = j;
-                  minv = matchlist->match[j].hits;
-               }
-            }
-         }
-      }
-   }
-   return 0;
-}
-
-int
-compar_hit_locus
-(
- const void * a,
- const void * b,
- const int param
-)
-{
-   hit_t * ha = (hit_t *)a;
-   hit_t * hb = (hit_t *)b;
-   if (ha->locus > hb->locus) return 1;
-   else if (ha->locus < hb->locus) return -1;
-   else return (ha->qrypos > hb->qrypos ? 1 : -1);
-}
 
 idxfiles_t *
 index_open
@@ -1001,50 +461,4 @@ read_file
    free(subline);
    free(temp);
    return seqstack;
-}
-
-int
-compar_seedhits
-(
- const void * a,
- const void * b,
- const int   param
-)
-{
-   match_t * ma = (match_t *) a;
-   match_t * mb = (match_t *) b;
-   
-   if (ma->hits < mb->hits) return 1;
-   else return -1;
-}
-
-int
-compar_matcheexp
-(
- const void * a,
- const void * b,
- const int   param
-)
-{
-   match_t * ma = (match_t *) a;
-   match_t * mb = (match_t *) b;
-
-   if (mb->e_exp < ma->e_exp) return 1;
-   else return -1;
-}
-
-int
-compar_intvstart
-(
- const void * a,
- const void * b,
- const int   param
-)
-{
-   matchlist_t * ma = *(matchlist_t **) a;
-   matchlist_t * mb = *(matchlist_t **) b;
-   if (ma->pos == 0) return 1;
-   if (mb->pos == 0) return -1;
-   if (mb->match[0].read_s < ma->match[0].read_s) return 1;
-   else return -1;
 }

@@ -1,4 +1,4 @@
-#include "index.h"
+#include "indexbuild.h"
 #include <signal.h>
 #include <execinfo.h>
 

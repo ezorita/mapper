@@ -10,11 +10,6 @@
 // Index params.
 #define MMAP_FLAGS        (MAP_PRIVATE | MAP_POPULATE)
 
-
-#define max(a,b) ((a) > (b) ? (a) : (b))
-#define min(a,b) ((a) < (b) ? (a) : (b))
-
-
 // General sequence definitions.
 #define EOS            -1
 
