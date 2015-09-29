@@ -5,6 +5,8 @@
 int main(int argc, char *argv[])
 {
    int opt_verbose = 1;
+   int n_threads = 16;
+   size_t seqs_per_thread = 1000;
 
    if (argc != 3) {
       fprintf(stderr, "usage: bwmapper <query file> <genome index>\n");
@@ -61,6 +63,7 @@ int main(int argc, char *argv[])
       .width_ratio  = 0.05
    };
    formatopt_t formatopt = {
+      .print_first = 0,
       .mapq_thr = 20
    };
    mapopt_t mapopt = {
@@ -70,39 +73,136 @@ int main(int argc, char *argv[])
       .format = formatopt
    };
 
-   // Data structures.
-   matchlist_t * seed_matches = matchlist_new(filteropt.max_align_per_read);
-   matchlist_t * map_matches = matchlist_new(64);
+   // Run thread scheduler.
+   mt_scheduler(seqs, &mapopt, index, n_threads, seqs_per_thread);
+
+   return 0;
+}
+
+int
+mt_scheduler
+(
+ seqstack_t * seqs,
+ mapopt_t   * options,
+ index_t    * index,
+ int          threads,
+ size_t       thread_seq_count
+)
+{
+   // Create control struct.
+   mtcontrol_t * control = malloc(sizeof(mtcontrol_t));
+   control->mapped = 0;
+   control->active = 0;
+
+   // Create mutex and monitor.
+   pthread_mutex_t * mutex = malloc(sizeof(pthread_mutex_t));
+   pthread_mutex_init(mutex,NULL);
+   pthread_cond_t  * monitor = malloc(sizeof(pthread_cond_t));
+   pthread_cond_init(monitor,NULL);
 
    // Process reads.
-   uint64_t map_cnt = 0;
    clock_t t = clock();
-   for (size_t i = 0; i < seqs->pos; i++) {
-      if(i%1000 == 0) fprintf(stderr, "progress: %.2f%% (%.2f%% mapped)\r",i*100.0/seqs->pos,map_cnt*100.0/i);
+
+   // Lock mutex.
+   for (size_t i = 0; i < seqs->pos; i += thread_seq_count) {
+      pthread_mutex_lock(mutex);
+      // Verbose.
+      if(i%1000 == 0) fprintf(stderr, "progress: %.2f%%\r",i*100.0/seqs->pos);
+      // Alloc job (will be freed by thread).
+      mtjob_t * job = malloc(sizeof(mtjob_t));
+      // Set job.
+      job->count   = thread_seq_count;
+      job->seq     = seqs->seq + i;
+      job->index   = index;
+      job->opt     = options;
+      job->mutex   = mutex;
+      job->monitor = monitor;
+      job->control = control;
+      // Increase thread count.
+      control->active += 1;
+      // Create thread.
+      pthread_t thread;
+      if (pthread_create(&thread, NULL, mt_worker, job)) {
+         fprintf(stderr, "error 'pthread_create'\n");
+         return 1;
+      }
+      // Deatch thread.
+      pthread_detach(thread);
+      // Sleep.
+      while (control->active >= threads) {
+         pthread_cond_wait(monitor, mutex);
+      }
+      pthread_mutex_unlock(mutex);
+   }
+
+   // Wait for remaining threads.
+   pthread_mutex_lock(mutex);
+   while (control->active > 0) {
+      pthread_cond_wait(monitor, mutex);
+   }
+   pthread_mutex_unlock(mutex);
+
+   // Verbose.
+   fprintf(stderr, "progress: 100%% (%.2f%% mapped) in %.3fs\n",control->mapped*100.0/seqs->pos,(clock()-t)*1.0/CLOCKS_PER_SEC);   
+   return 0;
+}
+
+
+void *
+mt_worker
+(
+ void * args
+)
+{
+   mtjob_t * job = (mtjob_t *) args;
+   // Get params.
+   seq_t    * seq   = job->seq;
+   mapopt_t * opt   = job->opt;
+   index_t  * index = job->index;
+
+   // Alloc data structures.
+   matchlist_t * seed_matches = matchlist_new(opt->filter.max_align_per_read);
+   matchlist_t * map_matches = matchlist_new(64);
+   
+   size_t mapped = 0;
+   for (size_t i = 0; i < job->count; i++) {
       // Seed.
-      seedstack_t * seeds = seed(seqs->seq[i].seq, mapopt.seed, index);
+      seedstack_t * seeds = seed(seq[i].seq, opt->seed, index);
       // Match seeds.
-      int slen = strlen(seqs->seq[i].seq);
+      int slen = strlen(seq[i].seq);
       seed_matches->pos = 0;
-      match_seeds(seeds, slen, seed_matches, index, filteropt.dist_accept, filteropt.read_ref_ratio);
-      // Smith-Waterman alignment.
+      match_seeds(seeds, slen, seed_matches, index, opt->filter.dist_accept, opt->filter.read_ref_ratio);
+      // Align seeds.
       map_matches->pos = 0;
-      align_seeds(seqs->seq[i].seq, seed_matches, &map_matches, index, mapopt.filter, mapopt.align);
+      align_seeds(seq[i].seq, seed_matches, &map_matches, index, opt->filter, opt->align);
       // Merge intervals.
       int32_t n_ints;
       matchlist_t ** intervals = merge_intervals(map_matches, 0.8, &n_ints);
       // Compute map qualities.
-      compute_mapq(intervals, n_ints, filteropt.mapq_evalue_ratio, seqs->seq[i], index);
+      compute_mapq(intervals, n_ints, opt->filter.mapq_evalue_ratio, seq[i], index);
       // Print matches.
-      map_cnt += print_and_free(seqs->seq[i], intervals, n_ints, index, formatopt);
+      mapped += print_and_free(seq[i], intervals, n_ints, index, opt->format);
       // Free structs.
       free(seeds);
       free(intervals);
    }
-   fprintf(stderr, "progress: 100%% (%.2f%% mapped) in %.3fs\n",map_cnt*100.0/seqs->pos,(clock()-t)*1.0/CLOCKS_PER_SEC);
-   return 0;
-}
 
+   // Free data structures.
+   free(seed_matches);
+   free(map_matches);
+   
+   // Free args.
+   free(args);
+
+   // Report to scheduler.
+   pthread_mutex_lock(job->mutex);
+   job->control->mapped += mapped;
+   job->control->active -= 1;
+   pthread_cond_signal(job->monitor);
+   pthread_mutex_unlock(job->mutex);
+
+   return NULL;
+}
 
 idxfiles_t *
 index_open

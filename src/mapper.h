@@ -10,6 +10,7 @@
 #include <fcntl.h>
 #include <execinfo.h>
 #include <signal.h>
+#include <pthread.h>
 #include "algs.h"
 #include "seed.h"
 #include "indexquery.h"
@@ -25,6 +26,8 @@
 
 typedef struct idxfiles_t  idxfiles_t;
 typedef struct mapopt_t    mapopt_t;
+typedef struct mtjob_t     mtjob_t;
+typedef struct mtcontrol_t mtcontrol_t;
 
 // Input types.
 
@@ -33,6 +36,21 @@ typedef enum {
    FASTQ,
    RAW
 } format_t;
+
+struct mtjob_t {
+   size_t            count;
+   seq_t           * seq;
+   index_t         * index;
+   mapopt_t        * opt;
+   pthread_mutex_t * mutex;
+   pthread_cond_t  * monitor;
+   mtcontrol_t     * control;
+};
+
+struct mtcontrol_t {
+   uint64_t mapped;
+   int      active;
+};
 
 struct idxfiles_t {
    // Original file pointers.
@@ -51,6 +69,10 @@ struct mapopt_t {
    alignopt_t  align;
    formatopt_t format;
 };
+
+// Thread management.
+int             mt_scheduler (seqstack_t *, mapopt_t *, index_t *, int, size_t);
+void          * mt_worker    (void * args);
 
 // File/Index management.
 idxfiles_t    * index_open      (char * file);
