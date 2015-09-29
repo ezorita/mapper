@@ -58,16 +58,16 @@ int main(int argc, char *argv[])
 
    double mapq_evalue_ratio = 0.5;
    double print_mapq_thr = 20;
+   uint64_t map_cnt = 0;
 
    // Data structures.
    matchlist_t * seed_matches = matchlist_new(mapopt.max_align_per_read);
    matchlist_t * map_matches = matchlist_new(64);
-   fprintf(stderr, "mapping...");
-   clock_t t = clock();   
-   // Process reads.
-   for (size_t i = 0; i < seqs->pos; i++) {
 
-      //      fprintf(stderr, "%ld/%ld\r",i, seqs->pos);
+   // Process reads.
+   clock_t t = clock();
+   for (size_t i = 0; i < seqs->pos; i++) {
+      if(i%1000 == 0) fprintf(stderr, "progress: %.2f%% (%.2f%% mapped)\r",i*100.0/seqs->pos,map_cnt*100.0/i);
       // Seed.
       seedstack_t * seeds = seed(seqs->seq[i].seq, mapopt.seed, index);
       // Match seeds.
@@ -83,12 +83,19 @@ int main(int argc, char *argv[])
       // Compute map qualities.
       compute_mapq(intervals, n_ints, mapq_evalue_ratio, seqs->seq[i], index);
       // Print matches.
+      int mapped = 0;
       for (int32_t k = 0; k < n_ints; k++) {
          int itv = (k+1)%n_ints;
          matchlist_t * matches = intervals[itv];
          for (size_t j = 0; j < matches->pos; j++) {
+            // Retrieve match.
             match_t match = matches->match[j];
-            if (match.mapq < print_mapq_thr && (j > 0 || itv == 0)) continue;
+            // Check mapping quality.
+            if (match.mapq < print_mapq_thr) {
+               if (j > 0 || itv == 0) continue;
+            }
+            else mapped = 1;
+            // Format output.
             int dir;
             uint64_t g_start, g_end;
             if (match.ref_s >= index->size/2) {
@@ -100,7 +107,7 @@ int main(int argc, char *argv[])
                g_end   = match.ref_e + 1;
                dir = 0;
             }
-
+            // Search chromosome name.
             int   chrnum = bisect_search(0, index->chr->nchr-1, index->chr->start, g_start+1)-1;
             // Print results.
             fprintf(stdout, "%s \t%d\t%d\t%d\t%s:%ld-%ld:%c\t%d\t%.2f\t%.1f%%\t%c%c\n",
@@ -118,13 +125,13 @@ int main(int argc, char *argv[])
          }
          free(matches);
       }
+      map_cnt += mapped;
       //      fprintf(stdout, "\n");
       //fprintf(stdout, "%.4f\t%ld\t%ld\t%ld\n", (clock()-t)*1000000.0/CLOCKS_PER_SEC,seeds->pos, seed_matches->pos, map_matches->pos);
       free(seeds);
       free(intervals);
    }
-   fprintf(stderr, "%.3fs\n",(clock()-t)*1.0/CLOCKS_PER_SEC);
-
+   fprintf(stderr, "progress: 100%% (%.2f%% mapped) in %.3fs\n",map_cnt*100.0/seqs->pos,(clock()-t)*1.0/CLOCKS_PER_SEC);
    return 0;
 }
 
