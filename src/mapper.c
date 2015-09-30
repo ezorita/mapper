@@ -212,15 +212,16 @@ mt_worker
    free(seed_matches);
    free(map_matches);
    
-   // Free args.
-   free(args);
-
    // Report to scheduler.
    pthread_mutex_lock(job->mutex);
    job->control->mapped += mapped;
    job->control->active -= 1;
    pthread_cond_signal(job->monitor);
    pthread_mutex_unlock(job->mutex);
+
+   // Free args.
+   free(args);
+
 
    return NULL;
 }

@@ -142,6 +142,7 @@ align_seeds
          hit.read_e = read_e;
          hit.read_s = read_s;
          hit.e_exp  = e_exp;
+         hit.mapq   = 0;
 
          // Add to significant matchlist.
          significant = 1;
@@ -202,7 +203,8 @@ compute_mapq
             psum += interval->match[j].mapq;
          } else break;
       }
-      for (j = (j >= interval->pos ? interval->pos - 1 : j); j >= 0; j--) {
+      j--;
+      for (; j >= 0; j--) {
          double p_exp = (int)(-10*log10(1-interval->match[j].mapq/psum));
          double e_exp = (int)(-10*interval->match[j].e_exp) - 3;
          double quality = (p_exp < e_exp ? p_exp : e_exp);

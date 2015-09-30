@@ -136,23 +136,25 @@ char translate[256] = {[0 ... 255] = 4,
                        ['A'] = 0, ['C'] = 1, ['G'] = 2, ['T'] = 3 };
 
    if (qlen < 1 || rlen < 1) return (path_t){0,0,0};
-   int a_len = align_max(qlen,rlen);
+   // TODO:
+   // To align until align_max(qlen,rlen) the ends of qry must be padded with 'N'.
+   int a_len = align_min(qlen,rlen);
    int align_w = (int)(a_len*opt.width_ratio);
    if (align_w < (qlen > rlen ? qlen - rlen : rlen - qlen)) return (path_t){-1,0,0};
    // Reduce width if align_w is bigger than the available query words.
    if (align_w > a_len) align_w = a_len;
-   int awords = (align_w + WORD_SIZE - 1)/WORD_SIZE;
+   int awords = align_max(1,(align_w + WORD_SIZE - 1)/WORD_SIZE);
    align_w = awords * WORD_SIZE;
 
    // Number of Eq words.
    int eqwords = awords + (a_len + WORD_SIZE - 1)/WORD_SIZE;
    // Precompute query eq values.
    uint64_t ** Peq = malloc((eqwords+1)*sizeof(uint64_t*)); // Alloc 1 more to avoid segfault when shifting bits.
-   for (int i = 0; i <= eqwords; i++) Peq[i] = calloc(4, sizeof(uint64_t));
+   for (int i = 0; i <= eqwords; i++) Peq[i] = calloc(5, sizeof(uint64_t)); // 5 bases (A,C,G,T,N)
    dbf_fill_eq(Peq + awords, qry, qlen, dir_q);
    // Precompute ref eq values.
    uint64_t ** Req = malloc((eqwords+1)*sizeof(uint64_t*));
-   for (int i = 0; i <= eqwords; i++) Req[i] = calloc(4, sizeof(uint64_t));
+   for (int i = 0; i <= eqwords; i++) Req[i] = calloc(5, sizeof(uint64_t)); // 5 bases (A,C,G,T,N)
    dbf_fill_eq(Req + awords, ref, rlen, dir_r);
 
    // Initialize
