@@ -302,8 +302,8 @@ char translate[256] = {[0 ... 255] = 4,
    // Free memory.
    free(Eqr);
    free(Eqb);
-   dbf_free_eq(Peq, eqwords);
-   dbf_free_eq(Req, eqwords);
+   dbf_free_eq(Peq, eqwords+1);
+   dbf_free_eq(Req, eqwords+1);
    free(Mr); free(Pr); free(Mb); free(Pb);
    free(bp_path);
 
@@ -486,6 +486,9 @@ mapq_align
    for (int i = -w; i < w; i++) {
       if (c[i] < mapq) mapq = c[i];
    }
+
+   // Free memory.
+   free(cells);
 
    return mapq;
 }

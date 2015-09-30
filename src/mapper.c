@@ -5,8 +5,8 @@
 int main(int argc, char *argv[])
 {
    int opt_verbose = 1;
-   int n_threads = 1;
-   size_t seqs_per_thread = 1000;
+   int n_threads = 10;
+   size_t seqs_per_thread = 10000;
 
    if (argc != 3) {
       fprintf(stderr, "usage: bwmapper <query file> <genome index>\n");
@@ -127,7 +127,7 @@ mt_scheduler
       // Alloc job (will be freed by thread).
       mtjob_t * job = malloc(sizeof(mtjob_t));
       // Set job.
-      job->count   = thread_seq_count;
+      job->count   = min(seqs->pos-i,thread_seq_count);
       job->seq     = seqs->seq + i;
       job->index   = index;
       job->opt     = options;
@@ -469,7 +469,12 @@ read_CHRindex
    chrindex->start= start;
    chrindex->name = names;
 
+   // Close files.
    fclose(input);
+
+   // Free memory.
+   free(buffer);
+
    return chrindex;
 }
 

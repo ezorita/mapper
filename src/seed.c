@@ -194,6 +194,10 @@ match_seeds
          }
       }
    }
+
+   // Free hits.
+   free(hits);
+
    return 0;
 }
 
