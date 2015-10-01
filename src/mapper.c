@@ -65,7 +65,7 @@ int main(int argc, char *argv[])
       .width_ratio  = 0.05
    };
    formatopt_t formatopt = {
-      .print_first = 1,
+      .print_first = 1, // 2 for first_only
       .mapq_thr = 20
    };
    mapopt_t mapopt = {
@@ -84,6 +84,7 @@ int main(int argc, char *argv[])
    free(index->lcp_extend);
    free(index);
    free(files->chr->start);
+   for (int i = 0; i < files->chr->nchr; i++) free(files->chr->name[i]);
    free(files->chr->name);
    free(files->chr);
    munmap(files->gen_file, files->gen_len);

@@ -14,6 +14,7 @@ print_and_free
    for (int32_t k = 0; k < n_ints; k++) {
       int itv = (k+1)%n_ints;
       matchlist_t * matches = intervals[itv];
+      if (opt.print_first == 2) matches->pos = min(matches->pos,1);
       for (size_t j = 0; j < matches->pos; j++) {
          // Retrieve match.
          match_t match = matches->match[j];
@@ -50,7 +51,15 @@ print_and_free
                  (match.flags & WARNING_OVERLAP ? 'o' : '-'),
                  (match.flags & FLAG_FUSED ? 'f' : '-'));
       }
+
+      // Free match.
       free(matches);
    }
+
+   // Free sequence.
+   free(seq.seq);
+   free(seq.tag);
+   free(seq.q);
+
    return mapped;
 }
