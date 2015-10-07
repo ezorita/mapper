@@ -20,9 +20,32 @@ align_seeds
    // Sort by seeded nucleotides.
    mergesort_mt(seeds->match, seeds->pos, sizeof(match_t), 0, 1, compar_seedhits);
 
+   if (VERBOSE_DEBUG) {
+      fprintf(stdout, "align (%d seeds):\n", seeds->pos);
+   }
+
    for(long k = 0; k < seeds->pos; k++) {
       // Get next seed.
       match_t seed = seeds->match[k];
+      int extend = 0;
+      int extend_score = 0;
+      int cancel_align = 0;
+
+      for (int i = 0; i < matches->pos; i++) {
+         match_t match = matches->match[i];
+         // Check overlap
+         int span = align_min(seed.read_e - seed.read_s, match.read_e - match.read_s);
+         int overlap = align_max(0, align_min(seed.read_e, match.read_e) - align_max(seed.read_s, match.read_s));
+         overlap = overlap > span*opt.overlap_max_tolerance;
+         int seed_ratio = seed.hits < match.hits*opt.align_seed_filter_thr;
+         // If overlap is higher than the maximum overlap tolerance, cancel the alignment.
+         if (overlap && seed_ratio) {
+            cancel_align = 1;
+            break;
+         }
+      }
+
+      if (cancel_align) continue;
 
       // Compute alignment limits.
       long r_min  = seed.read_e - seed.read_s + 1;
@@ -31,7 +54,8 @@ align_seeds
       long l_qstart = align_max(r_qstart - 1,0);
       long r_rstart = seed.ref_s + 1;
       long l_rstart = seed.ref_s;
-     
+
+      /*     
       // Extend existing mapping.
       double last_eexp = INFINITY;
       int extend = 0;
@@ -81,9 +105,12 @@ align_seeds
             }
          }
       }
+      */
+
+
       long r_qlen = slen - r_qstart;
       long l_qlen = l_qstart + 1;
-      if (cancel_align || (!r_qlen && !l_qlen)) continue;
+      if (!r_qlen && !l_qlen) continue;
       long r_rlen = align_min((long)(r_qlen * (1 + alignopt.width_ratio)), index->size - r_rstart);
       long l_rlen = align_min((long)(l_qlen * (1 + alignopt.width_ratio)), r_qstart);
       char * r_qry = read + r_qstart;
@@ -118,6 +145,35 @@ align_seeds
       // Compute significance.
       long score = extend_score + align_l.score + align_r.score;
       double ident = 1.0 - (score*1.0)/(align_max(read_e-read_s+1,ref_e-ref_s+1));
+
+      if (VERBOSE_DEBUG) {
+         uint64_t g_start, g_end;
+         int dir = 0;
+         if (ref_s >= index->size/2) {
+            g_start = index->size - ref_e - 2;
+            g_end   = index->size - ref_s - 2;
+            dir = 1;
+         } else {
+            g_start = ref_s + 1;
+            g_end   = ref_e + 1;
+            dir = 0;
+         }
+         // Search chromosome name.
+         int   chrnum = bisect_search(0, index->chr->nchr-1, index->chr->start, g_start+1)-1;
+         // Print results.
+         fprintf(stdout, "[%ld] alignment: %d,%s:%ld-%ld:%c\t(%ld-%ld)\t%ld\t%.2f%%\n",
+                 k,
+                 seed.hits,
+                 index->chr->name[chrnum],
+                 g_start - index->chr->start[chrnum]+1,
+                 g_end - index->chr->start[chrnum]+1,
+                 dir ? '-' : '+',
+                 read_s+1, read_e+1,
+                 score,
+                 ident*100.0
+                 );
+      }
+
       double e_exp = INFINITY;
       if (ident > opt.align_filter_ident) 
          e_exp = e_value(ref_e - ref_s + 1, extend_score + align_l.score + align_r.score, index->size);

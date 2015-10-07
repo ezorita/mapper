@@ -46,6 +46,7 @@ seq_push
    
    // Copy tag
    seqt->tag = strdup(tag);
+   seqt->tag = strtok(seqt->tag, " ");
    seqt->seq = strdup(seq);
    if (q) seqt->q = strdup(q);
    else seqt->q = calloc(strlen(seqt->seq),sizeof(char));

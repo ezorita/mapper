@@ -38,7 +38,7 @@ print_and_free
          // Search chromosome name.
          int   chrnum = bisect_search(0, index->chr->nchr-1, index->chr->start, g_start+1)-1;
          // Print results.
-         fprintf(stdout, "%s \t%d\t%d\t%d\t%s:%ld-%ld:%c\t%d\t%.2f\t%.1f%%\t%c%c\n",
+         fprintf(stdout, "%s\t%d\t%d\t%d\t%s:%ld-%ld:%c\t%d\t%.2f\t%.1f%%\t%c%c\n",
                  seq.tag, itv,
                  match.read_s+1, match.read_e+1,
                  index->chr->name[chrnum],

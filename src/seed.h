@@ -19,6 +19,8 @@ struct seedopt_t {
    int32_t min_loci;
    int32_t max_loci;
    int32_t aux_loci;
+   int32_t reseed_len;
+   uint64_t thr_seed;
 };
 
 struct seed_t {
@@ -43,7 +45,9 @@ struct hit_t {
 
 seedstack_t  * naive_smem     (char *, seedopt_t, index_t *);
 // Seed functions.
-seedstack_t  * seed           (char *, seedopt_t, index_t *);
+int            seed_mem       (char *, size_t, size_t, seedstack_t **, seedopt_t, index_t *, int);
+int            reseed_mem     (char *, seedstack_t **, seedopt_t, index_t *);
+int            seed_thr       (char *, size_t, seedstack_t **, seedopt_t, index_t *);
 hit_t        * compute_hits   (seedstack_t * seeds, index_t * index, uint64_t * hit_cnt);
 int            match_seeds    (seedstack_t *, int, matchlist_t *, index_t *, int, double);
 // Seedstack functions.
@@ -51,5 +55,8 @@ seedstack_t  * seedstack_new  (int);
 int            seedstack_push (seed_t, seedstack_t **);
 // Mergesort compar functions.
 int            compar_hit_locus (const void * a, const void * b, const int param);
+// Aux functions.
+int            merge_seeds      (seedstack_t * a, seedstack_t * b, seedstack_t ** m);
+char *         rev_comp         (char * seq);
 
 #endif

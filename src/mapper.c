@@ -24,7 +24,8 @@ int main(int argc, char *argv[])
    if (opt_verbose) fprintf(stderr, "loading index...\n");
    idxfiles_t * files = index_open(argv[2]);
    index_t * index = index_format(files);
-   if(index == NULL) return EXIT_FAILURE;
+   if (index == NULL)
+      return EXIT_FAILURE;
 
    // Read file.
    if (opt_verbose) fprintf(stderr, "reading query file...\n");
@@ -36,19 +37,21 @@ int main(int argc, char *argv[])
 
    // Options.
    seedopt_t seedopt = { // MEM
-      .min_len = 1,
+      .min_len = 18,
       .max_len = 1000,
       .min_loci = 1,
-      .max_loci = 100,
-      .aux_loci = 500
+      .max_loci = 500,
+      .aux_loci = 1000,
+      .thr_seed = 20,
+      .reseed_len = 18*2
    };
    filteropt_t filteropt = {
       .dist_accept = 10,
-      .max_align_per_read = 200,
+      .max_align_per_read = 500,
       .read_ref_ratio = 1.05,
       .align_accept_eexp = -100.0,
       .overlap_max_tolerance = 0.5,
-      .align_seed_filter_thr = 0.0,
+      .align_seed_filter_thr = 0.5,
       .align_filter_ident = 0.9,
       .align_filter_eexp = 0.0,
       .mapq_evalue_ratio = 0.5
@@ -65,8 +68,8 @@ int main(int argc, char *argv[])
       .width_ratio  = 0.05
    };
    formatopt_t formatopt = {
-      .print_first = 1, // 2 for first_only
-      .mapq_thr = 20
+      .print_first = 2, // 2 for first_only
+      .mapq_thr = 0
    };
    mapopt_t mapopt = {
       .seed = seedopt,
@@ -185,13 +188,50 @@ mt_worker
    // Alloc data structures.
    matchlist_t * seed_matches = matchlist_new(opt->filter.max_align_per_read);
    matchlist_t * map_matches = matchlist_new(64);
+   seedstack_t * fw_seeds = seedstack_new(SEEDSTACK_SIZE);
+   seedstack_t * rv_seeds = seedstack_new(SEEDSTACK_SIZE);
+   seedstack_t * seeds = seedstack_new(SEEDSTACK_SIZE);
    
    size_t mapped = 0;
    for (size_t i = 0; i < job->count; i++) {
-      // Seed.
-      seedstack_t * seeds = seed(seq[i].seq, opt->seed, index);
+      // Reset seeds.
+      fw_seeds->pos = 0;
+      rv_seeds->pos = 0;      
+      seeds->pos = 0;
+      // Seed MEMs (forward).
+      size_t slen = strlen(seq[i].seq);
+      seed_mem(seq[i].seq, 0, slen, &fw_seeds, opt->seed, index, 0);
+      // DEBUG SEEDS.
+      fprintf(stdout,"forward seeds:\n");
+      for (int i = 0; i < fw_seeds->pos; i++) {
+         seed_t seed = fw_seeds->seed[i];
+         fprintf(stdout, "seed: p=%d,l=%ld,d=%d,b=%d\n", seed.qry_pos, seed.ref_pos.ep - seed.ref_pos.sp + 1, seed.ref_pos.depth, seed.bulk);
+      }
+
+      // Seed MEMs (reverse).
+      char * rseq = rev_comp(seq[i].seq);
+      seed_mem(rseq, 0, slen, &rv_seeds, opt->seed, index, 1);
+      free(rseq);
+      // DEBUG SEEDS.
+      fprintf(stdout,"reverse seeds:\n");
+      for (int i = 0; i < rv_seeds->pos; i++) {
+         seed_t seed = rv_seeds->seed[i];
+         fprintf(stdout, "seed: p=%d,l=%ld,d=%d,b=%d\n", seed.qry_pos, seed.ref_pos.ep - seed.ref_pos.sp + 1, seed.ref_pos.depth, seed.bulk);
+      }
+
+      // Adaptive seeds.
+      //seed_thr(seq[i].seq, slen, &seeds, opt->seed, index);
+      // Merge seeds.
+      merge_seeds(fw_seeds, rv_seeds, &seeds);
+      // Reseed.
+      reseed_mem(seq[i].seq, &seeds, opt->seed, index);
+      // DEBUG SEEDS.
+      fprintf(stdout, "seed merge:\n");
+      for (int i = 0; i < seeds->pos; i++) {
+         seed_t seed = seeds->seed[i];
+         fprintf(stdout, "seed: p=%d,l=%ld,d=%d,b=%d\n", seed.qry_pos, seed.ref_pos.ep - seed.ref_pos.sp + 1, seed.ref_pos.depth, seed.bulk);
+      }
       // Match seeds.
-      int slen = strlen(seq[i].seq);
       seed_matches->pos = 0;
       match_seeds(seeds, slen, seed_matches, index, opt->filter.dist_accept, opt->filter.read_ref_ratio);
       // Align seeds.
@@ -205,11 +245,11 @@ mt_worker
       // Print matches.
       mapped += print_and_free(seq[i], intervals, n_ints, index, opt->format);
       // Free structs.
-      free(seeds);
       free(intervals);
    }
 
    // Free data structures.
+   free(seeds);
    free(seed_matches);
    free(map_matches);
    

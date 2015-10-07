@@ -1,6 +1,8 @@
 #ifndef _INDEX_H
 #define _INDEX_H
 
+#define VERBOSE_DEBUG 1
+
 static const char translate[256] = {[0 ... 255] = 4,
                            ['a'] = 0, ['c'] = 1, ['g'] = 2, ['t'] = 3, ['n'] = 4, ['$'] = 5,
                            ['A'] = 0, ['C'] = 1, ['G'] = 2, ['T'] = 3, ['N'] = 4};
