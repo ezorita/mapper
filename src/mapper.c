@@ -100,7 +100,7 @@ int main(int argc, char *argv[])
 
    // DEFAULT Options.
    seedopt_t seedopt = { // MEM
-      .min_len = 18,
+      .min_len = 12,
       .max_len = 1000,
       .min_loci = 1,
       .max_loci = 200,
@@ -335,6 +335,7 @@ mt_worker
          }
          fprintf(stdout, "Repeats found: %d\n", repeats->pos);
       }
+
       // Match seeds.
       seed_matches->pos = 0;
       chain_seeds(seeds, slen, seed_matches, index, opt->filter.dist_accept, opt->filter.read_ref_ratio);

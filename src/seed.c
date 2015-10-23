@@ -29,7 +29,6 @@ seed_thr
    uint64_t new_loci;
    // Start position.
    bwpos_t pos = (bwpos_t){.depth = 0, .sp = 0, .ep = index->size-1};
-
    while (i >= 0) {
       int nt = translate[(uint8_t)seq[i]];
       if (nt > 3) {
@@ -55,16 +54,21 @@ seed_thr
          seedstack_push(seed, stack);
 
          // Shrink previous suffix (it had loci_count > thr).
-         uint64_t last_loci = new_loci;
-         do {
-            suffix_shrink(newpos, &newpos, index);
-            new_loci = newpos.ep - newpos.sp + 1;
-            if (new_loci > last_loci && new_loci <= opt.thr_seed) {
-               seed = (seed_t) {.bulk = 0, .qry_pos = i, .ref_pos = newpos};
-               seedstack_push(seed,stack);
-               last_loci = new_loci;
+         suffix_shrink(newpos, &newpos, index);
+         // Check Complementary matches.
+         if (newpos.depth > opt.min_len && newpos.ep - newpos.sp + 1 <= opt.min_loci) {
+            bwpos_t tmp;
+            do {
+               tmp = newpos;
+               suffix_shrink(newpos, &newpos, index);
+            } while (newpos.depth > opt.min_len && newpos.ep - newpos.sp + 1 <= opt.min_loci);
+            // Save seed if it bears new loci.
+            if (tmp.ep - tmp.sp + 1 > new_loci) {
+               seed_t seed = (seed_t) {.bulk = 0, .qry_pos = i, .ref_pos = tmp};
+               seedstack_push(seed, stack);
             }
-         } while (new_loci <= opt.thr_seed);
+         }
+         // Extend.
          i--;
       } else {
          i--;
