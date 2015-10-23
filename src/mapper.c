@@ -111,7 +111,7 @@ int main(int argc, char *argv[])
    filteropt_t filteropt = {
       .dist_accept = 10,
       .max_align_per_read = 200,
-      .read_ref_ratio = 1.05,
+      .read_ref_ratio = 0.05,
       .align_accept_eexp = -100.0,
       .overlap_max_tolerance = 0.5,
       .align_seed_filter_thr = 0.5,
@@ -239,6 +239,7 @@ mt_scheduler
       // Increase thread count.
       control->active += 1;
       // Create thread.
+
       pthread_t thread;
       if (pthread_create(&thread, NULL, mt_worker, job)) {
          fprintf(stderr, "error 'pthread_create'\n");
@@ -291,6 +292,7 @@ mt_worker
    
    size_t mapped = 0;
    for (size_t i = 0; i < job->count; i++) {
+      if (VERBOSE_DEBUG) fprintf(stdout, "seq: %s\n", seq[i].seq);
       size_t slen = strlen(seq[i].seq);
       // Reset seeds.
       seeds->pos = 0;

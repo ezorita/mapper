@@ -14,7 +14,68 @@ rev_comp
    return rseq;
 }
 
+
+int
+seed_thr
+(
+ char         * seq,
+ size_t         slen,
+ seedstack_t ** stack,
+ seedopt_t      opt,
+ index_t      * index
+)
+{
+   int32_t i = slen-1;
+   uint64_t new_loci;
+   // Start position.
+   bwpos_t pos = (bwpos_t){.depth = 0, .sp = 0, .ep = index->size-1};
+
+   while (i >= 0) {
+      int nt = translate[(uint8_t)seq[i]];
+      if (nt > 3) {
+         pos = (bwpos_t){.depth = 0, .sp = 0, .ep = index->size-1};
+         i--;
+         continue;
+      }
+      bwpos_t newpos;
+      // Extend suffix (Backward search).
+      suffix_extend(nt, pos, &newpos, index);
+      // Count loci.
+      new_loci = (newpos.ep < newpos.sp ? 0 : newpos.ep - newpos.sp + 1);
+      // Seed found, save and shrink suffix.
+      if (new_loci == 0) {
+         // Shrink suffix once.
+         suffix_shrink(pos, &newpos, index);
+         new_loci = newpos.ep - newpos.sp + 1;
+      } else if (new_loci <= opt.thr_seed && pos.depth >= opt.min_len) {
+         // Build seed.
+         int bulk = 0;//newpos.depth < opt.min_len;
+         seed_t seed = (seed_t) {.bulk = bulk, .qry_pos = i, .ref_pos = newpos};
+         // Save seed.
+         seedstack_push(seed, stack);
+
+         // Shrink previous suffix (it had loci_count > thr).
+         uint64_t last_loci = new_loci;
+         do {
+            suffix_shrink(newpos, &newpos, index);
+            new_loci = newpos.ep - newpos.sp + 1;
+            if (new_loci > last_loci && new_loci <= opt.thr_seed) {
+               seed = (seed_t) {.bulk = 0, .qry_pos = i, .ref_pos = newpos};
+               seedstack_push(seed,stack);
+               last_loci = new_loci;
+            }
+         } while (new_loci <= opt.thr_seed);
+         i--;
+      } else {
+         i--;
+      }
+      pos = newpos;
+   }
+
+   return 0;
+}
 /*
+
 int
 seed_thr
 (
@@ -75,67 +136,6 @@ seed_thr
    return 0;
 }
 */
-
-int
-seed_thr
-(
- char         * seq,
- size_t         slen,
- seedstack_t ** stack,
- seedopt_t      opt,
- index_t      * index
-)
-{
-   int32_t i = slen-1;
-   uint64_t new_loci;
-   // Start position.
-   bwpos_t pos = (bwpos_t){.depth = 0, .sp = 0, .ep = index->size-1};
-
-   while (i >= 0) {
-      int nt = translate[(uint8_t)seq[i]];
-      if (nt > 3) {
-         pos = (bwpos_t){.depth = 0, .sp = 0, .ep = index->size-1};
-         i--;
-         continue;
-      }
-      bwpos_t newpos;
-      // Extend suffix (Backward search).
-      suffix_extend(nt, pos, &newpos, index);
-      // Count loci.
-      new_loci = (newpos.ep < newpos.sp ? 0 : newpos.ep - newpos.sp + 1);
-      // Seed found, save and shrink suffix.
-      if (new_loci == 0) {
-         // Shrink suffix once.
-         suffix_shrink(pos, &newpos, index);
-         new_loci = newpos.ep - newpos.sp + 1;
-      } else if (new_loci <= opt.thr_seed && pos.depth >= opt.min_len) {
-         // Build seed.
-         int bulk = 0;//newpos.depth < opt.min_len;
-         seed_t seed = (seed_t) {.bulk = bulk, .qry_pos = i, .ref_pos = newpos};
-         // Save seed.
-         seedstack_push(seed, stack);
-
-         // Shrink previous suffix (it had loci_count > thr).
-         uint64_t last_loci = new_loci;
-         do {
-            suffix_shrink(newpos, &newpos, index);
-            new_loci = newpos.ep - newpos.sp + 1;
-            if (new_loci > last_loci && new_loci <= opt.thr_seed) {
-               seed = (seed_t) {.bulk = 0, .qry_pos = i, .ref_pos = newpos};
-               seedstack_push(seed,stack);
-               last_loci = new_loci;
-            }
-         } while (new_loci <= opt.thr_seed);
-         i--;
-      } else {
-         i--;
-      }
-      pos = newpos;
-   }
-
-   return 0;
-}
-
 
 int
 reseed_mem
@@ -381,7 +381,7 @@ seed_mem
       if (new_loci < opt.min_loci || nt == 4) {
          //if (last_loci <= opt.aux_loci && pos.depth >= opt.min_len && qry_pos < last_qry_pos) {
          // Seed found.
-         if (i + 1 < last_qry_pos && pos.depth >= opt.min_len) {
+         if (i + 1 < last_qry_pos) {
             seed_t seed = (seed_t) {.bulk = (last_loci > opt.max_loci), .qry_pos = i+1, .ref_pos = pos};
             // Save seed.
             seedstack_push(seed, stack);
@@ -408,7 +408,7 @@ seed_mem
          pos = newpos;
          //         if (new_loci <= opt.aux_loci && qry_pos < last_qry_pos && pos.depth >= opt.min_len) {
          // Seed found.
-         if (i < last_qry_pos && pos.depth >= opt.min_len) {
+         if (i < last_qry_pos) {
             seed_t seed = (seed_t) {.bulk = (new_loci > opt.max_loci), .qry_pos = i, .ref_pos = pos};
             // Save seed.
             seedstack_push(seed, stack);
@@ -533,7 +533,8 @@ chain_seeds
             fprintf(stdout, "\t[r:%ld,%ld(%ld) q:%d,%d(%ld)]", lend, hits[i].locus, g_dist, rend, hits[i].qrypos,r_dist);
          }
          */
-         if (r_dist >= 0 && (g_dist <= (read_ref_ratio * r_dist) || (g_dist < dist_accept && r_dist < dist_accept))) {
+         //         if (r_dist >= 0 && (g_dist <= (read_ref_ratio * r_dist) || (g_dist < dist_accept && r_dist < dist_accept))) {
+         if (r_dist >= 0 && (g_dist <= (1+read_ref_ratio) * r_dist) && (g_dist >= (1-read_ref_ratio) * r_dist)) {
             //            int hitdiff = hits[i].depth - (lend - (int64_t)hits[i].locus > 0 ? lend - (int64_t)hits[i].locus : 0);
             //            span += (hitdiff > 0 ? hitdiff : 0);
             uint64_t new_lend = hits[i].locus + hits[i].depth;
