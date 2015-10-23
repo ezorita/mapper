@@ -18,6 +18,18 @@ bisect_search
    else return bisect_search(middle, end, set, value);
 }
 
+double
+binom
+(
+ int l,
+ int k
+)
+{
+   double b = 1.0;
+   for (double i = 0; i < k; i++) b *= (l-i)/(i+1);
+   return b;
+}
+
 /*********************/
 /** seq_t functions **/
 /*********************/

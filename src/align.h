@@ -65,6 +65,6 @@ struct path_t {
 
 path_t dbf_align_bp (int qlen,char* query,int rlen,char* ref,int min_len,int dir_r,int dir_q,alignopt_t opt);
 path_t dbf_align    (int qlen,char* query,int rlen,char* ref,int dir_r,int dir_q, double width_ratio);
-double mapq_align   (const char*, const char*, const char*, const int, const int);
+int    mapq_align   (const char*, const char*, const char*, const int, const int, int*);
 
 #endif

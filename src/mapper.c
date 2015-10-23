@@ -1,58 +1,122 @@
 #include "mapper.h"
-
+#include <getopt.h>
 #include <time.h>
+
+char *USAGE =
+   "\n"
+   "Usage:"
+   "  mapper [options] input-file genome-index\n"
+   "\n"
+   "  options:\n"
+   "    -t --threads: number of concurrent threads (default 1)\n"
+   "    -a --all:     print all the hits found in each interval.\n"
+   "    -q --quality: do not print reads with mapping quality below [quality].\n"
+   "    -e --eval:    do not print reads with significance below [e-value].\n";
+
+
+void say_usage(void) { fprintf(stderr, "%s\n", USAGE); }
+
+int parse_opt(int argc, char *argv[], mapopt_t * opt, char ** qfile, char ** ifile) {
+   int arg_t = 0, arg_a = 0, arg_e = 0, arg_q = 0;
+   int c;
+   while (1) {
+      int option_index = 0;
+      static struct option long_options[] = {
+         {"all",      no_argument,       0, 'a'},
+         {"threads",  required_argument, 0, 't'},
+         {"eval",     required_argument, 0, 'e'},
+         {"quality",  required_argument, 0, 'q'},
+         {0, 0, 0, 0}
+      };
+
+      c = getopt_long(argc, argv, "at:e:q:",
+            long_options, &option_index);
+      if (c == -1) break;
+      switch (c) {
+      case 'a':
+         if (arg_a) {
+            fprintf(stderr, "error: option -a set more than once.\n");
+            say_usage();
+            exit(EXIT_FAILURE);
+         }
+         arg_a = 1;
+         opt->format.print_first = 0;
+         break;
+      case 't':
+         if (arg_t) {
+            fprintf(stderr, "error: option -t set more than once.\n");
+            say_usage();
+            exit(EXIT_FAILURE);
+         }
+         arg_t = 1;
+         opt->threads = atoi(optarg);
+         break;
+      case 'e':
+         if (arg_e) {
+            fprintf(stderr, "error: option -e set more than once.\n");
+            say_usage();
+            exit(EXIT_FAILURE);
+         }
+         arg_e = 1;
+         int eval = atoi(optarg);
+         if (eval > 0) eval = -eval;
+         opt->format.eval_thr = eval;
+         break;
+      case 'q':
+         if (arg_q) {
+            fprintf(stderr, "error: option -q set more than once.\n");
+            say_usage();
+            exit(EXIT_FAILURE);
+         }
+         arg_q = 1;
+         int q = atoi(optarg);
+         if (q < 0 || q > 60) {
+            fprintf(stderr, "error: quality value must be in interval [0,60].\n");
+            exit(EXIT_FAILURE);
+         }
+         opt->format.mapq_thr = q;
+         break;
+      }
+   }
+
+   if (optind != argc-2) {
+      fprintf(stderr, "error: not enough parameters.\n");
+      say_usage();
+      exit(EXIT_FAILURE);
+   }
+
+   // Store index and query files.
+   *qfile = argv[optind];
+   *ifile = argv[optind+1];
+
+   return 0;
+}
+
 
 int main(int argc, char *argv[])
 {
    int opt_verbose = 1;
-   int n_threads = 10;
    size_t seqs_per_thread = 10000;
 
-   if (argc != 3) {
-      fprintf(stderr, "usage: bwmapper <query file> <genome index>\n");
-      exit(EXIT_FAILURE);
-   }
-
-   // Parse query filename.
-   FILE * queryfile = fopen(argv[1], "r");
-   if (queryfile == NULL) {
-      fprintf(stderr, "error: could not open file: %s (%s).\n", argv[1],strerror(errno));
-      return EXIT_FAILURE;
-   }
-
-   // Read FM index format.
-   if (opt_verbose) fprintf(stderr, "loading index...\n");
-   idxfiles_t * files = index_open(argv[2]);
-   index_t * index = index_format(files);
-   if (index == NULL)
-      return EXIT_FAILURE;
-
-   // Read file.
-   if (opt_verbose) fprintf(stderr, "reading query file...\n");
-   seqstack_t * seqs = read_file(queryfile);
-   if (seqs == NULL) {
-      return EXIT_FAILURE;
-   }
-   fclose(queryfile);
-
-   // Options.
+   // DEFAULT Options.
    seedopt_t seedopt = { // MEM
       .min_len = 18,
       .max_len = 1000,
       .min_loci = 1,
-      .max_loci = 500,
+      .max_loci = 200,
       .aux_loci = 1000,
       .thr_seed = 20,
-      .reseed_len = 18*2
+      .reseed_len = 28
    };
    filteropt_t filteropt = {
       .dist_accept = 10,
-      .max_align_per_read = 500,
+      .max_align_per_read = 200,
       .read_ref_ratio = 1.05,
       .align_accept_eexp = -100.0,
       .overlap_max_tolerance = 0.5,
       .align_seed_filter_thr = 0.5,
-      .align_filter_ident = 0.9,
+      .align_seed_filter_dif = 19,//38,
+      .align_filter_ident = 0.85,
       .align_filter_eexp = 0.0,
       .mapq_evalue_ratio = 0.5
    };
@@ -69,17 +133,51 @@ int main(int argc, char *argv[])
    };
    formatopt_t formatopt = {
       .print_first = 2, // 2 for first_only
-      .mapq_thr = 0
+      .mapq_thr = 0,
+      .eval_thr = 0
    };
    mapopt_t mapopt = {
       .seed = seedopt,
       .align = alignopt,
       .filter = filteropt,
-      .format = formatopt
+      .format = formatopt,
+      .threads = 1
    };
 
+   // Parse input parameters.
+   if (argc == 1) {
+      say_usage();
+      exit(EXIT_SUCCESS);
+   }
+   char * qfile, *ifile;
+   parse_opt(argc, argv, &mapopt, &qfile, &ifile);
+
+
+
+   // Parse query filename.
+   FILE * queryfile = fopen(qfile, "r");
+   if (queryfile == NULL) {
+      fprintf(stderr, "error: could not open file: %s (%s).\n", argv[1],strerror(errno));
+      return EXIT_FAILURE;
+   }
+
+   // Read FM index format.
+   if (opt_verbose) fprintf(stderr, "loading index...\n");
+   idxfiles_t * files = index_open(ifile);
+   index_t * index = index_format(files);
+   if (index == NULL)
+      return EXIT_FAILURE;
+
+   // Read file.
+   if (opt_verbose) fprintf(stderr, "reading query file...\n");
+   seqstack_t * seqs = read_file(queryfile);
+   if (seqs == NULL) {
+      return EXIT_FAILURE;
+   }
+   fclose(queryfile);
+
    // Run thread scheduler.
-   mt_scheduler(seqs, &mapopt, index, n_threads, seqs_per_thread);
+   mt_scheduler(seqs, &mapopt, index, mapopt.threads, seqs_per_thread);
 
    // Free memory.
    free(seqs);
@@ -188,60 +286,67 @@ mt_worker
    // Alloc data structures.
    matchlist_t * seed_matches = matchlist_new(opt->filter.max_align_per_read);
    matchlist_t * map_matches = matchlist_new(64);
-   seedstack_t * fw_seeds = seedstack_new(SEEDSTACK_SIZE);
-   seedstack_t * rv_seeds = seedstack_new(SEEDSTACK_SIZE);
-   seedstack_t * seeds = seedstack_new(SEEDSTACK_SIZE);
+   matchlist_t * repeats = matchlist_new(64);
+   seedstack_t * seeds  = seedstack_new(SEEDSTACK_SIZE);
    
    size_t mapped = 0;
    for (size_t i = 0; i < job->count; i++) {
-      // Reset seeds.
-      fw_seeds->pos = 0;
-      rv_seeds->pos = 0;      
-      seeds->pos = 0;
-      // Seed MEMs (forward).
       size_t slen = strlen(seq[i].seq);
-      seed_mem(seq[i].seq, 0, slen, &fw_seeds, opt->seed, index, 0);
-      // DEBUG SEEDS.
-      fprintf(stdout,"forward seeds:\n");
-      for (int i = 0; i < fw_seeds->pos; i++) {
-         seed_t seed = fw_seeds->seed[i];
-         fprintf(stdout, "seed: p=%d,l=%ld,d=%d,b=%d\n", seed.qry_pos, seed.ref_pos.ep - seed.ref_pos.sp + 1, seed.ref_pos.depth, seed.bulk);
+      // Reset seeds.
+      seeds->pos = 0;
+      // Debug.
+      size_t n_mems;
+      // Seed MEM.
+      seed_mem(seq[i].seq, 0, slen, &seeds, opt->seed, index);
+      // DEBUG MEMs.
+      if (VERBOSE_DEBUG) {
+         fprintf(stdout, "MEMs: %ld\n", seeds->pos);
+         for (int i = 0; i < seeds->pos; i++) {
+            seed_t seed = seeds->seed[i];
+            fprintf(stdout, "seed: p=%d,l=%ld,d=%d,b=%d\n", seed.qry_pos, seed.ref_pos.ep - seed.ref_pos.sp + 1, seed.ref_pos.depth, seed.bulk);
+         }
       }
-
-      // Seed MEMs (reverse).
-      char * rseq = rev_comp(seq[i].seq);
-      seed_mem(rseq, 0, slen, &rv_seeds, opt->seed, index, 1);
-      free(rseq);
-      // DEBUG SEEDS.
-      fprintf(stdout,"reverse seeds:\n");
-      for (int i = 0; i < rv_seeds->pos; i++) {
-         seed_t seed = rv_seeds->seed[i];
-         fprintf(stdout, "seed: p=%d,l=%ld,d=%d,b=%d\n", seed.qry_pos, seed.ref_pos.ep - seed.ref_pos.sp + 1, seed.ref_pos.depth, seed.bulk);
-      }
-
-      // Adaptive seeds.
-      //seed_thr(seq[i].seq, slen, &seeds, opt->seed, index);
-      // Merge seeds.
-      merge_seeds(fw_seeds, rv_seeds, &seeds);
+      n_mems = seeds->pos;
       // Reseed.
-      reseed_mem(seq[i].seq, &seeds, opt->seed, index);
+      reseed_mem(seq[i].seq,&seeds, opt->seed, index);
+      // DEBUG reseedMEMs.
+      if (VERBOSE_DEBUG) {
+         fprintf(stdout, "Reseed MEMs: %ld\n", seeds->pos - n_mems);
+         for (int i = n_mems; i < seeds->pos; i++) {
+            seed_t seed = seeds->seed[i];
+            fprintf(stdout, "seed: p=%d,l=%ld,d=%d,b=%d\n", seed.qry_pos, seed.ref_pos.ep - seed.ref_pos.sp + 1, seed.ref_pos.depth, seed.bulk);
+         }
+      }
+      n_mems = seeds->pos;
+      // Reset repeats.
+      repeats->pos = 0;
+      // Find repeated regions in read.
+      find_repeats(seeds, &repeats, opt->seed.max_loci);
+      // Adaptive seeds.
+      seed_thr(seq[i].seq, slen, &seeds, opt->seed, index);
       // DEBUG SEEDS.
-      fprintf(stdout, "seed merge:\n");
-      for (int i = 0; i < seeds->pos; i++) {
-         seed_t seed = seeds->seed[i];
-         fprintf(stdout, "seed: p=%d,l=%ld,d=%d,b=%d\n", seed.qry_pos, seed.ref_pos.ep - seed.ref_pos.sp + 1, seed.ref_pos.depth, seed.bulk);
+      if (VERBOSE_DEBUG) {
+         fprintf(stdout, "Threshold: %ld\n", seeds->pos - n_mems);
+         for (int i = n_mems; i < seeds->pos; i++) {
+            seed_t seed = seeds->seed[i];
+            fprintf(stdout, "seed: p=%d,l=%ld,d=%d,b=%d\n", seed.qry_pos, seed.ref_pos.ep - seed.ref_pos.sp + 1, seed.ref_pos.depth, seed.bulk);
+         }
+         fprintf(stdout, "Repeats found: %d\n", repeats->pos);
       }
       // Match seeds.
       seed_matches->pos = 0;
-      match_seeds(seeds, slen, seed_matches, index, opt->filter.dist_accept, opt->filter.read_ref_ratio);
+      chain_seeds(seeds, slen, seed_matches, index, opt->filter.dist_accept, opt->filter.read_ref_ratio);
       // Align seeds.
       map_matches->pos = 0;
       align_seeds(seq[i].seq, seed_matches, &map_matches, index, opt->filter, opt->align);
       // Merge intervals.
       int32_t n_ints;
-      matchlist_t ** intervals = merge_intervals(map_matches, 0.8, &n_ints);
+      matchlist_t ** intervals;
+      intervals = merge_intervals(map_matches, 0.8, &n_ints);
       // Compute map qualities.
-      compute_mapq(intervals, n_ints, opt->filter.mapq_evalue_ratio, seq[i], index);
+      compute_mapq(intervals, n_ints, opt->filter.mapq_evalue_ratio, 0.5, seq[i], index);
+      // Repeat penalty.
+      if (repeats->pos > 0) filter_repeats(intervals, repeats, n_ints);
       // Print matches.
       mapped += print_and_free(seq[i], intervals, n_ints, index, opt->format);
       // Free structs.

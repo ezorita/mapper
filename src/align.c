@@ -441,54 +441,72 @@ char translate[256] = {[0 ... 255] = 4,
 
 
 
-double
+int
 mapq_align
 (
  const char * qry,
  const char * qlt,
  const char * ref,
  const int    len,
- const int    w
+ const int    w,
+       int  * dist
 )
 {
 
    static const char t[256] = {[0 ... 255] = 4,
                   ['a'] = 0, ['c'] = 1, ['g'] = 2, ['t'] = 3,
                   ['A'] = 0, ['C'] = 1, ['G'] = 2, ['T'] = 3 };
-
-   double i_p = 2.0; // Indel penalty
-   double m_p[256];  // Mismatch penalty
-   for (int i = 0; i < 256; i++) m_p[i] = (i-33.0)/10;
-   double * cells = malloc((2*w+3)*sizeof(double));
-   double * c = cells + w + 1;
+   // Mismatch penalty
+   int m_p[256];
+   for (int i = 0; i < 256; i++) m_p[i] = i-33;
+   // Indel penalty is maxQ.
+   int i_p = 0;
+   for (int i = 0; i < len; i++) if (i_p < qlt[i]) i_p = qlt[i];
+   //   i_p = (m_p[i_p]+1)/2;
+   i_p = m_p[i_p];
+   
+   // Alloc cells.
+   int * cells = malloc((2*w+3)*sizeof(int));
+   int * mism  = malloc((2*w+3)*sizeof(int));
+   int * m = mism + w + 1;
+   int * c = cells + w + 1;
    // Initialize scores.
-   c[0] = 0;
-   for (int i = 1; i <= w+1; i++) c[-i] = c[i] = i * i_p;
+   c[0] = m[0] = 0;
+   c[-w-1] = c[w+1] = i_p * len;
+   m[-w-1] = m[w+1] = len;
+   for (int i = 1; i <= w; i++) {
+      c[-i] = c[i] = i * i_p;
+      m[-i] = m[i] = i;
+   }
 
    for (int32_t i = 0; i < len; i++) {
       // Horizontal.
       for (int32_t j = (i < w ? -i : -w); j < 0; j++) {
-         double indel = align_min(c[j+1], c[j-1]) + i_p;
-         double match = c[j] + (t[(int)qry[i+j]] == t[(int)ref[i]] ? 0 : m_p[(int)qlt[i+j]]);
-         c[j] = align_min(indel, match);
+         int indel = align_min(c[j+1], c[j-1]) + i_p;
+         int match = (t[(int)qry[i+j]] == t[(int)ref[i]] ? 0 : m_p[(int)qlt[i+j]]);
+         c[j] = align_min(indel, c[j] + match);
+         m[j] = align_min(align_min(m[j+1], m[j-1]) + 1, m[j] + (match > 0));
       }
       // Vertical and center.
       double mp = m_p[(int)qlt[i]];
       for (int32_t j = (i < w ? i : w); j >= 0; j--) {
-         double indel = align_min(c[j+1], c[j-1]) + i_p;
-         double match = c[j] + (t[(int)qry[i]] == t[(int)ref[i-j]] ? 0 : mp);
-         c[j] = align_min(indel, match);
+         int indel = align_min(c[j+1], c[j-1]) + i_p;
+         int match = (t[(int)qry[i]] == t[(int)ref[i-j]] ? 0 : mp);
+         c[j] = align_min(indel, c[j] + match);
+         m[j] = align_min(align_min(m[j+1], m[j-1]) + 1, m[j] + (match > 0));
       }
    }
 
    // Find minimum and return.
-   double mapq = c[w];
+   int mapq = c[w];
+   *dist = m[w];
    for (int i = -w; i < w; i++) {
-      if (c[i] < mapq) mapq = c[i];
+      if (c[i] < mapq) mapq = c[i], *dist = m[i];
    }
 
    // Free memory.
    free(cells);
+   free(mism);
 
    return mapq;
 }

@@ -72,6 +72,7 @@ struct mapopt_t {
    filteropt_t filter;
    alignopt_t  align;
    formatopt_t format;
+   int threads;
 };
 
 // Thread management.

@@ -19,8 +19,8 @@ print_and_free
          // Retrieve match.
          match_t match = matches->match[j];
          // Check mapping quality.
-         if (match.mapq < opt.mapq_thr) {
-            if (itv == 0 || !opt.print_first || j > 0) continue;
+         if (match.mapq < opt.mapq_thr || match.e_exp > opt.eval_thr) {
+            if (itv == 0 || opt.print_first != 1 || j > 0) continue;
          }
          else mapped = 1;
          // Format output.
@@ -38,7 +38,7 @@ print_and_free
          // Search chromosome name.
          int   chrnum = bisect_search(0, index->chr->nchr-1, index->chr->start, g_start+1)-1;
          // Print results.
-         fprintf(stdout, "%s\t%d\t%d\t%d\t%s:%ld-%ld:%c\t%d\t%.2f\t%.1f%%\t%c%c\n",
+         fprintf(stdout, "%s\t%d\t%d\t%d\t%s:%ld-%ld:%c\t%d\t%.2f\t%.1f\t%c%c\n",
                  seq.tag, itv,
                  match.read_s+1, match.read_e+1,
                  index->chr->name[chrnum],
@@ -49,11 +49,15 @@ print_and_free
                  match.e_exp,
                  match.ident*100.0,
                  (match.flags & WARNING_OVERLAP ? 'o' : '-'),
-                 (match.flags & FLAG_FUSED ? 'f' : '-'));
+                 (match.flags & FLAG_REPEAT ? 'r' : '-'));
       }
 
       // Free match.
       free(matches);
+   }
+
+   if (n_ints == 1) {
+      fprintf(stdout, "%s\t*\t*\t*\t*\t*\t*\t*\t*\n", seq.tag);
    }
 
    // Free sequence.

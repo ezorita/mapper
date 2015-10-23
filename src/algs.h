@@ -12,7 +12,8 @@
 
 // Flags definition.
 #define WARNING_OVERLAP 0x00000001
-#define FLAG_FUSED      0x00000002
+#define FLAG_REPEAT     0x00000002
+
 
 // Structure typedef.
 typedef struct index_t     index_t;
@@ -104,6 +105,7 @@ void          radix_sort       (long * a, long * b, long n, long maxval);
 
 // General algorithms.
 long          bisect_search    (long start, long end, long* set, long value);
+double        binom            (int l, int k);
 
 // Stack functions.
 vstack_t    * new_stack        (long size);

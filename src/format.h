@@ -12,6 +12,7 @@ typedef struct formatopt_t formatopt_t;
 struct formatopt_t {
    int mapq_thr;
    int print_first;
+   double eval_thr;
 };
 
 int print_and_free (seq_t seq, matchlist_t ** intervals, int n_ints, index_t * index, formatopt_t opt);

@@ -16,7 +16,6 @@ align_seeds
    int slen = strlen(read);
    matchlist_t * matches = *seqmatches;
    
-
    // Sort by seeded nucleotides.
    mergesort_mt(seeds->match, seeds->pos, sizeof(match_t), 0, 1, compar_seedhits);
 
@@ -37,7 +36,7 @@ align_seeds
          int span = align_min(seed.read_e - seed.read_s, match.read_e - match.read_s);
          int overlap = align_max(0, align_min(seed.read_e, match.read_e) - align_max(seed.read_s, match.read_s));
          overlap = overlap > span*opt.overlap_max_tolerance;
-         int seed_ratio = seed.hits < match.hits*opt.align_seed_filter_thr;
+         int seed_ratio = (seed.hits < match.hits*opt.align_seed_filter_thr) && (match.hits - seed.hits >= opt.align_seed_filter_dif);
          // If overlap is higher than the maximum overlap tolerance, cancel the alignment.
          if (overlap && seed_ratio) {
             cancel_align = 1;
@@ -161,14 +160,14 @@ align_seeds
          // Search chromosome name.
          int   chrnum = bisect_search(0, index->chr->nchr-1, index->chr->start, g_start+1)-1;
          // Print results.
-         fprintf(stdout, "[%ld] alignment: %d,%s:%ld-%ld:%c\t(%ld-%ld)\t%ld\t%.2f%%\n",
+         fprintf(stdout, "[%ld] chain: %d hits (%ld-%ld,%s:%ld-%ld:%c)\tscore: %ld,%.2f%%\n",
                  k,
                  seed.hits,
+                 read_s+1, read_e+1,
                  index->chr->name[chrnum],
                  g_start - index->chr->start[chrnum]+1,
                  g_end - index->chr->start[chrnum]+1,
                  dir ? '-' : '+',
-                 read_s+1, read_e+1,
                  score,
                  ident*100.0
                  );
@@ -220,56 +219,95 @@ compute_mapq
 (
  matchlist_t ** intervals,
  int n_int,
- double e_ratio,
+ double eval_ratio,
+ double err_rate,
  seq_t seq,
  index_t * index
 )
 {
    for (int i = 1; i < n_int; i++) {
       matchlist_t * interval = intervals[i];
-      if (interval->pos < 2) {
-         double e_exp = -10*interval->match[0].e_exp - 3;
-         interval->match[0].mapq = (e_exp < 60 ? e_exp : 60);
-         continue;
-      }
       match_t match = interval->match[0];
-      double exp_thr = match.e_exp * e_ratio;
+      double exp_thr = match.e_exp * eval_ratio;
       int beg = match.read_s;
       int len = match.read_e - match.read_s + 1;
-
-      double psum = 0.0;
-      if (interval->match[1].e_exp < exp_thr) {
-         double mapq = mapq_align(seq.seq + beg, seq.q + beg, index->genome + match.ref_s, len, len*0.02);
-         // Assign mapq.
-         interval->match[0].mapq = pow(10.0, -mapq);
-         psum += interval->match[0].mapq;
-      } else {
-         double e_exp = -10*interval->match[0].e_exp - 3;
-         interval->match[0].mapq = (e_exp < 60 ? e_exp : 60);
+      int err = (int) ((1-match.ident) * len);
+      if (interval->pos < 2 || (interval->pos >= 2 && interval->match[1].e_exp > exp_thr)) {
+         double e_exp = -10*match.e_exp - 3;
+         double ident = 0;
+         if (1-match.ident > err_rate)
+            ident = -10*(log10(binom(len,err)) + (len-err)*log10(1-err_rate) + err*log10(err_rate));
+         double mapq = (e_exp < 60 ? e_exp : 60) - ident;
+         interval->match[0].mapq = (mapq < 0 ? 0 : mapq);
          continue;
       }
-      
-      int j = 1;
-      for (; j < interval->pos; j++) {
+
+      if (VERBOSE_DEBUG) {
+         fprintf(stdout, "mapq:\n");
+      }
+
+      /*
+      int errs;
+      int mapq = mapq_align(seq.seq + beg, seq.q + beg, index->genome + match.ref_s, len, len*0.02, &errs);
+      // Assign mapq.
+      interval->match[0].mapq = pow(10.0, -(mapq/10.0)) * binom(len,errs);
+      if (VERBOSE_DEBUG) {
+         fprintf(stdout, "[0] errors = %d, score = %d, prob = %f\n", errs, mapq, interval->match[0].mapq);
+      }
+      psum += interval->match[0].mapq;
+      */
+      double psum = 0.0;
+      double * binoms = malloc(interval->pos*sizeof(double));
+      int    * n_err = malloc(interval->pos*sizeof(int));
+      int j;
+      for (j = 0; j < interval->pos; j++) {
          match_t match = interval->match[j];         
-         if (interval->match[j].e_exp < exp_thr) {
+         if (match.e_exp < exp_thr) {
             char * ref_ptr = index->genome + match.ref_s + beg - match.read_s;
-            double mapq = mapq_align(seq.seq + beg, seq.q + beg, ref_ptr, len, len*0.02);
-            interval->match[j].mapq = pow(10.0, -mapq);
+            int mapq = mapq_align(seq.seq + beg, seq.q + beg, ref_ptr, len, len*0.02, n_err+j);
+            binoms[j] = binom(len,n_err[j]);
+            interval->match[j].mapq = pow(10.0, -(mapq/10.0)) * binoms[j];
+            if (VERBOSE_DEBUG) {
+               fprintf(stdout, "[%d] errors = %d, score = %d, prob = %f\n", j, n_err[j], mapq, interval->match[j].mapq);
+            }
             psum += interval->match[j].mapq;
          } else break;
       }
       j--;
       for (; j >= 0; j--) {
-         double p_exp = (int)(-10*log10(1-interval->match[j].mapq/psum));
+         double p_div = interval->match[j].mapq/psum;
+         double p_exp = (int)(-10*log10(max(1-p_div, 0.0000001)));
          double e_exp = (int)(-10*interval->match[j].e_exp) - 3;
-         double quality = (p_exp < e_exp ? p_exp : e_exp);
-         interval->match[j].mapq = quality > 60 ? 60 : quality;
+         double ident = 0;
+         if (n_err[j]*1.0/len > err_rate)
+            ident = (int)(-10*(log10(binoms[j]) + (len-n_err[j])*log10(1-err_rate) + n_err[j]*log10(err_rate)));
+         double quality = min(p_exp, e_exp);
+         quality = (quality > 60 ? 60 : quality) - ident;
+         interval->match[j].mapq = (quality < 0 ? 0 : quality);
       }
    }
    return 0;
 }
 
+
+matchlist_t **
+single_interval
+(
+ matchlist_t * matches
+)
+{
+   // Sort matches by e value.
+   mergesort_mt(matches->match, matches->pos, sizeof(match_t), 0, 1, compar_matcheexp);
+   
+   matchlist_t ** intervals = malloc(2*sizeof(matchlist_t *));
+   intervals[0] = matchlist_new(1);
+   intervals[1] = matchlist_new(matches->pos);
+   
+   intervals[1]->pos = matches->pos;
+   memcpy(intervals[1]->match, matches->match, matches->pos * sizeof(match_t));
+
+   return intervals;
+}
 
 matchlist_t **
 merge_intervals
@@ -279,7 +317,7 @@ merge_intervals
  int32_t     * nintervals
 )
 {
-   // Sort candidate matches by size.
+   // Sort candidate matches by e-value.
    mergesort_mt(matches->match, matches->pos, sizeof(match_t), 0, 1, compar_matcheexp);
 
    // Allocate interval list.
@@ -340,6 +378,52 @@ merge_intervals
    return intervals;
 }
 
+int
+filter_repeats
+(
+ matchlist_t ** intervals,
+ matchlist_t  * repeats,
+ int32_t        n_ints
+)
+{
+   // Sort repeats by position.
+   mergesort_mt(repeats->match, repeats->pos, sizeof(match_t), 0, 1, compar_match_read_beg);
+   // Iterate over all intervals.
+   for (int i = 1; i < n_ints; i++) {
+      matchlist_t * itv = intervals[i];
+      match_t ref = itv->match[0];
+      int32_t ilen = ref.read_e - ref.read_s + 1;
+      // Iterate over all repeats, find total overlap.
+      int b, e, ov = 0;
+      b = ref.read_s;
+      e = b - 1;
+      for (int j = 0; j < repeats->pos; j++) {
+         int32_t r_beg = repeats->match[j].read_s, r_end = repeats->match[j].read_e;
+         if (r_end < ref.read_s) continue;
+         if (r_beg > ref.read_e) break;
+         if (r_beg > e) {
+            ov += e-b+1;
+            b = r_beg;
+            e = min(r_end, ref.read_e);
+         } else {
+            e = r_end;
+         }
+      }
+      ov += e-b+1;
+      // Apply penalty.
+      double p = 1 - ov*1.0/ilen;
+      for (int i = 0; i < itv->pos; i++) {
+         if (VERBOSE_DEBUG) {
+            fprintf(stdout, "Applying repeat penalty (len=%d, ov=%d): %f (mapq=%f, new mapq=%d)\n", ilen, ov, p, itv->match[i].mapq, (int)(itv->match[i].mapq*p));
+         }
+         itv->match[i].mapq *= p;
+         itv->match[i].flags |= FLAG_REPEAT;
+
+      }
+   }
+   return 0;
+}
+
 double
 e_value
 (
@@ -382,6 +466,22 @@ compar_matcheexp
 
    if (mb->e_exp < ma->e_exp) return 1;
    else return -1;
+}
+
+int
+compar_match_read_beg
+(
+ const void * a,
+ const void * b,
+ const int   param
+)
+{
+   match_t * ma = (match_t *) a;
+   match_t * mb = (match_t *) b;
+
+   if (mb->read_s < ma->read_s) return 1;
+   else if (mb->read_s > ma->read_s) return -1;
+   else return (mb->read_e < ma->read_e);
 }
 
 int
