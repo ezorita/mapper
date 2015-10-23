@@ -597,6 +597,10 @@ naive_lcp
       if (stack_push_lcp(lcp, pl, 0)) return -1;
    }
 
+   // Push an extra sample with LCP = 0 and OFFSET = 0.
+   // Otherwise LCP[endindex+1] would be out of range.
+   if (stack_push_lcp(lcp, 0, 0)) return -1;
+
    free(top);
    free(bottom);
 
