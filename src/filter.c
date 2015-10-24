@@ -11,13 +11,14 @@ align_seeds
  alignopt_t     alignopt
 )
 {
-   if (seeds->pos == 0) return 0;
+
+//   if (seeds->pos == 0) return 0;
    int significant = 0;
    int slen = strlen(read);
    matchlist_t * matches = *seqmatches;
    
    // Sort by seeded nucleotides.
-   mergesort_mt(seeds->match, seeds->pos, sizeof(match_t), 0, 1, compar_seedhits);
+//   mergesort_mt(seeds->match, seeds->pos, sizeof(match_t), 0, 1, compar_seedhits);
 
    if (VERBOSE_DEBUG) {
       fprintf(stdout, "align (%d seeds):\n", seeds->pos);
@@ -28,23 +29,23 @@ align_seeds
       match_t seed = seeds->match[k];
       int extend = 0;
       int extend_score = 0;
-      int cancel_align = 0;
+//      int cancel_align = 0;
 
-      for (int i = 0; i < matches->pos; i++) {
-         match_t match = matches->match[i];
-         // Check overlap
-         int span = align_min(seed.read_e - seed.read_s, match.read_e - match.read_s);
-         int overlap = align_max(0, align_min(seed.read_e, match.read_e) - align_max(seed.read_s, match.read_s));
-         overlap = overlap > span*opt.overlap_max_tolerance;
-         int seed_ratio = (seed.hits < match.hits*opt.align_seed_filter_thr) && (match.hits - seed.hits >= opt.align_seed_filter_dif);
+//      for (int i = 0; i < matches->pos; i++) {
+//         match_t match = matches->match[i];
+//         // Check overlap
+//         int span = align_min(seed.read_e - seed.read_s, match.read_e - match.read_s);
+//         int overlap = align_max(0, align_min(seed.read_e, match.read_e) - align_max(seed.read_s, match.read_s));
+//         overlap = overlap > span*opt.overlap_max_tolerance;
+//         int seed_ratio = (seed.hits < match.hits*opt.align_seed_filter_thr) && (match.hits - seed.hits >= opt.align_seed_filter_dif);
          // If overlap is higher than the maximum overlap tolerance, cancel the alignment.
-         if (overlap && seed_ratio) {
-            cancel_align = 1;
-            break;
-         }
-      }
-
-      if (cancel_align) continue;
+//         if (overlap && seed_ratio) {
+//            cancel_align = 1;
+//            break;
+//         }
+//      }
+//
+//      if (cancel_align) continue;
 
       // Compute alignment limits.
       long r_min  = seed.read_e - seed.read_s + 1;
@@ -178,7 +179,7 @@ align_seeds
          e_exp = e_value(ref_e - ref_s + 1, extend_score + align_l.score + align_r.score, index->size);
 
       // If significant, store.
-      if (e_exp < opt.align_filter_eexp) {
+//      if (e_exp < opt.align_filter_eexp) {
          match_t hit;
          if (extend) {
             hit = matches->match[extend];
@@ -207,7 +208,7 @@ align_seeds
             matchlist_add(seqmatches, hit);
             matches = *seqmatches;
          }
-      }
+//      }
    }
 
    return significant;

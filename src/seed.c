@@ -367,69 +367,71 @@ seed_mem
  index_t      * index
 )
 {
-   int32_t i = end - 1, last_qry_pos = end;
-   uint64_t new_loci = index->size, last_loci;
+
+   int32_t i;
+   int32_t last_qry_pos = end;
+   uint64_t new_loci = index->size;//, last_loci;
+
+   int maxseedlength = 0;
    
    // Start position.
    bwpos_t pos = (bwpos_t){.depth = 0, .sp = 0, .ep = index->size-1};
-   while (i >= beg) {
+
+   for (i = end-1 ; i >= beg ; i--) {
       bwpos_t newpos;
       int nt = translate[(uint8_t)seq[i]];
       // Extend suffix (Backward search).
       suffix_extend(nt, pos, &newpos, index);
       // Count loci.
-      last_loci = new_loci;
+      //last_loci = new_loci;
       new_loci = (newpos.ep < newpos.sp ? 0 : newpos.ep - newpos.sp + 1);
 
       // No hits or depth exceeded.
-      if (new_loci < opt.min_loci || nt == 4) {
-         //if (last_loci <= opt.aux_loci && pos.depth >= opt.min_len && qry_pos < last_qry_pos) {
-         // Seed found.
-         if (i + 1 < last_qry_pos) {
-            seed_t seed = (seed_t) {.bulk = (last_loci > opt.max_loci), .qry_pos = i+1, .ref_pos = pos};
-            // Save seed.
-            seedstack_push(seed, stack);
-            // Update last stored position.
-            last_qry_pos = i + 1;
-         }
-         // Shrink suffix.
-         if (nt == 4) {
-            i--;
-            pos = (bwpos_t){.depth = 0, .sp = 0, .ep = index->size-1};
-         } else {
-            if (new_loci > 0 && i > beg) {
-               pos = newpos;
-               i--;
-            }
-            // Shrink until new_pos >= min_loci.
-            do {
-               suffix_shrink(pos, &pos, index);
-               new_loci = pos.ep - pos.sp + 1;
-            } while (new_loci < opt.min_loci);
-         }
-      } else if (newpos.depth == opt.max_len || i == beg) {
-         // Update suffix.
+      if (new_loci > 0) {
          pos = newpos;
-         //         if (new_loci <= opt.aux_loci && qry_pos < last_qry_pos && pos.depth >= opt.min_len) {
-         // Seed found.
-         if (i < last_qry_pos) {
-            seed_t seed = (seed_t) {.bulk = (new_loci > opt.max_loci), .qry_pos = i, .ref_pos = pos};
-            // Save seed.
-            seedstack_push(seed, stack);
-            // Update last stored position.
-            last_qry_pos = i;
-         }
-         // Break.
-         if (i == beg) break;
-
-         // Shrink suffix.
-         suffix_shrink(pos, &pos, index);
-         i--;
-      } else {
-         // Update suffix.
-         pos = newpos;
-         i--;
+         continue;
       }
+
+      // Seed found.
+      int seedlength = last_qry_pos - i - 1;
+      if (seedlength == maxseedlength) {
+            seed_t seed = (seed_t) {.bulk = 0, .qry_pos = i+1, .ref_pos = pos};
+            seedstack_push(seed, stack);
+      }
+      if (seedlength > maxseedlength) {
+         maxseedlength = seedlength;
+         (*stack[0]->seed).bulk = 0;
+         (*stack[0]->seed).qry_pos = i+1;
+         (*stack[0]->seed).ref_pos = pos;
+         (*stack)->pos = 1;
+      }
+
+      if (nt == 4) {
+         // Reset 'pos' and jump over N.
+         last_qry_pos = i+1;
+         pos = (bwpos_t){.depth = 0, .sp = 0, .ep = index->size-1};
+      } else {
+         do {
+            int origdepth = pos.depth;
+            suffix_shrink(pos, &pos, index);
+            new_loci = pos.ep - pos.sp + 1;
+            last_qry_pos -= (origdepth - pos.depth);
+         } while (new_loci < opt.min_loci);
+         // Redo the loop with updated 'pos'.
+         // Quite ugly by the way.
+         i++;
+      }
+   }
+
+   if (last_qry_pos == maxseedlength) {
+      seed_t seed = (seed_t) {.bulk = 0, .qry_pos = 0, .ref_pos = pos};
+      seedstack_push(seed, stack);
+   }
+   if (last_qry_pos > maxseedlength) {
+      (*stack[0]->seed).bulk = 0;
+      (*stack[0]->seed).qry_pos = 0;
+      (*stack[0]->seed).ref_pos = pos;
+      (*stack)->pos = 1;
    }
 
    return 0;
@@ -482,7 +484,7 @@ chain_seeds
    hit_t * hits = compute_hits(seeds, index, &hit_count);
    
    // Merge-sort hits.
-   mergesort_mt(hits, hit_count, sizeof(hit_t), 0, 1, compar_hit_locus);
+//   mergesort_mt(hits, hit_count, sizeof(hit_t), 0, 1, compar_hit_locus);
 
    // Reset matchlist.
    matchlist->pos = 0;
@@ -528,6 +530,7 @@ chain_seeds
       */
 
       // Extend match.
+#if 0
       while (i < hit_count) {
          // Compare genome and read distances.
          int64_t g_dist = (int64_t)(hits[i].locus) - (int64_t)(hits[i-1].locus);
@@ -581,6 +584,7 @@ chain_seeds
             i++;
          } else break;
       }
+#endif
 
       //      if (VERBOSE_DEBUG) fprintf(stdout, "\n");
 

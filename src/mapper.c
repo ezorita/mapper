@@ -1,4 +1,5 @@
 #include "mapper.h"
+#include <assert.h>
 #include <getopt.h>
 #include <time.h>
 
@@ -116,7 +117,8 @@ int main(int argc, char *argv[])
       .overlap_max_tolerance = 0.5,
       .align_seed_filter_thr = 0.5,
       .align_seed_filter_dif = 19,//38,
-      .align_filter_ident = 0.85,
+//      .align_filter_ident = 0.85,
+      .align_filter_ident = 0.0,
       .align_filter_eexp = 0.0,
       .mapq_evalue_ratio = 0.5
    };
@@ -287,7 +289,7 @@ mt_worker
    // Alloc data structures.
    matchlist_t * seed_matches = matchlist_new(opt->filter.max_align_per_read);
    matchlist_t * map_matches = matchlist_new(64);
-   matchlist_t * repeats = matchlist_new(64);
+//   matchlist_t * repeats = matchlist_new(64);
    seedstack_t * seeds  = seedstack_new(SEEDSTACK_SIZE);
    
    size_t mapped = 0;
@@ -308,9 +310,9 @@ mt_worker
             fprintf(stdout, "seed: p=%d,l=%ld,d=%d,b=%d\n", seed.qry_pos, seed.ref_pos.ep - seed.ref_pos.sp + 1, seed.ref_pos.depth, seed.bulk);
          }
       }
-      n_mems = seeds->pos;
+//      n_mems = seeds->pos;
       // Reseed.
-      reseed_mem(seq[i].seq,&seeds, opt->seed, index);
+//      reseed_mem(seq[i].seq,&seeds, opt->seed, index);
       // DEBUG reseedMEMs.
       if (VERBOSE_DEBUG) {
          fprintf(stdout, "Reseed MEMs: %ld\n", seeds->pos - n_mems);
@@ -321,20 +323,20 @@ mt_worker
       }
       n_mems = seeds->pos;
       // Reset repeats.
-      repeats->pos = 0;
+//      repeats->pos = 0;
       // Find repeated regions in read.
-      find_repeats(seeds, &repeats, opt->seed.max_loci);
+//      find_repeats(seeds, &repeats, opt->seed.max_loci);
       // Adaptive seeds.
-      seed_thr(seq[i].seq, slen, &seeds, opt->seed, index);
+//      seed_thr(seq[i].seq, slen, &seeds, opt->seed, index);
       // DEBUG SEEDS.
-      if (VERBOSE_DEBUG) {
-         fprintf(stdout, "Threshold: %ld\n", seeds->pos - n_mems);
-         for (int i = n_mems; i < seeds->pos; i++) {
-            seed_t seed = seeds->seed[i];
-            fprintf(stdout, "seed: p=%d,l=%ld,d=%d,b=%d\n", seed.qry_pos, seed.ref_pos.ep - seed.ref_pos.sp + 1, seed.ref_pos.depth, seed.bulk);
-         }
-         fprintf(stdout, "Repeats found: %d\n", repeats->pos);
-      }
+//      if (VERBOSE_DEBUG) {
+//         fprintf(stdout, "Threshold: %ld\n", seeds->pos - n_mems);
+//         for (int i = n_mems; i < seeds->pos; i++) {
+//            seed_t seed = seeds->seed[i];
+//            fprintf(stdout, "seed: p=%d,l=%ld,d=%d,b=%d\n", seed.qry_pos, seed.ref_pos.ep - seed.ref_pos.sp + 1, seed.ref_pos.depth, seed.bulk);
+//         }
+//         fprintf(stdout, "Repeats found: %d\n", repeats->pos);
+//      }
 
       // Match seeds.
       seed_matches->pos = 0;
@@ -349,7 +351,7 @@ mt_worker
       // Compute map qualities.
       compute_mapq(intervals, n_ints, opt->filter.mapq_evalue_ratio, 0.5, seq[i], index);
       // Repeat penalty.
-      if (repeats->pos > 0) filter_repeats(intervals, repeats, n_ints);
+//      if (repeats->pos > 0) filter_repeats(intervals, repeats, n_ints);
       // Print matches.
       mapped += print_and_free(seq[i], intervals, n_ints, index, opt->format);
       // Free structs.
