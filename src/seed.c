@@ -1,5 +1,8 @@
 #include "seed.h"
 
+#define SUCCESS 1
+#define FAILURE 0
+
 char *
 rev_comp
 (
@@ -270,91 +273,75 @@ find_repeats
    return 0;
 }
 
-/*
 int
-seed_mem
+just_extend
+(
+   bwpos_t *pos,
+   char    *seq,
+   index_t *index
+)
+{
+
+   bwpos_t tmpos;
+   for (int i = 0 ; i < 10 ; i++) {
+      int nt = translate[(uint8_t)seq[-i]];
+      suffix_extend(nt, *pos, &tmpos, index);
+      if (tmpos.ep < tmpos.sp) return FAILURE;
+      *pos = tmpos;
+   }
+
+   return SUCCESS;
+
+}
+
+
+int
+seed_wings
 (
  char         * seq,
- size_t         beg,
- size_t         end,
+ int32_t         beg,
+ int32_t         end,
  seedstack_t ** stack,
  seedopt_t      opt,
  index_t      * index
 )
 {
-   int32_t i = end - 1, qry_end = end - 1, last_qry_pos = end;
-   uint64_t new_loci = index->size, last_loci;
-   
-   // Start position.
-   bwpos_t pos = (bwpos_t){.depth = 0, .sp = 0, .ep = index->size-1};
-   while (i >= beg) {
-      bwpos_t newpos;
-      int nt = translate[(uint8_t)seq[i]];
-      // Extend suffix (Backward search).
-      suffix_extend(nt, pos, &newpos, index);
-      // Count loci.
-      last_loci = new_loci;
-      new_loci = (newpos.ep < newpos.sp ? 0 : newpos.ep - newpos.sp + 1);
 
-      // No hits or depth exceeded.
-      if (new_loci < opt.min_loci || nt == 4) {
-         // Check previous suffix.
-         int32_t qry_pos = qry_end + 1 - pos.depth;
-         //if (last_loci <= opt.aux_loci && pos.depth >= opt.min_len && qry_pos < last_qry_pos) {
-         if (pos.depth >= opt.min_len && qry_pos < last_qry_pos) {
-            // Seed found.
-            seed_t seed = (seed_t) {.bulk = (last_loci > opt.max_loci), .qry_pos = qry_pos, .ref_pos = pos};
-            // Save seed.
-            seedstack_push(seed, stack);
-            last_qry_pos = qry_pos;
-         }
-         // Shrink suffix.
-         if (nt == 4) {
-            i--;
-            qry_end = i;
-            pos = (bwpos_t){.depth = 0, .sp = 0, .ep = index->size-1};
-         } else {
-            int depth = pos.depth;
-            bwpos_t tmp;
-            if (suffix_shrink(pos, &tmp, index) == 1) {
-               suffix_string(seq + i + 1, qry_end - i, last_loci + 1, &tmp, index);
-            }
-            pos = tmp;
-            qry_end -= depth - pos.depth;
-         }
-      } else if (newpos.depth == opt.max_len || i == beg) {
-         // Update suffix.
-         pos = newpos;
-         // Check options.
-         int32_t qry_pos = qry_end + 1 - pos.depth;
-         if (new_loci <= opt.aux_loci && qry_pos < last_qry_pos && pos.depth >= opt.min_len) {
-            // Seed found.
-            seed_t seed = (seed_t) {.bulk = (new_loci > opt.max_loci), .qry_pos = qry_pos, .ref_pos = pos};
-            // Save seed.
-            seedstack_push(seed, stack);
-            last_qry_pos = qry_pos;
-         }
-         if (i == beg) break;
+   bwpos_t wingR = (bwpos_t){.depth = 0, .sp = 0, .ep = index->size-1};
 
-         // Shrink suffix.
-         int depth = pos.depth;
-         bwpos_t tmp;
-         if (suffix_shrink(pos, &tmp, index) == 1) {
-            suffix_string(seq + i, qry_end - i - 1, new_loci + 1, &tmp, index);
-         }
-         pos = tmp;
-         qry_end -= depth - pos.depth;
-         i--;
-      } else {
-         // Update suffix.
-         pos = newpos;
-         i--;
+   int i;
+   for (i = end-1 ;  i >= 20 ; i--) { 
+      if (just_extend(&wingR, &seq[i], index)) break;
+      suffix_shrink(wingR, &wingR, index);
+      int nt = translate[(uint8_t)seq[i-12]];
+      suffix_extend(nt, wingR, &wingR, index);
+   }
+
+   for ( ; i >= 20 ; i--) {
+
+      // Try to extend right wing (should work).
+      for (int mut = 0 ; mut < 4 ; mut++) {
+         // Insert mutation.
+         bwpos_t wingL;
+         suffix_extend(mut, wingR, &wingL, index);
+         if (wingL.ep < wingL.sp) continue;
+         // Try to extend left wing. Save seed if it works.
+         if (!just_extend(&wingL, &seq[i-11], index)) continue;
+         seed_t seed = (seed_t) {.bulk = 0, .qry_pos = i-20, .ref_pos = wingL};
+         seedstack_push(seed, stack);
+
       }
+
+      // Shrink right wing and add nucleotide.
+      suffix_shrink(wingR, &wingR, index);
+
+      int nt = translate[(uint8_t)seq[i-10]];
+      suffix_extend(nt, wingR, &wingR, index);
+
    }
 
    return 0;
 }
-*/
 
 int
 seed_mem
