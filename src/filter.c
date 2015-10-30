@@ -4,7 +4,7 @@ int
 align_seeds
 (
  char         * read,
- matchlist_t  * seeds,
+ seedstack_t  * stack,
  matchlist_t ** seqmatches,
  index_t      * index,
  filteropt_t    opt,
@@ -13,20 +13,24 @@ align_seeds
 {
 
 //   if (seeds->pos == 0) return 0;
-   int significant = 0;
    int slen = strlen(read);
    
-   for(long k = 0; k < seeds->pos; k++) {
-      // Get next seed.
-      match_t seed = seeds->match[k];
+   uint64_t hit_count;
+   hit_t * hits = compute_hits(stack, index, &hit_count);
+
+   for(int i = 0; i < hit_count ; i++) {
 
       // Compute alignment limits.
-      long r_min  = seed.read_e - seed.read_s + 1;
+      //long r_min  = seed.read_e - seed.read_s + 1;
+      long r_min  = hits[i].depth + 1;
       long l_min  = 0;
-      long r_qstart = seed.read_s + 1;
+      //long r_qstart = seed.read_s + 1;
+      long r_qstart = hits[i].qrypos + 1;
       long l_qstart = align_max(r_qstart - 1,0);
-      long r_rstart = seed.ref_s + 1;
-      long l_rstart = seed.ref_s;
+      //long r_rstart = seed.ref_s + 1;
+      long r_rstart = hits[i].locus + 1; 
+      //long l_rstart = seed.ref_s;
+      long l_rstart = hits[i].locus; 
 
       long r_qlen = slen - r_qstart;
       long l_qlen = l_qstart + 1;
@@ -72,7 +76,7 @@ align_seeds
       // If significant, store.
       match_t hit;
       hit.flags  = 0;
-      hit.hits   = seed.hits;
+      hit.hits   = 0;
 
       // Fill/Update hit.
       hit.ref_e  = ref_e;
@@ -82,11 +86,11 @@ align_seeds
       hit.mapq   = 0;
 
       // Add to significant matchlist.
-      significant = 1;
       matchlist_add(seqmatches, hit);
+
    }
 
-   return significant;
+   return 1;
 }
 
 

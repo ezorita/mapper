@@ -1,8 +1,96 @@
 #include "seed.h"
 
-#define SUCCESS 1
-#define FAILURE 0
+int
+seed_block_all
+(
+ char *         seq,
+ size_t         slen,
+ seedstack_t ** stack,
+ seedopt_t      opt,
+ index_t      * index
+)
+{
+   // Wing length.
+   //int c = opt.block_len/2;
+   int c = 12;
+   // Convert block length to even number.
+   int blen = c*2;
+   // Allocate seed cache.
+   bwpos_t * cache = calloc(slen, sizeof(bwpos_t));
+   // Seed:
+   // - pre-compute constant part.
+   int e = slen-1;
+   int i = slen-1;
+   bwpos_t pos = (bwpos_t) {.sp = 0, .ep = index->size-1, .depth = 0};
+   while (i >= c) {
+      bwpos_t newpos;
+      suffix_extend(translate[(uint8_t)seq[i]], pos, &newpos, index);
+      if (newpos.sp <= newpos.ep) {
+         // If got length c, store and shrink.
+         if (newpos.depth == c) {
+            cache[e] = newpos;
+            bwpos_t tmp;
+            suffix_shrink(newpos, &tmp, index);
+            // This is necessary to avoid shrinking more than 1 nt.
+            if (tmp.depth < c-1) {
+               newpos.depth--;
+            } else {
+               newpos = tmp;
+            }
+            e--;
+         }
+         pos = newpos;
+         i--;
+      } else {
+         cache[e--] = newpos;
+         bwpos_t tmp;
+         int depth = pos.depth;
+         suffix_shrink(pos, &tmp, index);
+         if (tmp.depth < depth-1) {
+            pos.depth--;
+         } else {
+            pos = tmp;
+         }
+      }
+   }
 
+   // - seed for all mismatched positions (i).
+   for (int i = slen-1-c; i >= 0; i--) {
+      int beg = min(i+blen-1, slen-1);
+      int end = max(i+c, blen-1);
+      int nt  = translate[(uint8_t)seq[i]];
+      // Interval of this seed (p).
+      for (int p = beg; p >= end; p--) {
+         bwpos_t current = cache[p];
+         // Continue on broken seeds.
+         if (current.depth != p - i) continue;
+         // Extend with the 4 possible mutations (m).
+         for (int m = 0; m < 4; m++) {
+            bwpos_t mpos = current;
+            suffix_extend(m, mpos, &mpos, index);
+            if (mpos.ep < mpos.sp) continue;
+            // Cache extension for the next mismatch.
+            if (m == nt) {
+               cache[p] = mpos;
+               continue;
+            } 
+            int k = i-1;
+            // Extend seed until block length.
+            while (mpos.ep >= mpos.sp && mpos.depth < blen)
+               suffix_extend(translate[(uint8_t)seq[k--]], mpos, &mpos, index);
+            // Save seed if seed exists.
+            int64_t loci = mpos.ep - mpos.sp + 1;
+            if (loci > 0 && loci < opt.thr_seed) {
+               // Save seed.
+               seed_t seed = (seed_t) {.bulk = 0, .qry_pos = p-blen+1, .ref_pos = mpos};
+               seedstack_push(seed, stack);
+               return 0;
+            }
+         }
+      }
+   }
+   return 0;
+}  
 char *
 rev_comp
 (
@@ -273,167 +361,91 @@ find_repeats
    return 0;
 }
 
+/*
 int
-just_extend
-(
-   bwpos_t *pos,
-   char    *seq,
-   index_t *index
-)
-{
-
-   bwpos_t tmpos;
-   for (int i = 0 ; i < 10 ; i++) {
-      int nt = translate[(uint8_t)seq[-i]];
-      suffix_extend(nt, *pos, &tmpos, index);
-      if (tmpos.ep < tmpos.sp) return FAILURE;
-      *pos = tmpos;
-   }
-
-   return SUCCESS;
-
-}
-
-
-int
-seed_wings
+seed_mem
 (
  char         * seq,
- int32_t         beg,
- int32_t         end,
+ size_t         beg,
+ size_t         end,
  seedstack_t ** stack,
  seedopt_t      opt,
  index_t      * index
 )
 {
+   int32_t i = end - 1, qry_end = end - 1, last_qry_pos = end;
+   uint64_t new_loci = index->size, last_loci;
+   
+   // Start position.
+   bwpos_t pos = (bwpos_t){.depth = 0, .sp = 0, .ep = index->size-1};
+   while (i >= beg) {
+      bwpos_t newpos;
+      int nt = translate[(uint8_t)seq[i]];
+      // Extend suffix (Backward search).
+      suffix_extend(nt, pos, &newpos, index);
+      // Count loci.
+      last_loci = new_loci;
+      new_loci = (newpos.ep < newpos.sp ? 0 : newpos.ep - newpos.sp + 1);
 
-   bwpos_t wingR = (bwpos_t){.depth = 0, .sp = 0, .ep = index->size-1};
+      // No hits or depth exceeded.
+      if (new_loci < opt.min_loci || nt == 4) {
+         // Check previous suffix.
+         int32_t qry_pos = qry_end + 1 - pos.depth;
+         //if (last_loci <= opt.aux_loci && pos.depth >= opt.min_len && qry_pos < last_qry_pos) {
+         if (pos.depth >= opt.min_len && qry_pos < last_qry_pos) {
+            // Seed found.
+            seed_t seed = (seed_t) {.bulk = (last_loci > opt.max_loci), .qry_pos = qry_pos, .ref_pos = pos};
+            // Save seed.
+            seedstack_push(seed, stack);
+            last_qry_pos = qry_pos;
+         }
+         // Shrink suffix.
+         if (nt == 4) {
+            i--;
+            qry_end = i;
+            pos = (bwpos_t){.depth = 0, .sp = 0, .ep = index->size-1};
+         } else {
+            int depth = pos.depth;
+            bwpos_t tmp;
+            if (suffix_shrink(pos, &tmp, index) == 1) {
+               suffix_string(seq + i + 1, qry_end - i, last_loci + 1, &tmp, index);
+            }
+            pos = tmp;
+            qry_end -= depth - pos.depth;
+         }
+      } else if (newpos.depth == opt.max_len || i == beg) {
+         // Update suffix.
+         pos = newpos;
+         // Check options.
+         int32_t qry_pos = qry_end + 1 - pos.depth;
+         if (new_loci <= opt.aux_loci && qry_pos < last_qry_pos && pos.depth >= opt.min_len) {
+            // Seed found.
+            seed_t seed = (seed_t) {.bulk = (new_loci > opt.max_loci), .qry_pos = qry_pos, .ref_pos = pos};
+            // Save seed.
+            seedstack_push(seed, stack);
+            last_qry_pos = qry_pos;
+         }
+         if (i == beg) break;
 
-   int i;
-   for (i = end-1 ;  i >= 20 ; i--) { 
-      if (just_extend(&wingR, &seq[i], index)) break;
-      suffix_shrink(wingR, &wingR, index);
-      int nt = translate[(uint8_t)seq[i-12]];
-      suffix_extend(nt, wingR, &wingR, index);
-   }
-
-   for ( ; i >= 20 ; i--) {
-
-      // Try to extend right wing (should work).
-      for (int mut = 0 ; mut < 4 ; mut++) {
-         // Insert mutation.
-         bwpos_t wingL;
-         suffix_extend(mut, wingR, &wingL, index);
-         if (wingL.ep < wingL.sp) continue;
-         // Try to extend left wing. Save seed if it works.
-         if (!just_extend(&wingL, &seq[i-11], index)) continue;
-         seed_t seed = (seed_t) {.bulk = 0, .qry_pos = i-20, .ref_pos = wingL};
-         seedstack_push(seed, stack);
-
+         // Shrink suffix.
+         int depth = pos.depth;
+         bwpos_t tmp;
+         if (suffix_shrink(pos, &tmp, index) == 1) {
+            suffix_string(seq + i, qry_end - i - 1, new_loci + 1, &tmp, index);
+         }
+         pos = tmp;
+         qry_end -= depth - pos.depth;
+         i--;
+      } else {
+         // Update suffix.
+         pos = newpos;
+         i--;
       }
-
-      // Shrink right wing and add nucleotide.
-      suffix_shrink(wingR, &wingR, index);
-
-      int nt = translate[(uint8_t)seq[i-10]];
-      suffix_extend(nt, wingR, &wingR, index);
-
    }
 
    return 0;
 }
-
-int
-seed_block_all
-(
- char *         seq,
- size_t         slen,
- seedstack_t ** stack,
- seedopt_t      opt,
- index_t      * index
-)
-{
-   // Wing length.
-   //int c = opt.block_len/2;
-   int c = 12;
-   // Convert block length to even number.
-   int blen = c*2;
-   // Allocate seed cache.
-   bwpos_t * cache = calloc(slen, sizeof(bwpos_t));
-   // Seed:
-   // - pre-compute constant part.
-   int e = slen-1;
-   int i = slen-1;
-   bwpos_t pos = (bwpos_t) {.sp = 0, .ep = index->size-1, .depth = 0};
-   while (i >= c) {
-      bwpos_t newpos;
-      suffix_extend(translate[(uint8_t)seq[i]], pos, &newpos, index);
-      if (newpos.sp <= newpos.ep) {
-         // If got length c, store and shrink.
-         if (newpos.depth == c) {
-            cache[e] = newpos;
-            bwpos_t tmp;
-            suffix_shrink(newpos, &tmp, index);
-            // This is necessary to avoid shrinking more than 1 nt.
-            if (tmp.depth < c-1) {
-               newpos.depth--;
-            } else {
-               newpos = tmp;
-            }
-            e--;
-         }
-         pos = newpos;
-         i--;
-      } else {
-         cache[e--] = newpos;
-         bwpos_t tmp;
-         int depth = pos.depth;
-         suffix_shrink(pos, &tmp, index);
-         if (tmp.depth < depth-1) {
-            pos.depth--;
-         } else {
-            pos = tmp;
-         }
-      }
-   }
-
-   // - seed for all mismatched positions (i).
-   for (int i = slen-1-c; i >= 0; i--) {
-      int beg = min(i+blen-1, slen-1);
-      int end = max(i+c, blen-1);
-      int nt  = translate[(uint8_t)seq[i]];
-      // Interval of this seed (p).
-      for (int p = beg; p >= end; p--) {
-         bwpos_t current = cache[p];
-         // Continue on broken seeds.
-         if (current.depth != p - i) continue;
-         // Extend with the 4 possible mutations (m).
-         for (int m = 0; m < 4; m++) {
-            bwpos_t mpos = current;
-            suffix_extend(m, mpos, &mpos, index);
-            if (mpos.ep < mpos.sp) continue;
-            // Cache extension for the next mismatch.
-            if (m == nt) {
-               cache[p] = mpos;
-               continue;
-            } 
-            int k = i-1;
-            // Extend seed until block length.
-            while (mpos.ep >= mpos.sp && mpos.depth < blen)
-               suffix_extend(translate[(uint8_t)seq[k--]], mpos, &mpos, index);
-            // Save seed if seed exists.
-            int64_t loci = mpos.ep - mpos.sp + 1;
-            if (loci > 0 && loci < opt.thr_seed) {
-               // Save seed.
-               seed_t seed = (seed_t) {.bulk = 0, .qry_pos = p-blen+1, .ref_pos = mpos};
-               seedstack_push(seed, stack);
-            }
-         }
-      }
-   }
-   return 0;
-}  
-
+*/
 
 int
 seed_mem
@@ -589,41 +601,11 @@ chain_seeds
       match.flags  = 0;
       match.score  = -1;
 
-      // Debug match
-//      if (VERBOSE_DEBUG) {
-//         uint64_t g_start;
-//         int dir = 0;
-//         if (match.ref_s >= index->size/2) {
-//            g_start = index->size - match.ref_e - 2;
-//            dir = 1;
-//         } else {
-//            g_start = match.ref_s + 1;
-//            dir = 0;
-//         }
-//         // Search chromosome name.
-//         int   chrnum = bisect_search(0, index->chr->nchr-1, index->chr->start, g_start+1)-1;
-//         // Print results.
-//         fprintf(stdout, "[%d]\t%s,%ld%c\t%ld\t%d,%d\n",
-//                 match.hits,
-//                 index->chr->name[chrnum],
-//                 g_start - index->chr->start[chrnum]+1,
-//                 dir ? '-' : '+',
-//                 match.ref_s,
-//                 match.read_s, match.read_e
-//                 );
-//      }
 
       // Append if list not yet full, replace the minimum value otherwise.
       if (matchlist->pos < matchlist->size) {
          matchlist->match[matchlist->pos++] = match;
       }
-//      else {
-//         if(VERBOSE_DEBUG) {
-//            match_t m = matchlist->match[mini];
-//            fprintf(stdout, "replaces [%d]\t%ld\t%d,%d\n",m.hits,m.ref_s,m.read_s,m.read_e);
-//         }
-//         matchlist->match[mini] = match;
-//      }
             
       // Find the minimum that will be substituted next.
       else if (matchlist->pos == matchlist->size) {

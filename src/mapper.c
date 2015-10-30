@@ -289,41 +289,22 @@ mt_worker
    // Alloc data structures.
    matchlist_t * seed_matches = matchlist_new(opt->filter.max_align_per_read);
    matchlist_t * map_matches = matchlist_new(64);
-//   matchlist_t * repeats = matchlist_new(64);
    seedstack_t * seeds  = seedstack_new(SEEDSTACK_SIZE);
    
    size_t mapped = 0;
    for (size_t i = 0; i < job->count; i++) {
       if (VERBOSE_DEBUG) fprintf(stdout, "seq: %s\n", seq[i].seq);
       size_t slen = strlen(seq[i].seq);
-
       // Reset seeds.
       seeds->pos = 0;
+      // Debug.
       seed_mem(seq[i].seq, 0, slen, &seeds, opt->seed, index);
-
       if (seeds->pos == 0)
          seed_block_all(seq[i].seq, slen, &seeds, opt->seed, index);
-
-      // Match seeds.
-      seed_matches->pos = 0;
-      chain_seeds(seeds, slen, seed_matches, index,
-            opt->filter.dist_accept, opt->filter.read_ref_ratio);
-
-      // Align seeds.
       map_matches->pos = 0;
-      align_seeds(seq[i].seq, seed_matches, &map_matches, index, opt->filter, opt->align);
-      // Merge intervals.
-      int32_t n_ints;
-      matchlist_t ** intervals;
-      intervals = merge_intervals(map_matches, 0.8, &n_ints);
-      // Compute map qualities.
-      compute_mapq(intervals, n_ints, opt->filter.mapq_evalue_ratio, 0.5, seq[i], index);
-      // Repeat penalty.
-//      if (repeats->pos > 0) filter_repeats(intervals, repeats, n_ints);
-      // Print matches.
-      mapped += print_and_free(seq[i], intervals, n_ints, index, opt->format);
-      // Free structs.
-      free(intervals);
+      align_seeds(seq[i].seq, seeds, &map_matches,
+            index, opt->filter, opt->align);
+      mapped += print_and_free(seq[i], map_matches, index, opt->format);
    }
 
    // Free data structures.

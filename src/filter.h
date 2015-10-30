@@ -4,6 +4,7 @@
 #include "algs.h"
 #include "align.h"
 #include "index.h"
+#include "seed.h"
 
 #ifndef _FILTER_H
 #define _FILTER_H
@@ -26,7 +27,7 @@ struct filteropt_t {
 
 
 // Aligning
-int             align_seeds      (char *, matchlist_t *, matchlist_t **, index_t *, filteropt_t, alignopt_t);
+int             align_seeds      (char *, seedstack_t *, matchlist_t **, index_t *, filteropt_t, alignopt_t);
 double          e_value          (int L, int m, long gsize);
 
 // Post-processing functions.
