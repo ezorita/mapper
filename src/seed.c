@@ -344,6 +344,98 @@ seed_wings
 }
 
 int
+seed_block_all
+(
+ char *         seq,
+ size_t         slen,
+ seedstack_t ** stack,
+ seedopt_t      opt,
+ index_t      * index
+)
+{
+   // Wing length.
+   //int c = opt.block_len/2;
+   int c = 12;
+   // Convert block length to even number.
+   int blen = c*2;
+   // Allocate seed cache.
+   bwpos_t * cache = calloc(slen, sizeof(bwpos_t));
+   // Seed:
+   // - pre-compute constant part.
+   int e = slen-1;
+   int i = slen-1;
+   bwpos_t pos = (bwpos_t) {.sp = 0, .ep = index->size-1, .depth = 0};
+   while (i >= c) {
+      bwpos_t newpos;
+      suffix_extend(translate[(uint8_t)seq[i]], pos, &newpos, index);
+      if (newpos.sp <= newpos.ep) {
+         // If got length c, store and shrink.
+         if (newpos.depth == c) {
+            cache[e] = newpos;
+            bwpos_t tmp;
+            suffix_shrink(newpos, &tmp, index);
+            // This is necessary to avoid shrinking more than 1 nt.
+            if (tmp.depth < c-1) {
+               newpos.depth--;
+            } else {
+               newpos = tmp;
+            }
+            e--;
+         }
+         pos = newpos;
+         i--;
+      } else {
+         cache[e--] = newpos;
+         bwpos_t tmp;
+         int depth = pos.depth;
+         suffix_shrink(pos, &tmp, index);
+         if (tmp.depth < depth-1) {
+            pos.depth--;
+         } else {
+            pos = tmp;
+         }
+      }
+   }
+
+   // - seed for all mismatched positions (i).
+   for (int i = slen-1-c; i >= 0; i--) {
+      int beg = min(i+blen-1, slen-1);
+      int end = max(i+c, blen-1);
+      int nt  = translate[(uint8_t)seq[i]];
+      // Interval of this seed (p).
+      for (int p = beg; p >= end; p--) {
+         bwpos_t current = cache[p];
+         // Continue on broken seeds.
+         if (current.depth != p - i) continue;
+         // Extend with the 4 possible mutations (m).
+         for (int m = 0; m < 4; m++) {
+            bwpos_t mpos = current;
+            suffix_extend(m, mpos, &mpos, index);
+            if (mpos.ep < mpos.sp) continue;
+            // Cache extension for the next mismatch.
+            if (m == nt) {
+               cache[p] = mpos;
+               continue;
+            } 
+            int k = i-1;
+            // Extend seed until block length.
+            while (mpos.ep >= mpos.sp && mpos.depth < blen)
+               suffix_extend(translate[(uint8_t)seq[k--]], mpos, &mpos, index);
+            // Save seed if seed exists.
+            int64_t loci = mpos.ep - mpos.sp + 1;
+            if (loci > 0 && loci < opt.thr_seed) {
+               // Save seed.
+               seed_t seed = (seed_t) {.bulk = 0, .qry_pos = p-blen+1, .ref_pos = mpos};
+               seedstack_push(seed, stack);
+            }
+         }
+      }
+   }
+   return 0;
+}  
+
+
+int
 seed_mem
 (
  char         * seq,
@@ -382,7 +474,7 @@ seed_mem
       // Seed found.
       int seedlength = last_qry_pos - i - 1;
 
-      if (seedlength > 20) {
+      if (seedlength > 24) {
          if (seedlength == maxseedlength) {
                seed_t seed = (seed_t) {.bulk = 0, .qry_pos = i+1, .ref_pos = pos};
                seedstack_push(seed, stack);

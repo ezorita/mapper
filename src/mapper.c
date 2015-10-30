@@ -299,53 +299,10 @@ mt_worker
 
       // Reset seeds.
       seeds->pos = 0;
-//      size_t n_mems;
       seed_mem(seq[i].seq, 0, slen, &seeds, opt->seed, index);
 
       if (seeds->pos == 0)
-         seed_wings(seq[i].seq, 0, slen, &seeds, opt->seed, index);
-
-      // DEBUG MEMs.
-//      if (VERBOSE_DEBUG) {
-//         fprintf(stdout, "MEMs: %ld\n", seeds->pos);
-//         for (int i = 0; i < seeds->pos; i++) {
-//            seed_t seed = seeds->seed[i];
-//            fprintf(stdout, "seed: p=%d,l=%ld,d=%d,b=%d\n",
-//                  seed.qry_pos, seed.ref_pos.ep - seed.ref_pos.sp + 1,
-//                  seed.ref_pos.depth, seed.bulk);
-//         }
-//      }
-//      n_mems = seeds->pos;
-//      // Reseed.
-//      reseed_mem(seq[i].seq,&seeds, opt->seed, index);
-//      // DEBUG reseedMEMs.
-//      if (VERBOSE_DEBUG) {
-//         fprintf(stdout, "Reseed MEMs: %ld\n", seeds->pos - n_mems);
-//         for (int i = n_mems; i < seeds->pos; i++) {
-//            seed_t seed = seeds->seed[i];
-//            fprintf(stdout, "seed: p=%d,l=%ld,d=%d,b=%d\n",
-//                  seed.qry_pos, seed.ref_pos.ep - seed.ref_pos.sp + 1,
-//                  seed.ref_pos.depth, seed.bulk);
-//         }
-//      }
-//      n_mems = seeds->pos;
-//      // Reset repeats.
-//      repeats->pos = 0;
-//      // Find repeated regions in read.
-//      find_repeats(seeds, &repeats, opt->seed.max_loci);
-//      // Adaptive seeds.
-//      seed_thr(seq[i].seq, slen, &seeds, opt->seed, index);
-//      // DEBUG SEEDS.
-//      if (VERBOSE_DEBUG) {
-//         fprintf(stdout, "Threshold: %ld\n", seeds->pos - n_mems);
-//         for (int i = n_mems; i < seeds->pos; i++) {
-//            seed_t seed = seeds->seed[i];
-//            fprintf(stdout, "seed: p=%d,l=%ld,d=%d,b=%d\n",
-//                seed.qry_pos, seed.ref_pos.ep - seed.ref_pos.sp + 1,
-//                seed.ref_pos.depth, seed.bulk);
-//         }
-//         fprintf(stdout, "Repeats found: %d\n", repeats->pos);
-//      }
+         seed_block_all(seq[i].seq, slen, &seeds, opt->seed, index);
 
       // Match seeds.
       seed_matches->pos = 0;

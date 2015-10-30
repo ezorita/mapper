@@ -15,37 +15,10 @@ align_seeds
 //   if (seeds->pos == 0) return 0;
    int significant = 0;
    int slen = strlen(read);
-   matchlist_t * matches = *seqmatches;
    
-   // Sort by seeded nucleotides.
-//   mergesort_mt(seeds->match, seeds->pos, sizeof(match_t), 0, 1, compar_seedhits);
-
-   if (VERBOSE_DEBUG) {
-      fprintf(stdout, "align (%d seeds):\n", seeds->pos);
-   }
-
    for(long k = 0; k < seeds->pos; k++) {
       // Get next seed.
       match_t seed = seeds->match[k];
-      int extend = 0;
-      int extend_score = 0;
-//      int cancel_align = 0;
-
-//      for (int i = 0; i < matches->pos; i++) {
-//         match_t match = matches->match[i];
-//         // Check overlap
-//         int span = align_min(seed.read_e - seed.read_s, match.read_e - match.read_s);
-//         int overlap = align_max(0, align_min(seed.read_e, match.read_e) - align_max(seed.read_s, match.read_s));
-//         overlap = overlap > span*opt.overlap_max_tolerance;
-//         int seed_ratio = (seed.hits < match.hits*opt.align_seed_filter_thr) && (match.hits - seed.hits >= opt.align_seed_filter_dif);
-         // If overlap is higher than the maximum overlap tolerance, cancel the alignment.
-//         if (overlap && seed_ratio) {
-//            cancel_align = 1;
-//            break;
-//         }
-//      }
-//
-//      if (cancel_align) continue;
 
       // Compute alignment limits.
       long r_min  = seed.read_e - seed.read_s + 1;
@@ -55,64 +28,13 @@ align_seeds
       long r_rstart = seed.ref_s + 1;
       long l_rstart = seed.ref_s;
 
-      /*     
-      // Extend existing mapping.
-      double last_eexp = INFINITY;
-      int extend = 0;
-      int extend_score = 0;
-      int cancel_align = 0;
-      for (int i = 0; i < matches->pos; i++) {
-         match_t match = matches->match[i];
-         if (match.e_exp > last_eexp) continue;
-         // Check whether the seed is contiguous.
-         long r_distr = seed.read_e - match.read_e;
-         long g_distr = match.ref_e - seed.ref_e;
-         long r_distl = match.read_s - seed.read_s;
-         long g_distl = seed.ref_s - match.ref_s;
-         long d_accept = opt.dist_accept;
-         double rg_ratio = opt.read_ref_ratio;
-         double eexp_accept = opt.align_accept_eexp;
-         int ext_r = g_distr > -d_accept && r_distr > -d_accept && ((g_distr < (r_distr * rg_ratio)) || (g_distr < d_accept && r_distr < d_accept));
-         int ext_l = g_distl > -d_accept && r_distl > -d_accept && ((g_distl < (r_distl * rg_ratio)) || (g_distl < d_accept && r_distl < d_accept));
-         if (ext_r || ext_l) {
-            r_min  = (ext_r ? r_distr : 0);
-            l_min  = (ext_l ? r_distl : 0);
-            r_qstart = match.read_e + 1;
-            r_rstart = match.ref_e + 1;
-            l_qstart = match.read_s - 1;
-            l_rstart = match.ref_s - 1;
-            last_eexp = match.e_exp;
-            extend = i;
-            extend_score = match.score;
-         } else if (match.e_exp < eexp_accept) {
-            // Check overlap
-            int span = align_min(seed.read_e - seed.read_s, match.read_e - match.read_s);
-            int overlap = align_max(0, align_min(seed.read_e, match.read_e) - align_max(seed.read_s, match.read_s));
-            overlap = overlap > span*opt.overlap_max_tolerance;
-            int seed_ratio = seed.hits < match.hits*opt.align_seed_filter_thr;
-            // If overlap is higher than the maximum overlap tolerance, cancel the alignment.
-            if (overlap && seed_ratio) {
-               cancel_align = 1;
-               break;
-            }
-         } else {
-            if (r_distr < 0) {r_distr = -r_distr; g_distr = -g_distr;}
-            if (r_distl < 0) {r_distl = -r_distl; g_distl = -g_distl;}
-            int same_align = (g_distr > -d_accept && (g_distr < (r_distr*rg_ratio) || g_distr < d_accept)) || (g_distl > -d_accept && (g_distl < (r_distl*rg_ratio) || g_distl < d_accept));
-            if (same_align) {
-               cancel_align = 1;
-               break;
-            }
-         }
-      }
-      */
-
-
       long r_qlen = slen - r_qstart;
       long l_qlen = l_qstart + 1;
       if (!r_qlen && !l_qlen) continue;
-      long r_rlen = align_min((long)(r_qlen * (1 + alignopt.width_ratio)), index->size - r_rstart);
-      long l_rlen = align_min((long)(l_qlen * (1 + alignopt.width_ratio)), r_qstart);
+      long r_rlen = align_min((long)(r_qlen * (1 + alignopt.width_ratio)),
+            index->size - r_rstart);
+      long l_rlen = align_min((long)(l_qlen * (1 + alignopt.width_ratio)),
+            r_qstart);
       char * r_qry = read + r_qstart;
       char * l_qry = read + l_qstart;
       char * r_ref = index->genome + r_rstart;
@@ -123,7 +45,8 @@ align_seeds
       path_t align_r = (path_t){0,0,0}, align_l = (path_t){0,0,0};
       // Forward alignment (right).
       if(r_qlen) {
-         align_r = dbf_align_bp(r_qlen, r_qry, r_rlen, r_ref, r_min, ALIGN_FORWARD, ALIGN_FORWARD, alignopt);
+         align_r = dbf_align_bp(r_qlen, r_qry, r_rlen, r_ref, r_min,
+               ALIGN_FORWARD, ALIGN_FORWARD, alignopt);
          read_e = r_qstart + align_r.row;
          ref_e = r_rstart + align_r.col;
       }
@@ -133,7 +56,8 @@ align_seeds
       }
       // Backward alignment (left).
       if(l_qlen) {
-         align_l = dbf_align_bp(l_qlen, l_qry, l_rlen, l_ref, l_min, ALIGN_BACKWARD, ALIGN_BACKWARD, alignopt);
+         align_l = dbf_align_bp(l_qlen, l_qry, l_rlen, l_ref, l_min,
+               ALIGN_BACKWARD, ALIGN_BACKWARD, alignopt);
          read_s =  l_qstart - align_l.row;
          ref_s = l_rstart - align_l.col;
       }
@@ -143,72 +67,23 @@ align_seeds
       }
       
       // Compute significance.
-      long score = extend_score + align_l.score + align_r.score;
-      double ident = 1.0 - (score*1.0)/(align_max(read_e-read_s+1,ref_e-ref_s+1));
-
-      if (VERBOSE_DEBUG) {
-         uint64_t g_start, g_end;
-         int dir = 0;
-         if (ref_s >= index->size/2) {
-            g_start = index->size - ref_e - 2;
-            g_end   = index->size - ref_s - 2;
-            dir = 1;
-         } else {
-            g_start = ref_s + 1;
-            g_end   = ref_e + 1;
-            dir = 0;
-         }
-         // Search chromosome name.
-         int   chrnum = bisect_search(0, index->chr->nchr-1, index->chr->start, g_start+1)-1;
-         // Print results.
-         fprintf(stdout, "[%ld] chain: %d hits (%ld-%ld,%s:%ld-%ld:%c)\tscore: %ld,%.2f%%\n",
-                 k,
-                 seed.hits,
-                 read_s+1, read_e+1,
-                 index->chr->name[chrnum],
-                 g_start - index->chr->start[chrnum]+1,
-                 g_end - index->chr->start[chrnum]+1,
-                 dir ? '-' : '+',
-                 score,
-                 ident*100.0
-                 );
-      }
-
-      double e_exp = INFINITY;
-      if (ident > opt.align_filter_ident) 
-         e_exp = e_value(ref_e - ref_s + 1, extend_score + align_l.score + align_r.score, index->size);
+//      long score = extend_score + align_l.score + align_r.score;
 
       // If significant, store.
-//      if (e_exp < opt.align_filter_eexp) {
-         match_t hit;
-         if (extend) {
-            hit = matches->match[extend];
-            hit.hits += seed.hits;
-         }
-         else {
-            hit.flags  = 0;
-            hit.hits   = seed.hits;
-         }
+      match_t hit;
+      hit.flags  = 0;
+      hit.hits   = seed.hits;
 
-         // Fill/Update hit.
-         hit.score  = score;
-         hit.ident  = ident;
-         hit.ref_e  = ref_e;
-         hit.ref_s  = ref_s;
-         hit.read_e = read_e;
-         hit.read_s = read_s;
-         hit.e_exp  = e_exp;
-         hit.mapq   = 0;
+      // Fill/Update hit.
+      hit.ref_e  = ref_e;
+      hit.ref_s  = ref_s;
+      hit.read_e = read_e;
+      hit.read_s = read_s;
+      hit.mapq   = 0;
 
-         // Add to significant matchlist.
-         significant = 1;
-         if (extend) {
-            matches->match[extend] = hit;
-         } else {
-            matchlist_add(seqmatches, hit);
-            matches = *seqmatches;
-         }
-//      }
+      // Add to significant matchlist.
+      significant = 1;
+      matchlist_add(seqmatches, hit);
    }
 
    return significant;
