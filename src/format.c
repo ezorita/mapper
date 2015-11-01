@@ -10,13 +10,13 @@ print_and_free
 )
 {
 
-   for (size_t j = 0; j < matches->pos; j++) {
-      // Retrieve match.
-      match_t match = matches->match[j];
+   // Retrieve match.
+   if (matches->pos > 0) {
+      match_t match = matches->match[0];
       // Check mapping quality.
       // Format output.
       int dir;
-      uint64_t g_start, g_end;
+      uint64_t g_start, g_end = 0;
       if (match.ref_s >= index->size/2) {
          g_start = index->size - match.ref_e - 2;
          g_end   = index->size - match.ref_s - 2;
@@ -27,20 +27,20 @@ print_and_free
          dir = 0;
       }
       // Search chromosome name.
-      int   chrnum = bisect_search(0, index->chr->nchr-1, index->chr->start, g_start+1)-1;
+      int chrnum = bisect_search(0, index->chr->nchr-1, index->chr->start, g_start+1)-1;
+
       // Print results.
-      fprintf(stdout, "%s\t%d\t%d\t%s:%ld-%ld:%c\t%d\t%.2f\t%.1f\t%c%c\n",
+      fprintf(stdout, "%s\t%d\t%d\t%s:%ld-%ld:%c\t\n",
               seq.tag,
               match.read_s+1, match.read_e+1,
               index->chr->name[chrnum],
               g_start - index->chr->start[chrnum]+1,
               g_end - index->chr->start[chrnum]+1,
-              dir ? '-' : '+',
-              (int)match.mapq,
-              match.e_exp,
-              match.ident*100.0,
-              (match.flags & WARNING_OVERLAP ? 'o' : '-'),
-              (match.flags & FLAG_REPEAT ? 'r' : '-'));
+              dir ? '-' : '+');
+
+   }
+   else {
+      fprintf(stdout, "%s\t0\t0\t*\n", seq.tag);
    }
 
    // Free match.

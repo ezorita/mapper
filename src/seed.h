@@ -46,7 +46,7 @@ struct hit_t {
 seedstack_t  * naive_smem     (char *, seedopt_t, index_t *);
 // Seed functions.
 int            seed_mem       (char *, int32_t, int32_t, seedstack_t **, seedopt_t, index_t *);
-int            seed_block_all (char *, size_t, seedstack_t **, seedopt_t, index_t *);
+int            seed_block_all (char *, size_t, seedstack_t **, seedopt_t, index_t *, int);
 int            seed_wings     (char *, int32_t, int32_t, seedstack_t **, seedopt_t, index_t *);
 int            reseed_mem     (char *, seedstack_t **, seedopt_t, index_t *);
 int            reseed_smem_rec     (char *, size_t, size_t, seedstack_t **, seedopt_t, index_t *);

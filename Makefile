@@ -24,6 +24,7 @@ AHEADERS= $(addprefix $(INC_DIR)/,$(AHEADER_FILES))
 INCLUDES= $(addprefix -I, $(INC_DIR))
 
 CFLAGS= -std=c99 -Wall -g -O3 -march=core-avx-i -mpopcnt
+#CFLAGS= -std=c99 -Wall -g -O0 -march=core-avx-i -mpopcnt
 LDLIBS= -lm -lpthread
 ILDLIBS= 
 CC= gcc

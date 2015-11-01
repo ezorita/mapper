@@ -299,8 +299,24 @@ mt_worker
       seeds->pos = 0;
       // Debug.
       seed_mem(seq[i].seq, 0, slen, &seeds, opt->seed, index);
-      if (seeds->pos == 0)
-         seed_block_all(seq[i].seq, slen, &seeds, opt->seed, index);
+      if (seeds->pos == 0) {
+         for (int c = 12 ; c > 9 ; c -= 2) {
+            seed_block_all(seq[i].seq, slen, &seeds, opt->seed, index, c);
+            if (seeds->pos == 0) {
+               char *revseq = rev_comp(seq[i].seq);
+               seed_block_all(revseq, slen, &seeds, opt->seed, index, c);
+               if (seeds->pos > 0) {
+                  strncpy(seq[i].seq, revseq, slen);   
+                  free(revseq);
+                  break;
+               }
+               free(revseq);
+            }
+            else {
+               break;
+            }
+         }
+      }
       map_matches->pos = 0;
       align_seeds(seq[i].seq, seeds, &map_matches,
             index, opt->filter, opt->align);
