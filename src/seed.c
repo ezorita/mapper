@@ -60,9 +60,17 @@ seed_the_right_way
       for (uint8_t a = 0 ; a < 4 ; a++) {
          // Do not add the nucleotide present in the sequence.
          if (a == c) continue;
-         // Add another nucleotide and see locally.
+
+         // Add a different nucleotide and seed locally.
          suffix_extend(a, pos, &newpos, index);
-         if (newpos.ep < newpos.sp)  continue;
+         if (newpos.ep < newpos.sp) {
+            bwpos_t tmp = pos;
+            do {
+               suffix_shrink(tmp, &tmp, index);
+               suffix_extend(a, tmp, &newpos, index);
+            }
+            while (newpos.ep < newpos.sp);
+         }
 
          seed_t seed = seed_locally(seq, newpos, i, index);
          // XXX See comment above. XXX
