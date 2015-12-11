@@ -1,5 +1,98 @@
 #include "seed.h"
 
+seed_t
+seed_locally
+(
+  char    * seq,
+  bwpos_t   pos,
+  int       mm,
+  index_t * index
+)
+// SYNOPSIS:
+// Find seed locally by extend/shrink.
+{
+
+   bwpos_t newpos = {0};
+
+   for (int i = mm-1 ; i > -1 ; i--) {
+
+      suffix_extend(translate[(uint8_t)seq[i]], pos, &newpos, index);
+
+      // Backtrack as nuch as needed.
+      while (newpos.ep < newpos.sp) {
+         suffix_shrink(pos, &pos, index);
+         suffix_extend(translate[(uint8_t)seq[i]], pos, &newpos, index);
+      }
+
+      // Tail must not go further than initial mismatch position.
+      if (i + newpos.depth - 1 < mm) break;
+      if (newpos.depth > 24) {
+         // XXX in this crapotype, bulk is just used to say that the seed XXX
+         // XXX is valid and it can be used for alignment...              XXX
+         return (seed_t) {.bulk = 1, .qry_pos = i+1, .ref_pos = newpos};
+      }
+
+      pos = newpos;
+
+   }
+
+   // Nothing found.
+   return (seed_t) {0};
+
+}
+
+int
+seed_the_right_way
+(
+ char         * seq,
+ seedstack_t ** stack,
+ index_t      * index
+)
+{
+
+   bwpos_t pos = {.depth = 0, .sp = 0, .ep = index->size-1};
+
+   for (int i = strlen(seq)-1 ; i > -1 ; i--) {
+
+      bwpos_t newpos;
+      uint8_t c = translate[(uint8_t)seq[i]];
+
+      for (uint8_t a = 0 ; a < 4 ; a++) {
+         // Do not add the nucleotide present in the sequence.
+         if (a == c) continue;
+         // Add another nucleotide and see locally.
+         suffix_extend(a, pos, &newpos, index);
+         if (newpos.ep < newpos.sp)  continue;
+
+         seed_t seed = seed_locally(seq, newpos, i, index);
+         // XXX See comment above. XXX
+         if (seed.bulk) {
+            *stack[0]->seed = seed;
+            (*stack)->pos = 1;
+            return 0;
+         }
+
+      }
+
+      // Add the nucleotide present in the sequence.
+      suffix_extend(c, pos, &newpos, index);
+
+      // Backtrack as much as needed.
+      while (newpos.ep < newpos.sp) {
+         suffix_shrink(pos, &pos, index);
+         suffix_extend(translate[(uint8_t)seq[i]], pos, &newpos, index);
+      }
+
+      pos = newpos;
+
+   }
+
+   // Nothing found.
+   return 0;
+
+}
+
+
 int
 seed_block_all
 (
@@ -292,6 +385,7 @@ compute_hits
    }
    
    return hits;
+
 }
 
 

@@ -12,11 +12,14 @@ align_seeds
 )
 {
 
-//   if (seeds->pos == 0) return 0;
    int slen = strlen(read);
    
    uint64_t hit_count;
    hit_t * hits = compute_hits(stack, index, &hit_count);
+
+   if (hit_count > 20) {
+      goto clean_and_return;
+   }
 
    for(int i = 0; i < hit_count ; i++) {
 
@@ -90,7 +93,10 @@ align_seeds
 
    }
 
-   return 1;
+clean_and_return:
+   free(hits);
+   return 0;
+
 }
 
 
