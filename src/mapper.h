@@ -62,6 +62,8 @@ struct idxfiles_t {
    size_t      sa_len;
    void      * lcp_file;
    size_t      lcp_len;
+   void      * ann_file;
+   size_t      ann_len;
 //   void      * lut_file;
    chr_t     * chr;
 };
