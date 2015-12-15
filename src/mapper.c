@@ -299,6 +299,19 @@ mt_worker
       seeds->pos = 0;
 
       seed_mem(seq[i].seq, 0, slen, &seeds, opt->seed, index);
+      /*
+        You should be able to check the # of (25,1) using:
+        if (index->repeats != NULL) { // If the .ann file is not present repeats is set to NULL.
+          int repeats = index->repeats[get_sa(seed.pointer,index->sa,index->sa_bits)]; // No. of 25,1 at this locus.
+        }
+        this is a uint8_t so it is upper bounded to 255.
+
+        For this you need the annotated genome file. (index .ann extension)
+        Copy it from my home folder on oak. At the moment of this commit it
+        is still being computed. I estimate it will be ready in ~6 hours,
+        that is 15/12/2015 at 22:00.
+      */
+
       if (seeds->pos == 0) {
          seed_the_right_way(seq[i].seq, &seeds, index);
       }
@@ -393,6 +406,16 @@ index_open
    }
    free(lcp_file);
 
+   // Open ANN file.
+   char * ann_file = malloc(strlen(file)+5);
+   strcpy(ann_file, file);
+   strcpy(ann_file+strlen(file), ".ann");
+   int fd_ann = open(lcp_file, O_RDONLY);
+   if (fd_ann == -1) {
+      fprintf(stderr, "warning -- could not open repeat annotation file: %s\n", strerror(errno));
+   }
+   free(ann_file);
+
    // Open LUT file.
    /*
    char * lut_file = malloc(strlen(file)+5);
@@ -441,6 +464,23 @@ index_open
       fprintf(stderr, "error mmaping .lcp index file: %s.\n", strerror(errno));
       return NULL;
    }
+
+   // Load LCP index.
+   if (fd_ann > 0) {
+      files->ann_len = lseek(fd_ann, 0, SEEK_END);
+      lseek(fd_ann, 0, SEEK_SET);
+      files->ann_file = mmap(NULL, files->lcp_len, PROT_READ, MMAP_FLAGS, fd_lcp, 0);
+      close(fd_ann);
+      if (files->ann_file == NULL) {
+         fprintf(stderr, "error mmaping .ann index file: %s.\n", strerror(errno));
+         return NULL;
+      }
+   } else {
+      files->ann_file = NULL;
+      files->ann_len = 0;
+   }
+
+
    // Load LUT index.
    /*
    idxsize = lseek(fd_lut, 0, SEEK_END);
@@ -499,6 +539,8 @@ index_format
    uint64_t * lcpext_size = (uint64_t *)(index->lcp_sample->lcp + index->lcp_sample->size);
    index->lcp_extend->size = *lcpext_size;
    index->lcp_extend->val = (int64_t *)(lcpext_size + 1);
+   // ANN file.
+   index->repeats = files->ann_file;
    //CHR.
    index->chr = files->chr;
    
