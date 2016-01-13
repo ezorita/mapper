@@ -16,6 +16,7 @@
 #include "indexquery.h"
 #include "filter.h"
 #include "format.h"
+#include "annotate.h"
 
 #ifndef _MAPPER_H
 #define _MAPPER_H

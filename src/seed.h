@@ -46,15 +46,17 @@ struct hit_t {
 seedstack_t  * naive_smem     (char *, seedopt_t, index_t *);
 // Seed functions.
 int            seed_mem       (char *, int32_t, int32_t, seedstack_t **, seedopt_t, index_t *);
+int            seed_mismatch  (char *, size_t, int, seedstack_t **, index_t *);
+int            find_mismatch  (char *, size_t, int, seedstack_t **, index_t *);
 int            seed_the_right_way (char *, seedstack_t **, index_t *);
-int            seed_block_all (char *, size_t, seedstack_t **, seedopt_t, index_t *, int);
+int            seed_block_all (char *, size_t, seedstack_t **, index_t *, int, int);
 int            seed_wings     (char *, int32_t, int32_t, seedstack_t **, seedopt_t, index_t *);
 int            reseed_mem     (char *, seedstack_t **, seedopt_t, index_t *);
 int            reseed_smem_rec     (char *, size_t, size_t, seedstack_t **, seedopt_t, index_t *);
 int            get_smem       (seedstack_t **, seedstack_t *);
 int            seed_thr       (char *, size_t, seedstack_t **, seedopt_t, index_t *);
 hit_t        * compute_hits   (seedstack_t * seeds, index_t * index, uint64_t * hit_cnt);
-int            chain_seeds    (seedstack_t *, int, matchlist_t *, index_t *, int, double);
+int            chain_seeds    (seedstack_t *, seedstack_t *, int, matchlist_t *, index_t *, int, double);
 int            find_repeats   (seedstack_t * seeds, matchlist_t ** repeats, int32_t repeat_thr);
 // Seedstack functions.
 seedstack_t  * seedstack_new    (int);
@@ -63,7 +65,17 @@ int            seedstack_append (seedstack_t **, seedstack_t *);
 // Mergesort compar functions.
 int            compar_hit_locus  (const void * a, const void * b, const int param);
 int            compar_seed_start (const void * a, const void * b, const int param);
+int            compar_hit_locus_qsort (const void * a, const void * b);
 // Aux functions.
 char *         rev_comp         (char * seq);
+
+int
+count_mismatch
+(
+ char         * seq,
+ size_t         slen,
+ index_t      * index
+ );
+
 
 #endif

@@ -99,11 +99,46 @@ int main(int argc, char *argv[])
    int opt_verbose = 1;
    size_t seqs_per_thread = 10000;
 
+   if (argc == 3 && strcmp(argv[1],"annotate") == 0) {
+      // Read FM index format.
+      fprintf(stderr, "Genome repeat annotation algorithm.\n");
+      if (opt_verbose) fprintf(stderr, "loading index...\n");
+      idxfiles_t * files = index_open(argv[2]);
+      index_t * index = index_format(files);
+      if (index == NULL)
+         return EXIT_FAILURE;
+      uint8_t * counts = malloc(index->size*sizeof(uint8_t));
+      if (counts == NULL) 
+         return EXIT_FAILURE;
+
+      int kmer = 25, tau = 1;
+      annotate(kmer,tau,counts,index,12);
+
+      /*
+      // DEBUG.
+      fprintf(stderr,"done. Verbose (%d,%d):\n",kmer,tau);
+      char * gen = calloc(kmer+1,1);
+      for (int i = 0; i < index->size - kmer; i++) {
+         memcpy(gen,index->genome+i,kmer);
+         fprintf(stderr, "[%d] %d\t%s\n",i,counts[i],gen);
+      }
+      */
+      // Write output file.
+      char * fname = malloc(strlen(argv[2])+4);
+      strcpy(fname,argv[2]);
+      strcpy(fname+strlen(argv[2]),".ann");
+      int fd = open(fname,O_WRONLY | O_CREAT | O_TRUNC,0644);
+      uint64_t bytes = 0;
+      while ((bytes += write(fd,counts+bytes,index->size-bytes)) < index->size);
+      close(fd);
+      return 0;
+   }
+
    // DEFAULT Options.
    seedopt_t seedopt = { // MEM
       .min_len = 12,
       .max_len = 1000,
-      .min_loci = 1,
+      .min_loci = 0,
       .max_loci = 200,
       .aux_loci = 1000,
       .thr_seed = 20,
@@ -290,37 +325,60 @@ mt_worker
    matchlist_t * seed_matches = matchlist_new(opt->filter.max_align_per_read);
    matchlist_t * map_matches = matchlist_new(64);
    seedstack_t * seeds  = seedstack_new(SEEDSTACK_SIZE);
+   seedstack_t * reeds  = seedstack_new(SEEDSTACK_SIZE);
    
    size_t mapped = 0;
+   
    for (size_t i = 0; i < job->count; i++) {
       if (VERBOSE_DEBUG) fprintf(stdout, "seq: %s\n", seq[i].seq);
       size_t slen = strlen(seq[i].seq);
       // Reset seeds.
       seeds->pos = 0;
-
+      reeds->pos = 0;
+      // Get MEMs.
       seed_mem(seq[i].seq, 0, slen, &seeds, opt->seed, index);
-      /*
-        You should be able to check the # of (25,1) using:
-        if (index->repeats != NULL) { // If the .ann file is not present repeats is set to NULL.
-          int repeats = index->repeats[get_sa(seed.pointer,index->sa,index->sa_bits)]; // No. of 25,1 at this locus.
-        }
-        this is a uint8_t so it is upper bounded to 255.
-
-        For this you need the annotated genome file. (index .ann extension)
-        Copy it from my home folder on oak. At the moment of this commit it
-        is still being computed. I estimate it will be ready in ~6 hours,
-        that is 15/12/2015 at 22:00.
-      */
-
-      if (seeds->pos == 0) {
-         seed_the_right_way(seq[i].seq, &seeds, index);
-      }
-
+      // Align MEMs.
       map_matches->pos = 0;
-      align_seeds(seq[i].seq, seeds, &map_matches,
-            index, opt->filter, opt->align);
-      mapped += print_and_free(seq[i], map_matches, index, opt->format);
+      align_seeds(seq[i].seq, seeds, reeds, &map_matches, index, opt->filter, opt->align);
+      
+      // Reseed?
+      if (map_matches->pos == 0){
+         //         fprintf(stdout, " no seeds found, reseeding (25,1).\n");
+         // 25.1 everything.
+         /*
+         seeds->pos = 0;
+         reeds->pos = 0;
+         // forward block.
+         seed_block_all(seq[i].seq, slen, &seeds, index, 25, 1);
+         // reverse block.
+         char * rseq = rev_comp(seq[i].seq);
+         seed_block_all(rseq, slen, &reeds, index, 25, 0);
+         free(rseq);
 
+         for (int p = 0; p < slen-25; p++)
+            find_mismatch(seq[i].seq + p, 25, p, &seeds, index);
+
+         // align forward/reverse.
+         chain_seeds(seeds,reeds,slen,seed_matches,index,5,1.05);
+         align_matches(seq[i].seq,seed_matches,&map_matches,index,opt->filter,opt->align);
+         //         align_seeds(seq[i].seq, seeds, reeds, &map_matches, index, opt->filter, opt->align);
+         */
+      } 
+      else if (map_matches->match[0].interval == 2 && map_matches->match[0].score > 0) {
+         /*
+         seeds->pos = 0;
+         // 25,1 only on best position.
+         int pos = min(slen-25,map_matches->match[0].score);
+         find_mismatch(seq[i].seq + pos, 25, pos, &seeds, index);
+         // DEBUG. Count hits.
+         int count = 0;
+         for (int i = 0; i < seeds->pos; i++) count += seeds->seed[i].ref_pos.ep - seeds->seed[i].ref_pos.sp + 1;
+         // align forward/reverse.
+         //    map_matches->pos = 0;
+         align_seeds(seq[i].seq, seeds, reeds, &map_matches, index, opt->filter, opt->align);
+         */
+      } 
+      mapped += print_and_free(seq[i], map_matches, index, opt->format);
    }
 
    // Free data structures.
@@ -469,7 +527,7 @@ index_open
    if (fd_ann > 0) {
       files->ann_len = lseek(fd_ann, 0, SEEK_END);
       lseek(fd_ann, 0, SEEK_SET);
-      files->ann_file = mmap(NULL, files->lcp_len, PROT_READ, MMAP_FLAGS, fd_lcp, 0);
+      files->ann_file = mmap(NULL, files->ann_len, PROT_READ, MMAP_FLAGS, fd_ann, 0);
       close(fd_ann);
       if (files->ann_file == NULL) {
          fprintf(stderr, "error mmaping .ann index file: %s.\n", strerror(errno));

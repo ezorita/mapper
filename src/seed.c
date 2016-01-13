@@ -100,6 +100,149 @@ seed_the_right_way
 
 }
 
+int
+count_mismatch
+(
+ char         * seq,
+ size_t         slen,
+ index_t      * index
+)
+{
+   int count = 0;
+   bwpos_t pos = {.sp = 0, .ep = index->size-1, .depth = 0};
+   for (int i = slen-1; i >= 0; i--) {
+      int nt = translate[(uint8_t)seq[i]];
+      bwpos_t next;
+      for (int j = 0; j < 4; j++) {
+          if (j == nt) {
+            suffix_extend(j, pos, &next, index);
+         } else {
+            bwpos_t tmp;
+            suffix_extend(j, pos, &tmp, index);
+            for (int k = i-1; k >= 0 && tmp.ep >= tmp.sp; k--) {
+               suffix_extend(translate[(uint8_t)seq[k]], tmp, &tmp, index);
+            }
+            if (tmp.ep >= tmp.sp) {
+               count += tmp.ep - tmp.sp + 1;
+            }
+         }
+      }
+      pos = next;
+   }
+   if (pos.ep >= pos.sp) count += pos.ep - pos.sp + 1;
+
+   return count;
+}
+
+int
+find_mismatch
+(
+ char         * seq,
+ size_t         slen,
+ int            qrypos,
+ seedstack_t ** stack,
+ index_t      * index
+)
+{
+   bwpos_t pos = {.sp = 0, .ep = index->size-1, .depth = 0};
+   for (int i = slen-1; i >= 0; i--) {
+      int nt = translate[(uint8_t)seq[i]];
+      bwpos_t next;
+      for (int j = 0; j < 4; j++) {
+          if (j == nt) {
+            suffix_extend(j, pos, &next, index);
+         } else {
+            bwpos_t tmp;
+            suffix_extend(j, pos, &tmp, index);
+            for (int k = i-1; k >= 0 && tmp.ep >= tmp.sp; k--) {
+               suffix_extend(translate[(uint8_t)seq[k]], tmp, &tmp, index);
+            }
+            if (tmp.ep >= tmp.sp) {
+               seed_t seed = (seed_t) {.bulk = 0, .qry_pos = qrypos, .ref_pos = tmp};
+               seedstack_push(seed, stack);
+            }
+         }
+      }
+      pos = next;
+   }
+   if (pos.ep >= pos.sp) {
+      seed_t seed = (seed_t) {.bulk = 0, .qry_pos = qrypos, .ref_pos = pos};
+      seedstack_push(seed, stack);
+   }
+
+   return 0;
+}
+
+int
+seed_mismatch
+(
+ char         * seq,
+ size_t         slen,
+ int            qrypos,
+ seedstack_t ** stack,
+ index_t      * index
+)
+{
+   int c = slen/2;
+   fmdpos_t pos = {0,0,index->size};
+   // forward extend.
+   //  forward extend exact until c-1.
+   int i = 0;
+   for (; i < c; i++) {
+      pos = extend_fw(translate[(int)seq[i]],pos,index);
+   }
+   //  mismatch all the next positions.
+   for (; i < slen; i++) {
+      int nt = translate[(int)seq[i]];
+      fmdpos_t newpos[5];
+      extend_fw_all(pos, newpos, index);
+      for (int j = 0; j < 4; j++) {
+         if (j == nt) {
+            // Extend perfect seed.
+            pos = newpos[j];
+         } else {
+            // Extend mismatched seed.
+            for (int k = i+1; k < slen && newpos[j].sz; k++)
+               newpos[j] = extend_fw(translate[(int)seq[k]],newpos[j],index);
+            if (newpos[j].sz) {
+               // Save seed.
+               bwpos_t refpos = {.sp = newpos[j].fp, .ep = newpos[j].fp + newpos[j].sz - 1, .depth = slen};
+               seed_t seed = (seed_t) {.bulk = 0, .qry_pos = qrypos, .ref_pos = refpos};
+               seedstack_push(seed, stack);
+            }
+         }
+      }
+   }
+   // reverse extend.
+   pos = (fmdpos_t){0,0,index->size};
+   i = slen-1;
+   for (; i >= c; i--) {
+      pos = extend_bw(translate[(int)seq[i]],pos,index);
+   }
+   //  mismatch all the next positions.
+   for (; i >= 0; i--) {
+      int nt = translate[(int)seq[i]];
+      fmdpos_t newpos[5];
+      extend_bw_all(pos, newpos, index);
+      for (int j = 0; j < 4; j++) {
+         if (j == nt) {
+            // Extend perfect seed.
+            pos = newpos[j];
+         } else {
+            // Extend mismatched seed.
+            for (int k = i-1; k >= 0 && newpos[j].sz; k++)
+               newpos[j] = extend_bw(translate[(int)seq[k]],newpos[j],index);
+            if (newpos[j].sz) {
+               // Save seed.
+               bwpos_t refpos = {.sp = newpos[j].fp, .ep = newpos[j].fp + newpos[j].sz - 1, .depth = slen};
+               seed_t seed = (seed_t) {.bulk = 0, .qry_pos = qrypos, .ref_pos = refpos};
+               seedstack_push(seed, stack);
+            }
+         }
+      }
+   }
+   return 0;
+}
 
 int
 seed_block_all
@@ -107,15 +250,15 @@ seed_block_all
  char *         seq,
  size_t         slen,
  seedstack_t ** stack,
- seedopt_t      opt,
  index_t      * index,
- int c
+ int            blen,
+ int            fw
 )
 {
    // Wing length.
-   //int c = opt.block_len/2;
    // Convert block length to even number.
-   int blen = c*2;
+   int c = (blen + (fw > 0)) / 2;
+   int v = blen - c;
    // Allocate seed cache.
    bwpos_t cache[100];
    // Seed:
@@ -123,7 +266,7 @@ seed_block_all
    int e = slen-1;
    int i = slen-1;
    bwpos_t pos = (bwpos_t) {.sp = 0, .ep = index->size-1, .depth = 0};
-   while (i >= c) {
+   while (i >= v) {
       bwpos_t newpos;
       suffix_extend(translate[(uint8_t)seq[i]], pos, &newpos, index);
       if (newpos.sp <= newpos.ep) {
@@ -157,7 +300,7 @@ seed_block_all
 
    // - seed for all mismatched positions (i).
    for (int i = slen-1-c; i >= 0; i--) {
-      int beg = min(i+blen-1, slen-1);
+      int beg = min(i+blen, slen-1);
       int end = max(i+c, blen-1);
       int nt  = translate[(uint8_t)seq[i]];
       // Interval of this seed (p).
@@ -165,6 +308,13 @@ seed_block_all
          bwpos_t current = cache[p];
          // Continue on broken seeds.
          if (current.depth != p - i) continue;
+         /*
+         else if (current.depth == blen && current.ep - current.sp + 1 > 0 && fw == 1) {
+            // Save seed.
+            seed_t seed = (seed_t) {.bulk = 0, .qry_pos = p-blen+1, .ref_pos = current};
+            seedstack_push(seed, stack);
+         }
+         */
          // Extend with the 4 possible mutations (m).
          for (int m = 0; m < 4; m++) {
             bwpos_t mpos = current;
@@ -177,15 +327,13 @@ seed_block_all
             } 
             int k = i-1;
             // Extend seed until block length.
-            while (mpos.ep >= mpos.sp && mpos.depth < blen + 1)
+            while (mpos.ep >= mpos.sp && mpos.depth < blen)
                suffix_extend(translate[(uint8_t)seq[k--]], mpos, &mpos, index);
             // Save seed if seed exists.
-            int64_t loci = mpos.ep - mpos.sp + 1;
-            if (loci > 0 && mpos.depth > 2*c) {
+            if (mpos.ep >= mpos.sp) {
                // Save seed.
                seed_t seed = (seed_t) {.bulk = 0, .qry_pos = p-blen+1, .ref_pos = mpos};
                seedstack_push(seed, stack);
-               return 0;
             }
          }
       }
@@ -299,6 +447,7 @@ seed_mem
    uint64_t new_loci = index->size;//, last_loci;
 
    int maxseedlength = 0;
+   int seed_pos = (*stack)->pos;
    
    // Start position.
    bwpos_t pos = (bwpos_t){.depth = 0, .sp = 0, .ep = index->size-1};
@@ -312,7 +461,7 @@ seed_mem
       //last_loci = new_loci;
       new_loci = (newpos.ep < newpos.sp ? 0 : newpos.ep - newpos.sp + 1);
 
-      if (new_loci > 0) {
+      if (new_loci > opt.min_loci) {
          pos = newpos;
          continue;
       }
@@ -322,15 +471,15 @@ seed_mem
 
       if (seedlength > 24) {
          if (seedlength == maxseedlength) {
-               seed_t seed = (seed_t) {.bulk = 0, .qry_pos = i+1, .ref_pos = pos};
-               seedstack_push(seed, stack);
+            seed_t seed = (seed_t) {.bulk = 0, .qry_pos = i+1, .ref_pos = pos};
+            seedstack_push(seed, stack);
          }
          if (seedlength > maxseedlength) {
             maxseedlength = seedlength;
-            (*stack[0]->seed).bulk = 0;
-            (*stack[0]->seed).qry_pos = i+1;
-            (*stack[0]->seed).ref_pos = pos;
-            (*stack)->pos = 1;
+            (*stack)->seed[seed_pos].bulk = 0;
+            (*stack)->seed[seed_pos].qry_pos = i+1;
+            (*stack)->seed[seed_pos].ref_pos = pos;
+            (*stack)->pos = seed_pos+1;
          }
       }
 
@@ -338,7 +487,7 @@ seed_mem
          // Reset 'pos' and jump over N.
          last_qry_pos = i+1;
          pos = (bwpos_t){.depth = 0, .sp = 0, .ep = index->size-1};
-      } else {
+      } else if (new_loci < 1){
          do {
             int origdepth = pos.depth;
             suffix_shrink(pos, &pos, index);
@@ -357,10 +506,10 @@ seed_mem
          seedstack_push(seed, stack);
       }
       if (last_qry_pos > maxseedlength) {
-         (*stack[0]->seed).bulk = 0;
-         (*stack[0]->seed).qry_pos = 0;
-         (*stack[0]->seed).ref_pos = pos;
-         (*stack)->pos = 1;
+         (*stack)->seed[seed_pos].bulk = 0;
+         (*stack)->seed[seed_pos].qry_pos = 0;
+         (*stack)->seed[seed_pos].ref_pos = pos;
+         (*stack)->pos = seed_pos+1;
       }
    }
 
@@ -388,7 +537,7 @@ compute_hits
       seed_t seed = seeds->seed[i];
       for (size_t j = seed.ref_pos.sp; j <= seed.ref_pos.ep; j++) {
          int64_t loc = get_sa(j,index->sa,index->sa_bits);
-         hits[l++] = (hit_t) {.locus = loc, .qrypos = seed.qry_pos, .depth = seed.ref_pos.depth, .bulk = seed.bulk};
+         hits[l++] = (hit_t) {.locus = loc, .qrypos = seed.qry_pos, .depth = seed.ref_pos.depth, .bulk = seed.ref_pos.ep - seed.ref_pos.sp + 1};
       }
    }
    
@@ -396,11 +545,11 @@ compute_hits
 
 }
 
-
 int
 chain_seeds
 (
  seedstack_t * seeds,
+ seedstack_t * rseeds,
  int           seqlen,
  matchlist_t * matchlist,
  index_t     * index,
@@ -411,11 +560,55 @@ chain_seeds
    if (matchlist->size < 1) return -1;
 
    // Convert seeds to hits.
-   uint64_t hit_count;
+   uint64_t hit_count, rev_count;
+   // Forward seeds.
    hit_t * hits = compute_hits(seeds, index, &hit_count);
+
+   // DEBUG.
+   if (VERBOSE_DEBUG) {
+      for (int i = 0; i < hit_count; i++) {
+         uint64_t g_start;
+         int dir = 0;
+         if (hits[i].locus >= index->size/2) {
+            g_start = index->size - (hits[i].locus+hits[i].depth) - 2;
+            dir = 1;
+         } else {
+            g_start = hits[i].locus + 1;
+            dir = 0;
+         }
+         // Search chromosome name.
+         int   chrnum = bisect_search(0, index->chr->nchr-1, index->chr->start, g_start+1)-1;
+         // Print results.
+         fprintf(stdout, "[%d,%d] (%d) %s,%ld%c\n",
+                 hits[i].qrypos, hits[i].qrypos+hits[i].depth-1,
+                 hits[i].depth,
+                 index->chr->name[chrnum],
+                 g_start - index->chr->start[chrnum]+1,
+                 dir ? '-' : '+'
+                 );
+      }
+   }
+
+   // Reverse seeds.
+   if (rseeds->pos > 0) {
+      hit_t * rhits = compute_hits(rseeds, index, &rev_count);
+      // Revert hits.
+      for (int i = 0; i < rev_count; i++) {
+         rhits[i].locus = (index->size - 1) - (rhits[i].locus + rhits[i].depth);
+         rhits[i].qrypos= seqlen - (rhits[i].qrypos + rhits[i].depth);
+      }
+      // Merge F/R hits.
+      hits = realloc(hits, (hit_count + rev_count)*sizeof(hit_t));
+      memcpy(hits+hit_count, rhits, rev_count*sizeof(hit_t));
+      hit_count += rev_count;
+      free(rhits);
+   }
    
    // Merge-sort hits.
-//   mergesort_mt(hits, hit_count, sizeof(hit_t), 0, 1, compar_hit_locus);
+   //   mergesort_mt(hits, hit_count, sizeof(hit_t), 0, 1, compar_hit_locus);
+   qsort(hits, hit_count, sizeof(hit_t), compar_hit_locus_qsort);
+
+   if (VERBOSE_DEBUG) fprintf(stdout, "** CHAIN SEEDS (total %ld)\n", hit_count);
 
    // Reset matchlist.
    matchlist->pos = 0;
@@ -425,31 +618,169 @@ chain_seeds
    int  mini = 0;
    size_t i = 0;
 
-   for (i = 0 ; i < hit_count ; i++) {
-      // Store match.
-      match_t match;
-      match.ref_e  = hits[i].locus + hits[i].depth;
-      match.read_e = hits[i].qrypos + hits[i].depth;
-      match.ref_s  = hits[i].locus;
-      match.read_s = hits[i].qrypos;
-      match.hits   = hits[i].depth;
-      match.flags  = 0;
-      match.score  = -1;
+   while (i < hit_count) {
+      // Match start.
+      int64_t span     = hits[i].depth;
+      int64_t lbeg_tmp = hits[i].locus;
+      int64_t lend_tmp = lbeg_tmp + span;
+      int64_t rbeg_tmp = hits[i].qrypos;
+      int64_t rend_tmp = rbeg_tmp + span;
+      int     bulk     = hits[i].bulk;
+      int64_t lbeg, lend, rbeg, rend;
+      lbeg = lend = rbeg = rend = 0;
+      i++;
 
-
-      // Append if list not yet full, replace the minimum value otherwise.
-      if (matchlist->pos < matchlist->size) {
-         matchlist->match[matchlist->pos++] = match;
+      // Debug seeds...
+      if (VERBOSE_DEBUG) {
+         uint64_t g_start;
+         int dir = 0;
+         if (lbeg_tmp >= index->size/2) {
+            g_start = index->size - lend_tmp - 2;
+            dir = 1;
+         } else {
+            g_start = lbeg_tmp + 1;
+            dir = 0;
+         }
+         // Search chromosome name.
+         int   chrnum = bisect_search(0, index->chr->nchr-1, index->chr->start, g_start+1)-1;
+         // Print results.
+         fprintf(stdout, "%s,%ld%c/%ld,%ld/%ld,%ld,%d",
+                 index->chr->name[chrnum],
+                 g_start - index->chr->start[chrnum]+1,
+                 dir ? '-' : '+',
+                 rbeg_tmp, rend_tmp-1,
+                 span, span, bulk
+                 );
       }
-            
-      // Find the minimum that will be substituted next.
-      else if (matchlist->pos == matchlist->size) {
-         mini = 0;
-         minv = matchlist->match[mini].hits;
-         for (int j = 1 ; j < matchlist->size; j++) {
-            if (matchlist->match[j].hits < minv) {
-               mini  = j;
-               minv = matchlist->match[j].hits;
+
+      // Extend match.
+      while (i < hit_count) {
+         // Compare genome and read distances.
+         int64_t g_dist = (int64_t)(hits[i].locus) - (int64_t)(hits[i-1].locus);
+         int64_t r_dist = (int64_t)(hits[i].qrypos) - (int64_t)(hits[i-1].qrypos);
+         if (r_dist >= 0 && (g_dist <= (1+read_ref_ratio) * r_dist) && (g_dist >= (1-read_ref_ratio) * r_dist)) {
+            uint64_t new_lend = hits[i].locus + hits[i].depth;
+            uint64_t new_rend = hits[i].qrypos + hits[i].depth;
+            if (new_rend > rend_tmp) {
+               // Update hits.
+               if (hits[i].qrypos <= rend_tmp) {
+                  span += new_rend - rend_tmp;
+               }
+               else {
+                  span += hits[i].depth;
+                  // Check if this is the biggest stretch.
+                  if (rend_tmp - rbeg_tmp > rend - rbeg) {
+                     rbeg = rbeg_tmp;
+                     rend = rend_tmp;
+                     lbeg = lbeg_tmp;
+                     lend = lend_tmp;
+                  }
+                  // Follow new stretch.
+                  rbeg_tmp = hits[i].qrypos;
+                  lbeg_tmp = hits[i].locus;
+               }
+               // Update ends.
+               rend_tmp = new_rend;
+               lend_tmp = new_lend;
+
+            }
+            bulk *= hits[i].bulk;
+
+            // Debug seed chain...
+            if (VERBOSE_DEBUG) {
+               uint64_t g_start;
+               int dir = 0;
+               if (hits[i].locus >= index->size/2) {
+                  g_start = index->size - hits[i].locus - hits[i].depth - 2;
+                  dir = 1;
+               } else {
+                  g_start = hits[i].locus + 1;
+                  dir = 0;
+               }
+               // Search chromosome name.
+               int   chrnum = bisect_search(0, index->chr->nchr-1, index->chr->start, g_start+1)-1;
+               // Print results.
+               fprintf(stdout, "\t%s,%ld%c/%d,%d/%d,%ld,%d",
+                       index->chr->name[chrnum],
+                       g_start - index->chr->start[chrnum]+1,
+                       dir ? '-' : '+',
+                       hits[i].qrypos, hits[i].qrypos + hits[i].depth-1,
+                       hits[i].depth, span, bulk
+                       );
+            }
+
+            i++;
+         } else break;
+      }
+      // Check if last was the biggest stretch.
+      if (rend_tmp - rbeg_tmp > rend - rbeg) {
+         rbeg = rbeg_tmp;
+         rend = rend_tmp;
+         lbeg = lbeg_tmp;
+         lend = lend_tmp;
+      }
+
+
+      if (VERBOSE_DEBUG) fprintf(stdout, "\n");
+
+      // Store match.
+      // Non-significant streaks (bulk) will not be saved.
+      if (span > minv && bulk == 0) {
+         // Allocate match.
+         match_t match;
+         match.ref_e  = lend - 1;
+         match.read_e = rend - 1;
+         match.ref_s  = lbeg;
+         match.read_s = rbeg;
+         match.hits   = span;
+         match.flags  = 0;
+         match.score  = 0;
+
+         // Debug match
+         if (VERBOSE_DEBUG) {
+            uint64_t g_start;
+            int dir = 0;
+            if (match.ref_s >= index->size/2) {
+               g_start = index->size - match.ref_e - 2;
+               dir = 1;
+            } else {
+               g_start = match.ref_s + 1;
+               dir = 0;
+            }
+            // Search chromosome name.
+            int   chrnum = bisect_search(0, index->chr->nchr-1, index->chr->start, g_start+1)-1;
+            // Print results.
+            fprintf(stdout, "[%d]\t%s,%ld%c\t%ld\t%d,%d\n",
+                    match.hits,
+                    index->chr->name[chrnum],
+                    g_start - index->chr->start[chrnum]+1,
+                    dir ? '-' : '+',
+                    match.ref_s,
+                    match.read_s, match.read_e
+                    );
+         }
+
+         // Append if list not yet full, replace the minimum value otherwise.
+         if (matchlist->pos < matchlist->size) {
+            matchlist->match[matchlist->pos++] = match;
+         }
+         else {
+            if(VERBOSE_DEBUG) {
+               match_t m = matchlist->match[mini];
+               fprintf(stdout, "replaces [%d]\t%ld\t%d,%d\n",m.hits,m.ref_s,m.read_s,m.read_e);
+            }
+            matchlist->match[mini] = match;
+         }
+               
+         // Find the minimum that will be substituted next.
+         if (matchlist->pos == matchlist->size) {
+            mini = 0;
+            minv = matchlist->match[mini].hits;
+            for (int j = 1 ; j < matchlist->size; j++) {
+               if (matchlist->match[j].hits < minv) {
+                  mini  = j;
+                  minv = matchlist->match[j].hits;
+               }
             }
          }
       }
@@ -459,7 +790,51 @@ chain_seeds
    free(hits);
 
    return 0;
+}
 
+int
+compar_hit_locus_qsort
+(
+ const void * a,
+ const void * b
+)
+{
+   hit_t * ha = (hit_t *)a;
+   hit_t * hb = (hit_t *)b;
+   if (ha->locus > hb->locus) return 1;
+   else if (ha->locus < hb->locus) return -1;
+   else return (ha->depth > hb->depth ? 1 : -1);
+}
+
+int
+get_smem
+(
+ seedstack_t ** smem,
+ seedstack_t  * mem
+)
+{
+   if (mem->pos == 0) return 0;
+   // Seeds are sorted by start position, descending.
+   seed_t cur = mem->seed[mem->pos-1];
+   int    len = cur.ref_pos.depth;
+   int    end = cur.qry_pos + cur.ref_pos.depth;
+   // Find longest non-overlapping seeds.
+   for (int i = mem->pos-2; i >= 0; i--) {
+      seed_t s = mem->seed[i];
+      if (s.qry_pos >= end) {
+         seedstack_push(cur, smem);
+         cur = s;
+         len = cur.ref_pos.depth;
+         end = cur.qry_pos + cur.ref_pos.depth;
+      } else if (s.ref_pos.depth > len) {
+         cur = s;
+         len = cur.ref_pos.depth;
+         end = cur.qry_pos + cur.ref_pos.depth;
+      }
+   }
+   seedstack_push(cur, smem);
+
+   return 0;
 }
 
 

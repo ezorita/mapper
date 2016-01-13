@@ -19,6 +19,37 @@ get_sa
 }
 
 int
+get_sa_range
+(
+ uint64_t   start,
+ uint64_t   size,
+ uint64_t * sa,
+ int        bits,
+ uint64_t * out
+)
+{
+   uint64_t mask = ((uint64_t)0xFFFFFFFFFFFFFFFF) >> (64-bits);
+   uint64_t bit = start*bits;
+   uint64_t word = bit/64;
+   // Process bits.
+   bit %= 64;
+   uint64_t w = sa[word];
+   for (uint64_t i = 0; i < size; i++) {
+      if (bit + bits > 64) {
+         out[i] = w >> bit;
+         w = sa[++word];
+         out[i] |= (w & mask) << (64-bit);
+         out[i] &= mask;
+      } else {
+         out[i] = (w >> bit) & mask;
+      }
+      bit = (bit+bits)%64;
+      if (bit == 0) w = sa[++word];
+   }
+   return 0;
+}
+
+int
 get_occ
 (
  int64_t    ptr,
@@ -103,6 +134,35 @@ get_occ_nt
 
 }
 
+int
+extend_bw_all
+(
+ fmdpos_t   pos,
+ fmdpos_t * new,
+ index_t  * index
+)
+{
+   int64_t occ_sp[NUM_BASES];
+   int64_t occ_ep[NUM_BASES];
+   get_occ(pos.fp - 1, index->occ, occ_sp);
+   get_occ(pos.fp + pos.sz - 1, index->occ, occ_ep);
+   int64_t tot = 0;
+   for (int j = 0; j < NUM_BASES; j++) {
+      new[j].fp = index->c[j] + occ_sp[j];
+      new[j].sz = occ_ep[j] - occ_sp[j];
+      tot += new[j].sz;
+   }
+   // Intervals of the reverse strand pointer.
+   // T (wilcard '$' is inside this interval if tot < pos.sz)
+   new[3].rp = pos.rp + (tot < pos.sz);
+   // G-C-A
+   for (int j = 2; j >= 0; j--) new[j].rp = new[j+1].rp + new[j+1].sz;
+   // N
+   new[4].rp = new[0].rp + new[0].sz;
+   
+   return 1;
+}
+
 
 fmdpos_t
 extend_bw
@@ -110,7 +170,6 @@ extend_bw
  int        nt,
  fmdpos_t   pos,
  index_t  * index
-
 )
 {
    int64_t occ_sp[NUM_BASES];
@@ -120,13 +179,15 @@ extend_bw
    int64_t sz[NUM_BASES];
    get_occ(pos.fp - 1, index->occ, occ_sp);
    get_occ(pos.fp + pos.sz - 1, index->occ, occ_ep);
+   int64_t tot = 0;
    for (int j = 0; j < NUM_BASES; j++) {
       fp[j] = index->c[j] + occ_sp[j];
       sz[j] = occ_ep[j] - occ_sp[j];
+      tot += sz[j];
    }
    // Intervals of the reverse strand pointer.
-   // T
-   rp[3] = pos.rp;
+   // T (wilcard '$' is inside this interval if tot < pos.sz)
+   rp[3] = pos.rp + (tot < pos.sz);
    // G-C-A
    for (int j = 2; j >= 0; j--) rp[j] = rp[j+1] + sz[j+1];
    // N
@@ -150,6 +211,24 @@ extend_fw
    fmdpos_t newpos = extend_bw(nt, (fmdpos_t) {pos.rp, pos.fp, pos.sz}, index);
    // Return position wrt forward strand.
    return (fmdpos_t){newpos.rp, newpos.fp, newpos.sz};
+}
+
+int
+extend_fw_all
+(
+ fmdpos_t   pos,
+ fmdpos_t * newpos,
+ index_t  * index
+)
+{
+   fmdpos_t tmp[NUM_BASES];
+   extend_bw_all((fmdpos_t) {pos.rp, pos.fp, pos.sz}, tmp, index);
+   newpos[0] = (fmdpos_t) {tmp[3].rp, tmp[3].fp, tmp[3].sz};
+   newpos[1] = (fmdpos_t) {tmp[2].rp, tmp[2].fp, tmp[2].sz};
+   newpos[2] = (fmdpos_t) {tmp[1].rp, tmp[1].fp, tmp[1].sz};
+   newpos[3] = (fmdpos_t) {tmp[0].rp, tmp[0].fp, tmp[0].sz};
+   newpos[4] = (fmdpos_t) {tmp[4].rp, tmp[4].fp, tmp[4].sz};
+   return 0;
 }
 
 

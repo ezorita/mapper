@@ -20,7 +20,6 @@ typedef struct index_t     index_t;
 typedef struct seq_t       seq_t;
 typedef struct list_t      list_t;
 typedef struct chr_t       chr_t;
-typedef struct pebble_t    pebble_t;
 typedef struct node_t      node_t;
 typedef struct sortargs_t  sortargs_t;
 typedef struct seqstack_t  seqstack_t;

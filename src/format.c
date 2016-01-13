@@ -30,13 +30,16 @@ print_and_free
       int chrnum = bisect_search(0, index->chr->nchr-1, index->chr->start, g_start+1)-1;
 
       // Print results.
-      fprintf(stdout, "%s\t%d\t%d\t%s:%ld-%ld:%c\t\n",
+      fprintf(stdout, "%s\t%d\t%d\t%s:%ld-%ld:%c\t%.2f\t%d\t%.2f\t%.2f\t%d\n",
               seq.tag,
               match.read_s+1, match.read_e+1,
               index->chr->name[chrnum],
               g_start - index->chr->start[chrnum]+1,
               g_end - index->chr->start[chrnum]+1,
-              dir ? '-' : '+');
+              dir ? '-' : '+',
+              match.ident, match.flags,
+              match.mapq, match.e_exp,
+              match.interval);
 
    }
    else {
