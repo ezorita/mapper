@@ -107,12 +107,9 @@ int main(int argc, char *argv[])
       index_t * index = index_format(files);
       if (index == NULL)
          return EXIT_FAILURE;
-      uint8_t * counts = malloc(index->size*sizeof(uint8_t));
-      if (counts == NULL) 
-         return EXIT_FAILURE;
 
       int kmer = 25, tau = 1;
-      annotate(kmer,tau,counts,index,12);
+      annotate(kmer,tau,index,1);
 
       /*
       // DEBUG.
@@ -124,6 +121,7 @@ int main(int argc, char *argv[])
       }
       */
       // Write output file.
+      /*
       char * fname = malloc(strlen(argv[2])+4);
       strcpy(fname,argv[2]);
       strcpy(fname+strlen(argv[2]),".ann");
@@ -131,6 +129,7 @@ int main(int argc, char *argv[])
       uint64_t bytes = 0;
       while ((bytes += write(fd,counts+bytes,index->size-bytes)) < index->size);
       close(fd);
+      */
       return 0;
    }
 
@@ -201,6 +200,9 @@ int main(int argc, char *argv[])
    // Read FM index format.
    if (opt_verbose) fprintf(stderr, "loading index...\n");
    idxfiles_t * files = index_open(ifile);
+   if (files->ann_file == NULL) {
+      fprintf(stderr, "warning -- could not open repeat annotation file: %s\n", strerror(errno));
+   }
    index_t * index = index_format(files);
    if (index == NULL)
       return EXIT_FAILURE;
@@ -469,9 +471,6 @@ index_open
    strcpy(ann_file, file);
    strcpy(ann_file+strlen(file), ".ann");
    int fd_ann = open(lcp_file, O_RDONLY);
-   if (fd_ann == -1) {
-      fprintf(stderr, "warning -- could not open repeat annotation file: %s\n", strerror(errno));
-   }
    free(ann_file);
 
    // Open LUT file.

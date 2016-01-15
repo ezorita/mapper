@@ -1,10 +1,71 @@
 #include "annotate.h"
+#include <string.h>
 
-/*
-// DEBUG.
-char pc_cur[11];
-char * pc_nt = "ACGTN";
-*/
+htable_t *
+htable_new
+(
+ int    index_bits,
+ int    probe_bits,
+ size_t elm_size
+)
+{
+   htable_t * htable = calloc(sizeof(htable_t) + elm_size * (1 << index_bits), 1);
+   if (htable == NULL) {
+      return NULL;
+   }
+   // Compute bitmasks.
+   htable->index_bits = index_bits;
+   htable->index_bitmask = 0xFFFFFFFFFFFFFFFF >> (64 - index_bits);
+   htable->probe_bits = probe_bits;
+   htable->probe_bitmask = (0xFFFFFFFFFFFFFFFF >> (64 - probe_bits)) << index_bits;
+   htable->probe_datamask = 0xFF >> (8 - probe_bits);
+   // Set element size and reset count.
+   htable->count = 0;
+   htable->elm_size = elm_size;
+   return htable;
+}
+
+int
+htable_insert
+(
+ uint8_t         * key,
+ uint32_t          keylen,
+ uint8_t           data,
+ uint32_t          data_pos,
+ htable_t        * table,
+ pthread_mutex_t * mutex
+)
+{
+   if (data_pos >= table->elm_size) return -1;
+   if (table->count >= table->index_bitmask) return -1;
+   // Generate key Hash.
+   uint64_t k = XXH64(key, keylen, 0);
+   // Split index and probe bits.
+   uint64_t idx = k & table->index_bitmask;
+   uint8_t chk = ((k & table->probe_bitmask) >> table->index_bits) & 0xFF;
+   // chk = 0 reserved for free cells.
+   if (chk == 0) chk = 1;
+   // Find spot in table. Simple linear probing.
+   uint8_t * beg_addr = table->c + idx*table->elm_size + data_pos;
+   uint8_t * max_addr = table->c + table->index_bitmask * table->elm_size;
+   uint8_t * cell = beg_addr;
+   // This part of the code is concurrent, mutex lock required.
+   pthread_mutex_lock(mutex);
+   while (*cell != 0 && ((*cell & table->probe_datamask) != chk)) {
+      // Next cell (Linear probing).
+      cell += table->elm_size;
+      // Loop until cell is free or has the same probe.
+      if (cell > max_addr) cell = table->c + data_pos;
+   }
+   // Store data in cell.
+   *cell = data;
+   // End of concurrent code.
+   pthread_mutex_unlock(mutex);
+
+   return 0;
+}
+
+
 int
 ppush
 (
@@ -51,35 +112,84 @@ seq_trail
    return lcp;
 }
 
+int
+reverse_duplicate
+(
+ char * seq,
+ int    kmer
+)
+/*
+** This function takes a seq from the genome and compares
+** it with its reverse complement. Returns 1 (duplicate) if
+** the reverse complement is lexicographically smaller.
+** The aim of this is to avoid computing the same thing twice.
+** Since we have an index with forward and reverse strands,
+** the forward and reverse complement of each kmer must yield
+** exactly the same number of hits. Therefore we will only
+** compute and store the lexicographically smallest of each
+** forward/reverse pair.
+*/
+{
+   for (int i = 0, j = kmer-1; i < kmer; i++, j--) {
+      if (translate_rc[(int)seq[j]] < translate[(int)seq[i]]) {
+         return 1;
+      }
+   }
+   return 0;
+}
+
 
 int
 find_next
 (
- fmdpos_t current,
- fmdpos_t * next,
- uint8_t * next_seq,
+ bwpos_t * pos,
+ uint8_t * seq,
+ char    * locus,
  int       kmer,
+ bwpos_t * pos_cache,
  index_t * index
 )
 {
-   uint64_t ptr = current.fp + current.sz - 1;
-   uint64_t sa_beg;
+   int lcp = 0;
    do {
-      ptr++;
-      if (ptr >= index->size) {
-         next->fp = index->size;
-         next->sz = 1;
-         return 0;
+      uint64_t ptr = pos->ep;
+      uint64_t sa_beg;
+      // Get next valid interval: SA value must be < genome_size - kmer.
+      // TODO: Also check that the kmer does not fall in the border between
+      // forward and reverse strands of the genome, i.e. the SA value must not
+      // fall in the region (genome->size/2-kmer , genome->size/2].
+      do {
+         ptr++;
+         if (ptr >= index->size) {
+            pos->sp = index->size;
+            pos->ep = index->size;
+            return 0;
+         }
+         sa_beg = get_sa(ptr,index->sa,index->sa_bits);
+      } while (sa_beg >= index->size - kmer);
+      // Keep pointer to next kmer (genome sequence).
+      char * next_locus = index->genome+sa_beg;
+
+      // Compute LCP between current and next intervals.
+      lcp = seq_trail(locus, next_locus, kmer);
+
+      // Compute next interval range using pos cache.
+      // ftr: Forward to reverse strand conversion table.
+      int ftr[5] = {3,2,1,0,4};
+      // Start at LCP.
+      for (int i = lcp; i < kmer ; i++) {
+         // Read the sequence backwards.
+         int nt = translate[(int)next_locus[i]];
+         // Store the reverse complement in seq.
+         seq[i] = ftr[nt];
+         // Update cache with backward search of new nucleotides (using reverse complement).
+         suffix_extend(seq[i],pos_cache[i],pos_cache+i+1,index);
       }
-      sa_beg = get_sa(ptr,index->sa,index->sa_bits);
-   } while (sa_beg >= index->size - kmer);
-   int lcp = seq_trail(index->genome+get_sa(current.fp,index->sa,index->sa_bits), index->genome+sa_beg, kmer);
-   // Find range.
-   *next = (fmdpos_t) {0,0,index->size};
-   for (int i = 0; i < kmer; i++) {
-      next_seq[i] = translate[(int)index->genome[sa_beg+i]];
-      *next = extend_fw(next_seq[i],*next,index);
-   }
+      // Compute the interval of the new kmer using the revcomp interval size.
+      *pos = (bwpos_t){.sp = ptr, .ep = ptr + pos_cache[kmer].ep - pos_cache[kmer].sp, .depth = kmer};
+   } while (reverse_duplicate(locus, kmer));
+   // Repeat the whole process if the kmer is a duplicate.
+   
    return lcp;
 }
 
@@ -89,59 +199,81 @@ annotate
 (
  int        kmer,
  int        tau,
- uint8_t  * counts,
  index_t  * index,
  int        threads
 )
 {
-   // Compute thread jobs.
+
+   // Alloc variables.
    uint64_t seqs = index->size/threads;
    annjob_t ** job = malloc(threads*sizeof(annjob_t*));
    pthread_mutex_t * mutex = malloc(sizeof(pthread_mutex_t));
    pthread_cond_t  * monitor = malloc(sizeof(pthread_cond_t));
    uint64_t * computed = malloc(sizeof(uint64_t));
+   uint64_t * kmers = malloc(sizeof(uint64_t));
+   uint8_t * counts = malloc(index->size * sizeof(uint8_t));
    int * done = malloc(sizeof(int));
+
+   // Initialization.
    *computed = 0;
    *done = 0;
+   *kmers = 0;
    pthread_mutex_init(mutex,NULL);
    pthread_cond_init(monitor,NULL);
+   // Compute thread jobs.
    for (int i = 0; i < threads; i++) {
-      // Create job.
+      // Allocate job.
       job[i] = malloc(sizeof(annjob_t));
-      uint64_t offset = i*seqs + 1;
+      // Compute sequence offset in BWT.
+      uint64_t offset = i*seqs;
       // Extend kmer from suffix array.
-      fmdpos_t pos = {0,0,index->size};
       uint64_t base = index->size;
       do {
-         base = get_sa(offset++, index->sa, index->sa_bits);
+         base = get_sa(++offset, index->sa, index->sa_bits);
       } while (base >= index->size - kmer);
       uint8_t * seq = malloc(kmer);
+
+      // Alloc interval cache.
+      bwpos_t * cache = malloc((kmer+1) * sizeof(bwpos_t));
+      cache[0] = (bwpos_t){0,0,index->size-1};;
+      int ftr[5] = {3,2,1,0,4};
       for (int j = 0; j < kmer; j++) {
-         seq[j] = translate[(int)index->genome[base+j]];
-         pos = extend_fw(seq[j],pos,index);
+         // Backward search the reverse complement to reuse the cached intervals.
+         int nt = translate[(int)index->genome[base+j]];
+         seq[j] = ftr[nt];
+         suffix_extend(seq[j],cache[j],cache+j+1,index);
       }
+      // Compute pos using the forward start pointer and revcomp interval size.
+      bwpos_t pos = {.sp = offset, .ep = offset + cache[kmer].ep - cache[kmer].sp, .depth = kmer};
+      
       job[i]->beg = pos;
       job[i]->seq = seq;
       job[i]->mutex = mutex;
       job[i]->monitor = monitor;
       job[i]->computed = computed;
       job[i]->done = done;
+      job[i]->cache = cache;
       job[i]->index = index;
       job[i]->kmer = kmer;
       job[i]->tau = tau;
+      job[i]->kmers = kmers;
       job[i]->counts = counts;
    }
-   for (int i = 0; i < threads-1; i++) job[i]->end = job[i+1]->beg.fp;
+   // Set job end indices.
+   for (int i = 0; i < threads-1; i++) job[i]->end = job[i+1]->beg.sp;
    job[threads-1]->end = index->size;
 
+   // Run threads.
    for (int i = 0; i < threads; i++) {
+
       pthread_t thread;
       pthread_create(&thread,NULL,annotate_mt,job[i]);
       pthread_detach(thread);
+
       //      annotate_mt(job[i]);
   
    }
-
+   // Sleep and wait for thread signals.
    pthread_mutex_lock(mutex);
    while (*done < threads) {
       //      fprintf(stderr, "annotating... %ld/%ld\r", *computed, index->size);
@@ -152,6 +284,15 @@ annotate
 
    //   fprintf(stderr, "annotating... %ld/%ld\n", *computed, index->size);
    fprintf(stderr, "annotating... 100.00%%\n");
+   fprintf(stderr, "kmers: %ld unique kmers out of %ld genomic loci.\n",*kmers,index->size-1);
+
+   for (int i = 0; i < threads; i++) { free(job[i]->seq); free(job[i]->cache); free(job[i]); }
+   free(job);
+   free(mutex);
+   free(monitor);
+   free(computed);
+   free(done);
+   free(kmers);
 
    return 0;
 }
@@ -170,18 +311,31 @@ annotate_mt
    // pebble stack.
    pstack_t ** pebbles = malloc(kmer*sizeof(pstack_t*));
    for (int i = 0; i < kmer; i++) pebbles[i] = pstack_new(64);
-   pebble_t root = (pebble_t){(fmdpos_t){0,0,index->size},0,0xFFFFFFFF};
+   // hit stack.
+   pstack_t * hits = pstack_new(128);
+
+#if COMPUTE_INDELS == 1
+   pebble_t root = (pebble_t){(bwpos_t){0,0,index->size-1},0,0xFFFFFFFF};
    int8_t * r = root.row + MAXTAU + 1;
    for (int i = 1; i <= MAXTAU + 1; i++) r[i] = r[-i] = i;
+#else
+   pebble_t root = (pebble_t){(bwpos_t){0,0,index->size-1},0,0};
+#endif
    ppush(pebbles, root); 
    // args.
-   arg_t args = {job->seq, kmer, 0, tau, index, pebbles};
+   arg_t args = {job->seq, kmer, 0, tau, index, pebbles, &hits};
    // aux vars.
-   fmdpos_t current = job->beg, next;
-   uint8_t * next_seq = malloc(kmer);
+   bwpos_t current, pos = job->beg;
+   uint8_t * seq = malloc(kmer);
+   char * locus = index->genome + get_sa(pos.sp, index->sa, index->sa_bits);
+   uint64_t kmers = 0;
    int start = 0;
    // Iterate over all kmers.
-   while (current.fp != job->end) {
+   while (pos.sp < job->end) {
+      // Increase kmer count.
+      kmers++;
+      
+      // Report progress to scheduler.
       if ((computed>>20) > (last>>20)) {
          pthread_mutex_lock(job->mutex);
          *(job->computed) += computed - last;
@@ -189,66 +343,60 @@ annotate_mt
          pthread_mutex_unlock(job->mutex);
          last = computed;
       }
-      // Get next seq.
-      args.trail = find_next(current, &next, next_seq, kmer, index);
-      int hits = 0;
-      // Reset pebbles.
-      for (int j = start + 1; j <= args.trail; j++) pebbles[j]->pos = 0;
 
-      /*
-      // DEBUG.
-      for (int j = 0; j < kmer; j++) pc_cur[j] = pc_nt[args.query[j]];
-      pc_cur[kmer] = 0;
-      fprintf(stdout, "sequence fp:%ld,sz:%ld: %s\n", current.fp, current.sz, pc_cur);
-      */
+      // Get next seq.
+      current = pos;
+      memcpy(seq, args.query, kmer);
+      args.trail = find_next(&pos, seq, locus, kmer, job->cache, index);
+      // Reset hits and pebbles.
+      hits->pos = 0;
+      for (int j = start + 1; j <= args.trail; j++) pebbles[j]->pos = 0;
 
       // Iterate over pebbles.
       for (int p = 0 ; p < pebbles[start]->pos ; p++) {
          // Next pebble.
          pebble_t pebble = pebbles[start]->pebble[p];
-         /*
-         // DEBUG.
-         int score = MAXTAU;
-         for (int i = 0; i < 2*MAXTAU+3; i++) if (pebble.row[i] < score) score = pebble.row[i];
-         memcpy(pc_cur,index->genome+get_sa(pebble.pos.fp, index->sa, index->sa_bits), pebble.depth);
-         pc_cur[pebble.depth] = 0;
-         fprintf(stdout, "pebble[score:%d], fp:%ld. sz:%ld\n", score, pebble.pos.fp, pebble.pos.sz);
-         */
          // Poucet search.
-         hits += poucet_mismatch(pebble, args);
-         //hits += poucet(pebble, args);
+#if COMPUTE_INDELS == 1
+         poucet(pebble, args);         
+#else
+         poucet_mismatch(pebble, args);
+#endif
       }
-      // write result.
-      uint64_t * sa_values = malloc(current.sz*sizeof(uint64_t));
-      get_sa_range(current.fp, current.sz, index->sa, index->sa_bits, sa_values);
-      uint8_t value = (uint8_t) min(255,hits);
-      for (uint64_t i = 0; i < current.sz; i++) {
-         job->counts[sa_values[i]] = value;
-      } 
-      computed += current.sz;
-      free(sa_values);
-      // swap query sequences.
-      uint8_t * tmp = args.query;
-      args.query = next_seq;
-      next_seq = tmp;
+      
+      // Add self_count to matched loci.
+      uint64_t hits_count = 0, self_count = current.ep - current.sp + 1;
+      for (int h = 0; h < hits->pos; h++) {
+         job->counts[hits->pebble[h].pos.sp] = (uint8_t) min(255, self_count + job->counts[hits->pebble[h].pos.sp]);
+         hits_count += hits->pebble[h].pos.ep - hits->pebble[h].pos.sp + 1;
+      }
+      // Add the remaining hit count to current loci.
+      job->counts[current.sp] = (uint8_t) min(255, job->counts[current.sp] + self_count + hits_count);
+
+      // Update computed values.
+      computed += current.ep - current.sp + 1;
+      // update query sequence.
+      memcpy(args.query, seq, kmer);
       // update bw interval and start depth.
-      current = next;
       start = args.trail;
    }
 
    pthread_mutex_lock(job->mutex);
    *(job->done) += 1;
    *(job->computed) += computed - last;
+   *(job->kmers) += kmers;
    pthread_cond_signal(job->monitor);
    pthread_mutex_unlock(job->mutex);
    
    free(args.query);
-   free(next_seq);
+   free(seq);
+   free(locus);
    for (int i = 0; i < kmer; i++) free(pebbles[i]);
 
    return NULL;
 }
 
+#if COMPUTE_INDELS == 1
 int
 poucet
 (
@@ -283,12 +431,6 @@ poucet
    extend_fw_all(pebble.pos, newpos, arg.index);
 
    for (int nt = 0 ; nt < NUM_BASES ; nt++) {
-      /*
-      // DEBUG.
-      pc_cur[depth] = pc_nt[nt];
-      pc_cur[depth+1] = 0;
-      fprintf(stdout, "fp:%ld,sz:%ld,h:%d\t%s",newpos[nt].fp,newpos[nt].sz,hits,pc_cur);
-      */
       // Check whether child 'i' exists.
       if (newpos[nt].sz < 1) {
          // DEBUG.
@@ -351,85 +493,6 @@ poucet
    return hits;
 }
 
-int
-poucet_mismatch
-(
- pebble_t  pebble,
- arg_t     arg
-)
-{
-   int8_t prow = pebble.row[MAXTAU + 1];
-   int depth = pebble.depth;
-   int tau = arg.tau;
-
-   // Penalty for match/mismatch and insertion/deletion resepectively.
-   int hits = 0;
-
-   // Compute new index intervals.
-   fmdpos_t newpos[NUM_BASES];
-   extend_fw_all(pebble.pos, newpos, arg.index);
-
-   for (int nt = 0 ; nt < NUM_BASES ; nt++) {
-      // Check whether child 'i' exists.
-      if (newpos[nt].sz < 1) continue;
-
-      // Center cell.
-      int score = prow + (nt != arg.query[depth]);
-
-      // Stop searching if 'tau' is exceeded.
-      if (score > tau) continue;
-
-      // Reached height of the trie: it's a hit!
-      // Just add the interval size.
-      if (depth + 1 == arg.kmer) {
-         hits += newpos[nt].sz;
-         continue;
-      }
-
-      // Update pebble.
-      pebble_t newpebble = {
-         .pos  = newpos[nt],
-         .depth = depth + 1,
-         .path = (pebble.path << 3) | nt
-      };
-      newpebble.row[MAXTAU+1] = score;
-
-      
-      // Cache nodes in pebbles when trailing.
-      if (depth < arg.trail)
-         ppush(arg.pebbles + depth + 1, newpebble);
-
-      // Dash path if mismatches exhausted.
-      if (depth >= arg.trail && score == tau) {
-         hits += dash_mismatch(newpebble, arg);
-         continue;
-      }
-
-      // Recursive call.
-      hits += poucet_mismatch(newpebble, arg);
-   }
-
-   return hits;
-}
-
-int
-dash_mismatch
-(
- pebble_t    pebble,
- const arg_t arg
-)
-{
-   int hits = 0;
-   fmdpos_t pos = pebble.pos;
-   for (int i = pebble.depth; i < arg.kmer; i++) {
-      int nt = arg.query[i];
-      pos = extend_fw(nt,pos,arg.index);
-      if (pos.sz < 1) break;
-   }
-   if (pos.sz > 0) hits += pos.sz;
-   return hits;
-}
-
 
 int
 dash
@@ -482,3 +545,90 @@ dash
 
    return hits;
 }
+
+
+#else
+
+
+int
+poucet_mismatch
+(
+ pebble_t  pebble,
+ arg_t     arg
+)
+{
+   int depth = pebble.depth;
+   int tau = arg.tau;
+
+   // Compute new index intervals.
+   bwpos_t newpos[NUM_BASES];
+   suffix_extend_all(pebble.pos, newpos, arg.index);
+
+   // Since we query the reverse complement of the kmers, we start by the last
+   // (alphabetically), hence we don't need to recompute the right parts of the
+   // tree since these were queried and reported by the previous kmers.
+   //   for (int nt = (pebble.score ? 0 : arg.query[depth]) ; nt < NUM_BASES-1 ; nt++) {
+   //   for (int nt = 0 ; nt <= (pebble.score ? 3 : arg.query[depth]) ; nt++) {
+   for (int nt = 0 ; nt < NUM_BASES-1 ; nt++) {
+      int8_t score = pebble.score;
+      // Check whether child 'i' exists.
+      if (newpos[nt].ep < newpos[nt].sp)
+         continue;
+
+      // Center cell.
+      score += (nt != arg.query[depth]);
+
+      // Stop searching if 'tau' is exceeded.
+      if (score > tau) continue;
+
+      // Update pebble.
+      pebble_t newpebble = {
+         .pos  = newpos[nt],
+         .depth = depth + 1,
+         .score = score
+      };
+
+      // Reached height of the trie: it's a hit!
+      // Just add the interval size.
+      if (depth + 1 == arg.kmer) {
+         if (score) ppush(arg.hits, newpebble);
+         continue;
+      }
+     
+      // Cache nodes in pebbles when trailing.
+      if (depth < arg.trail)
+         ppush(arg.pebbles + depth + 1, newpebble);
+
+      // Dash path if mismatches exhausted.
+      if (depth >= arg.trail && score == tau) {
+         dash_mismatch(newpebble, arg);
+         continue;
+      }
+
+      // Recursive call.
+      poucet_mismatch(newpebble, arg);
+   }
+
+   return 0;
+}
+
+int
+dash_mismatch
+(
+ pebble_t    pebble,
+ const arg_t arg
+)
+{
+   bwpos_t pos = pebble.pos;
+   for (int i = pebble.depth; i < arg.kmer; i++) {
+      int nt = arg.query[i];
+      suffix_extend(nt,pos,&pos,arg.index);
+      if (pos.ep < pos.sp) break;
+   }
+   if (pos.sp <= pos.ep) 
+      ppush(arg.hits, (pebble_t){.pos = pos});
+
+   return 0;
+}
+#endif
+

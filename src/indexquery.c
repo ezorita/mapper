@@ -272,6 +272,29 @@ suffix_extend
    return 0;
 }
 
+int
+suffix_extend_all
+(
+ bwpos_t   pos,
+ bwpos_t * newpos,
+ index_t * index
+)
+{
+   // Compute occs for all nt in one call (1 cache miss).
+   int64_t occ_sp[NUM_BASES];
+   int64_t occ_ep[NUM_BASES];
+   if (get_occ((int64_t)pos.sp - 1, index->occ, occ_sp)) return -1;
+   if (get_occ((int64_t)pos.ep, index->occ, occ_ep)) return -1;
+   // Update pointers.
+   for (int nt = 0; nt < NUM_BASES; nt++) {
+      newpos[nt].sp = index->c[nt] + occ_sp[nt];
+      newpos[nt].ep = index->c[nt] + occ_ep[nt] - 1;
+      if (newpos[nt].ep >= index->size || newpos[nt].sp >= index->size) return -1;
+      newpos[nt].depth = pos.depth + 1;
+   }
+   return 0;
+}
+
 
 int
 suffix_shrink

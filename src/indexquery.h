@@ -45,6 +45,7 @@ fmdpos_t extend_fw         (int nt, fmdpos_t pos, index_t * index);
 int      extend_bw_all     (fmdpos_t pos, fmdpos_t * newpos, index_t * index);
 int      extend_fw_all     (fmdpos_t pos, fmdpos_t * newpos, index_t * index);
 int      suffix_extend     (int nt, bwpos_t pos, bwpos_t * newpos, index_t * index);
+int      suffix_extend_all (bwpos_t pos, bwpos_t * newpos, index_t * index);
 int      suffix_shrink     (bwpos_t pos, bwpos_t * newpos, index_t * index);
 int      suffix_ssv_search (uint64_t pos, bwpos_t * newpos, index_t * index);
 int      suffix_ssv        (bwpos_t pos, bwpos_t * newpos, index_t * index);
