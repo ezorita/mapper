@@ -7,7 +7,7 @@ htable_new
  int    index_bits,
  int    probe_bits,
  size_t elm_size
-)
+ )
 {
    htable_t * htable = calloc(sizeof(htable_t) + elm_size * (1 << index_bits), 1);
    if (htable == NULL) {
@@ -34,7 +34,7 @@ htable_insert
  uint32_t          data_pos,
  htable_t        * table,
  pthread_mutex_t * mutex
-)
+ )
 {
    if (data_pos >= table->elm_size) return -1;
    if (table->count >= table->index_bitmask) return -1;
@@ -71,7 +71,7 @@ ppush
 (
  pstack_t ** stackp,
  pebble_t    pebble
-)
+ )
 {
    pstack_t * stack = *stackp;
    if (stack->pos >= stack->size) {
@@ -89,7 +89,7 @@ pstack_t *
 pstack_new
 (
  size_t size
-)
+ )
 {
    if (size < 1) size = 1;
    pstack_t * stack = malloc(sizeof(pstack_t) + size*sizeof(pebble_t));
@@ -105,7 +105,7 @@ seq_trail
  char * seq_a,
  char * seq_b,
  int    kmer
-)
+ )
 {
    int lcp = 0;
    while (translate[(int)seq_a[lcp]] == translate[(int)seq_b[lcp]] && lcp < kmer) lcp++;
@@ -117,7 +117,7 @@ reverse_duplicate
 (
  char * seq,
  int    kmer
-)
+ )
 /*
 ** This function takes a seq from the genome and compares
 ** it with its reverse complement. Returns 1 (duplicate) if
@@ -131,9 +131,21 @@ reverse_duplicate
 */
 {
    for (int i = 0, j = kmer-1; i < kmer; i++, j--) {
-      if (translate_rc[(int)seq[j]] < translate[(int)seq[i]]) {
-         return 1;
-      }
+      if (translate_rc[(int)seq[j]] == translate[(int)seq[i]]) continue;
+      return translate_rc[(int)seq[j]] < translate[(int)seq[i]];
+   }
+   return 0;
+}
+
+int
+contains_n
+(
+ char * seq,
+ int   kmer
+)
+{
+   for (int i = 0; i < kmer; i++) {
+      if (seq[i] == 'n' || seq[i] == 'N') return 1;
    }
    return 0;
 }
@@ -142,15 +154,16 @@ reverse_duplicate
 int
 find_next
 (
- bwpos_t * pos,
- uint8_t * seq,
- char    * locus,
- int       kmer,
- bwpos_t * pos_cache,
- index_t * index
-)
+ bwpos_t  * pos,
+ uint8_t  * seq,
+ char     * locus,
+ int        kmer,
+ bwpos_t  * pos_cache,
+ index_t  * index
+ )
 {
    int lcp = 0;
+   int revdup = 0;
    do {
       uint64_t ptr = pos->ep;
       uint64_t sa_beg;
@@ -167,6 +180,7 @@ find_next
          }
          sa_beg = get_sa(ptr,index->sa,index->sa_bits);
       } while (sa_beg >= index->size - kmer);
+
       // Keep pointer to next kmer (genome sequence).
       char * next_locus = index->genome+sa_beg;
 
@@ -185,9 +199,11 @@ find_next
          // Update cache with backward search of new nucleotides (using reverse complement).
          suffix_extend(seq[i],pos_cache[i],pos_cache+i+1,index);
       }
+
       // Compute the interval of the new kmer using the revcomp interval size.
       *pos = (bwpos_t){.sp = ptr, .ep = ptr + pos_cache[kmer].ep - pos_cache[kmer].sp, .depth = kmer};
-   } while (reverse_duplicate(locus, kmer));
+      revdup = reverse_duplicate(next_locus, kmer) | contains_n(next_locus, kmer);
+   } while (revdup);
    // Repeat the whole process if the kmer is a duplicate.
    
    return lcp;
@@ -201,12 +217,10 @@ annotate
  int        tau,
  index_t  * index,
  int        threads
-)
+ )
 {
 
    // Alloc variables.
-   uint64_t seqs = index->size/threads;
-   annjob_t ** job = malloc(threads*sizeof(annjob_t*));
    pthread_mutex_t * mutex = malloc(sizeof(pthread_mutex_t));
    pthread_cond_t  * monitor = malloc(sizeof(pthread_cond_t));
    uint64_t * computed = malloc(sizeof(uint64_t));
@@ -220,29 +234,51 @@ annotate
    *kmers = 0;
    pthread_mutex_init(mutex,NULL);
    pthread_cond_init(monitor,NULL);
+
+   // Find 'NXXX..' interval.
+   bwpos_t n_pos = {.sp = 0, .ep = index->size-1, .depth = 0};
+   uint64_t eff_size = index->size;
+   suffix_extend(translate['N'], n_pos, &n_pos, index);
+   if (n_pos.ep >= n_pos.sp) eff_size = n_pos.sp;
+
    // Compute thread jobs.
-   for (int i = 0; i < threads; i++) {
+   int      njobs = 10*threads;
+   uint64_t seqs  = eff_size/njobs;
+   annjob_t ** job = malloc(njobs*sizeof(annjob_t*));
+   for (int i = 0; i < njobs; i++) {
       // Allocate job.
       job[i] = malloc(sizeof(annjob_t));
       // Compute sequence offset in BWT.
       uint64_t offset = i*seqs;
-      // Extend kmer from suffix array.
-      uint64_t base = index->size;
-      do {
-         base = get_sa(++offset, index->sa, index->sa_bits);
-      } while (base >= index->size - kmer);
+      // Find a non-duplicated sequence without 'N'.
+      int duplicate = 0;
       uint8_t * seq = malloc(kmer);
-
-      // Alloc interval cache.
       bwpos_t * cache = malloc((kmer+1) * sizeof(bwpos_t));
-      cache[0] = (bwpos_t){0,0,index->size-1};;
-      int ftr[5] = {3,2,1,0,4};
-      for (int j = 0; j < kmer; j++) {
-         // Backward search the reverse complement to reuse the cached intervals.
-         int nt = translate[(int)index->genome[base+j]];
-         seq[j] = ftr[nt];
-         suffix_extend(seq[j],cache[j],cache+j+1,index);
+      do {
+         // Extend kmer from suffix array.
+         uint64_t base;
+         do {
+            base = get_sa(++offset, index->sa, index->sa_bits);
+         } while (base >= index->size - kmer);
+
+         // Alloc interval cache.
+         cache[0] = (bwpos_t){0,0,index->size-1};;
+         int ftr[5] = {3,2,1,0,4};
+         for (int j = 0; j < kmer; j++) {
+            // Backward search the reverse complement to reuse the cached intervals.
+            int nt = translate[(int)index->genome[base+j]];
+            seq[j] = ftr[nt];
+            suffix_extend(seq[j],cache[j],cache+j+1,index);
+         }
+         duplicate = reverse_duplicate(index->genome+base, kmer) | contains_n(index->genome+base, kmer);
+      } while (duplicate && offset < eff_size);
+
+      // Break if eff_size is covered.
+      if (offset >= eff_size) {
+         njobs = i;
+         break;
       }
+
       // Compute pos using the forward start pointer and revcomp interval size.
       bwpos_t pos = {.sp = offset, .ep = offset + cache[kmer].ep - cache[kmer].sp, .depth = kmer};
       
@@ -260,30 +296,38 @@ annotate
       job[i]->counts = counts;
    }
    // Set job end indices.
-   for (int i = 0; i < threads-1; i++) job[i]->end = job[i+1]->beg.sp;
-   job[threads-1]->end = index->size;
+   for (int i = 0; i < njobs-1; i++) job[i]->end = job[i+1]->beg.sp;
+   job[njobs-1]->end = eff_size;
+
 
    // Run threads.
    for (int i = 0; i < threads; i++) {
-
       pthread_t thread;
       pthread_create(&thread,NULL,annotate_mt,job[i]);
       pthread_detach(thread);
-
       //      annotate_mt(job[i]);
-  
    }
    // Sleep and wait for thread signals.
+   int runcount = threads;
    pthread_mutex_lock(mutex);
-   while (*done < threads) {
-      //      fprintf(stderr, "annotating... %ld/%ld\r", *computed, index->size);
+   while (*done < njobs) {
+      // Run new threads.
+      for (int i = runcount; i < min(*done + threads, njobs); i++) {
+         pthread_t thread;
+         pthread_create(&thread,NULL,annotate_mt,job[i]);
+         pthread_detach(thread);
+      }
+      // Update submitted jobs.
+      runcount = *done + threads;
+      // Report progress.
       fprintf(stderr, "annotating... %.2f%%\r", *computed*100.0/index->size);
+      // Wait for signal.
       pthread_cond_wait(monitor,mutex);
    }
    pthread_mutex_unlock(mutex);
 
    //   fprintf(stderr, "annotating... %ld/%ld\n", *computed, index->size);
-   fprintf(stderr, "annotating... 100.00%%\n");
+   fprintf(stderr, "annotating... %.2f%%\n", *computed*100.0/index->size);
    fprintf(stderr, "kmers: %ld unique kmers out of %ld genomic loci.\n",*kmers,index->size-1);
 
    for (int i = 0; i < threads; i++) { free(job[i]->seq); free(job[i]->cache); free(job[i]); }
@@ -293,7 +337,6 @@ annotate
    free(computed);
    free(done);
    free(kmers);
-
    return 0;
 }
 
@@ -301,7 +344,7 @@ void *
 annotate_mt
 (
  void * argp
-)
+ )
 {
    uint64_t computed = 0, last = 0;
    annjob_t * job = (annjob_t *)argp;
@@ -312,7 +355,6 @@ annotate_mt
    pstack_t ** pebbles = malloc(kmer*sizeof(pstack_t*));
    for (int i = 0; i < kmer; i++) pebbles[i] = pstack_new(64);
    // hit stack.
-   pstack_t * hits = pstack_new(128);
 
 #if COMPUTE_INDELS == 1
    pebble_t root = (pebble_t){(bwpos_t){0,0,index->size-1},0,0xFFFFFFFF};
@@ -323,13 +365,17 @@ annotate_mt
 #endif
    ppush(pebbles, root); 
    // args.
-   arg_t args = {job->seq, kmer, 0, tau, index, pebbles, &hits};
+   arg_t args = {job->seq, kmer, 0, tau, index, pebbles};
    // aux vars.
    bwpos_t current, pos = job->beg;
    uint8_t * seq = malloc(kmer);
    char * locus = index->genome + get_sa(pos.sp, index->sa, index->sa_bits);
    uint64_t kmers = 0;
    int start = 0;
+
+   fprintf(stderr,"[%d] New job\tsp:%ld\tep:%ld.\n", pthread_self(),job->beg.sp, job->end);
+
+
    // Iterate over all kmers.
    while (pos.sp < job->end) {
       // Increase kmer count.
@@ -348,11 +394,12 @@ annotate_mt
       current = pos;
       memcpy(seq, args.query, kmer);
       args.trail = find_next(&pos, seq, locus, kmer, job->cache, index);
+
       // Reset hits and pebbles.
-      hits->pos = 0;
       for (int j = start + 1; j <= args.trail; j++) pebbles[j]->pos = 0;
 
       // Iterate over pebbles.
+      uint64_t hits = 0;
       for (int p = 0 ; p < pebbles[start]->pos ; p++) {
          // Next pebble.
          pebble_t pebble = pebbles[start]->pebble[p];
@@ -360,27 +407,24 @@ annotate_mt
 #if COMPUTE_INDELS == 1
          poucet(pebble, args);         
 #else
-         poucet_mismatch(pebble, args);
+         hits += poucet_mismatch(pebble, args);
 #endif
       }
-      
-      // Add self_count to matched loci.
-      uint64_t hits_count = 0, self_count = current.ep - current.sp + 1;
-      for (int h = 0; h < hits->pos; h++) {
-         job->counts[hits->pebble[h].pos.sp] = (uint8_t) min(255, self_count + job->counts[hits->pebble[h].pos.sp]);
-         hits_count += hits->pebble[h].pos.ep - hits->pebble[h].pos.sp + 1;
-      }
+
       // Add the remaining hit count to current loci.
-      job->counts[current.sp] = (uint8_t) min(255, job->counts[current.sp] + self_count + hits_count);
+      job->counts[current.sp] = (uint8_t) min(255, hits);
 
       // Update computed values.
-      computed += current.ep - current.sp + 1;
+      computed += pos.sp - current.sp;
       // update query sequence.
       memcpy(args.query, seq, kmer);
       // update bw interval and start depth.
       start = args.trail;
    }
 
+   fprintf(stderr,"[%d] Job done.\n", pthread_self());
+
+   // Report to scheduler.
    pthread_mutex_lock(job->mutex);
    *(job->done) += 1;
    *(job->computed) += computed - last;
@@ -388,9 +432,7 @@ annotate_mt
    pthread_cond_signal(job->monitor);
    pthread_mutex_unlock(job->mutex);
    
-   free(args.query);
    free(seq);
-   free(locus);
    for (int i = 0; i < kmer; i++) free(pebbles[i]);
 
    return NULL;
@@ -402,7 +444,7 @@ poucet
 (
  pebble_t  pebble,
  arg_t     arg
-)
+ )
 {
    int8_t * prow = pebble.row + MAXTAU + 1;
    int depth = pebble.depth;
@@ -499,7 +541,7 @@ dash
 (
  pebble_t    pebble,
  const arg_t arg
-)
+ )
 {
    int hits = 0;
    int8_t * r = pebble.row +MAXTAU+1;
@@ -550,12 +592,12 @@ dash
 #else
 
 
-int
+uint64_t
 poucet_mismatch
 (
  pebble_t  pebble,
  arg_t     arg
-)
+ )
 {
    int depth = pebble.depth;
    int tau = arg.tau;
@@ -569,7 +611,8 @@ poucet_mismatch
    // tree since these were queried and reported by the previous kmers.
    //   for (int nt = (pebble.score ? 0 : arg.query[depth]) ; nt < NUM_BASES-1 ; nt++) {
    //   for (int nt = 0 ; nt <= (pebble.score ? 3 : arg.query[depth]) ; nt++) {
-   for (int nt = 0 ; nt < NUM_BASES-1 ; nt++) {
+   uint64_t hits = 0;
+   for (int nt = 0 ; nt < NUM_BASES; nt++) {
       int8_t score = pebble.score;
       // Check whether child 'i' exists.
       if (newpos[nt].ep < newpos[nt].sp)
@@ -591,7 +634,7 @@ poucet_mismatch
       // Reached height of the trie: it's a hit!
       // Just add the interval size.
       if (depth + 1 == arg.kmer) {
-         if (score) ppush(arg.hits, newpebble);
+         hits += newpos[nt].ep - newpos[nt].sp + 1;
          continue;
       }
      
@@ -601,23 +644,23 @@ poucet_mismatch
 
       // Dash path if mismatches exhausted.
       if (depth >= arg.trail && score == tau) {
-         dash_mismatch(newpebble, arg);
+         hits += dash_mismatch(newpebble, arg);
          continue;
       }
 
       // Recursive call.
-      poucet_mismatch(newpebble, arg);
+      hits += poucet_mismatch(newpebble, arg);
    }
 
-   return 0;
+   return hits;
 }
 
-int
+uint64_t
 dash_mismatch
 (
  pebble_t    pebble,
  const arg_t arg
-)
+ )
 {
    bwpos_t pos = pebble.pos;
    for (int i = pebble.depth; i < arg.kmer; i++) {
@@ -626,7 +669,7 @@ dash_mismatch
       if (pos.ep < pos.sp) break;
    }
    if (pos.sp <= pos.ep) 
-      ppush(arg.hits, (pebble_t){.pos = pos});
+      return pos.ep - pos.sp + 1;
 
    return 0;
 }

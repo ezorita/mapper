@@ -76,7 +76,7 @@ get_occ
       // Sum partial word.
       for (int j = 0; j < NUM_BASES; j++)
          offset[j] += __builtin_popcountl(occ[wrdptr++] >> (OCC_WORD_SIZE - 1 - bit));
-      // Returm sum.
+      // Return sum.
       for (int j = 0; j < NUM_BASES; j++)
          val[j] = occ[mrkptr++] + offset[j];
    } else {

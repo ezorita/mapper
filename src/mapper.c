@@ -108,8 +108,9 @@ int main(int argc, char *argv[])
       if (index == NULL)
          return EXIT_FAILURE;
 
-      int kmer = 25, tau = 1;
-      annotate(kmer,tau,index,1);
+      int kmer = 25, tau = 1, ann_threads = 10;
+      fprintf(stderr, "annotating genome with (%d,%d) counts using %d threads.\n", kmer, tau, ann_threads);
+      annotate(kmer,tau,index,ann_threads);
 
       /*
       // DEBUG.
