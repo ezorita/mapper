@@ -354,6 +354,7 @@ annotate_mt
    // pebble stack.
    pstack_t ** pebbles = malloc(kmer*sizeof(pstack_t*));
    for (int i = 0; i < kmer; i++) pebbles[i] = pstack_new(64);
+   pstack_t * hits = pstack_new(64);
    // hit stack.
 
 #if COMPUTE_INDELS == 1
@@ -365,16 +366,13 @@ annotate_mt
 #endif
    ppush(pebbles, root); 
    // args.
-   arg_t args = {job->seq, kmer, 0, tau, index, pebbles};
+   arg_t args = {job->seq, kmer, 0, tau, index, pebbles, &hits};
    // aux vars.
    bwpos_t current, pos = job->beg;
    uint8_t * seq = malloc(kmer);
    char * locus = index->genome + get_sa(pos.sp, index->sa, index->sa_bits);
    uint64_t kmers = 0;
    int start = 0;
-
-   fprintf(stderr,"[%d] New job\tsp:%ld\tep:%ld.\n", pthread_self(),job->beg.sp, job->end);
-
 
    // Iterate over all kmers.
    while (pos.sp < job->end) {
@@ -393,13 +391,18 @@ annotate_mt
       // Get next seq.
       current = pos;
       memcpy(seq, args.query, kmer);
+      // DEBUG.
       args.trail = find_next(&pos, seq, locus, kmer, job->cache, index);
-
+      // DISABLE POUCET SEARCH.
+      /*
+      args.trail = 0;
+      find_next(&pos, seq, locus, kmer, job->cache, index);
+      */
       // Reset hits and pebbles.
       for (int j = start + 1; j <= args.trail; j++) pebbles[j]->pos = 0;
 
       // Iterate over pebbles.
-      uint64_t hits = 0;
+      hits->pos = 0;
       for (int p = 0 ; p < pebbles[start]->pos ; p++) {
          // Next pebble.
          pebble_t pebble = pebbles[start]->pebble[p];
@@ -407,12 +410,17 @@ annotate_mt
 #if COMPUTE_INDELS == 1
          poucet(pebble, args);         
 #else
-         hits += poucet_mismatch(pebble, args);
+         poucet_mismatch(pebble, args);
 #endif
       }
-
+      uint64_t current_loci = current.ep - current.sp + 1;
+      uint64_t hit_count = 0;
+      for (int h = 0; h < hits->pos; h++) {
+         job->counts[hits->pebble[h].pos.sp] += current_loci;
+         hit_count += hits->pebble[h].pos.ep - hits->pebble[h].pos.sp + 1;
+      }
       // Add the remaining hit count to current loci.
-      job->counts[current.sp] = (uint8_t) min(255, hits);
+      job->counts[current.sp] = (uint8_t)min(255,job->counts[current.sp] + hit_count + current_loci);
 
       // Update computed values.
       computed += pos.sp - current.sp;
@@ -421,8 +429,6 @@ annotate_mt
       // update bw interval and start depth.
       start = args.trail;
    }
-
-   fprintf(stderr,"[%d] Job done.\n", pthread_self());
 
    // Report to scheduler.
    pthread_mutex_lock(job->mutex);
@@ -433,6 +439,7 @@ annotate_mt
    pthread_mutex_unlock(job->mutex);
    
    free(seq);
+   free(hits);
    for (int i = 0; i < kmer; i++) free(pebbles[i]);
 
    return NULL;
@@ -503,7 +510,7 @@ poucet
       if (score > tau) continue;
 
       // Reached height of the trie: it's a hit!
-      // Just add the interval size.
+      // Add the interval size.
       if (depth + 1 == arg.kmer) {
          hits += newpos[nt].sz;
          continue;
@@ -609,10 +616,9 @@ poucet_mismatch
    // Since we query the reverse complement of the kmers, we start by the last
    // (alphabetically), hence we don't need to recompute the right parts of the
    // tree since these were queried and reported by the previous kmers.
-   //   for (int nt = (pebble.score ? 0 : arg.query[depth]) ; nt < NUM_BASES-1 ; nt++) {
+   for (int nt = (pebble.score ? 0 : arg.query[depth]) ; nt < NUM_BASES; nt++) {
    //   for (int nt = 0 ; nt <= (pebble.score ? 3 : arg.query[depth]) ; nt++) {
-   uint64_t hits = 0;
-   for (int nt = 0 ; nt < NUM_BASES; nt++) {
+   //   for (int nt = 0 ; nt < NUM_BASES; nt++) {
       int8_t score = pebble.score;
       // Check whether child 'i' exists.
       if (newpos[nt].ep < newpos[nt].sp)
@@ -634,7 +640,7 @@ poucet_mismatch
       // Reached height of the trie: it's a hit!
       // Just add the interval size.
       if (depth + 1 == arg.kmer) {
-         hits += newpos[nt].ep - newpos[nt].sp + 1;
+         if (score) ppush(arg.hits, newpebble);
          continue;
       }
      
@@ -644,15 +650,15 @@ poucet_mismatch
 
       // Dash path if mismatches exhausted.
       if (depth >= arg.trail && score == tau) {
-         hits += dash_mismatch(newpebble, arg);
+         dash_mismatch(newpebble, arg);
          continue;
       }
 
       // Recursive call.
-      hits += poucet_mismatch(newpebble, arg);
+      poucet_mismatch(newpebble, arg);
    }
 
-   return hits;
+   return 0;
 }
 
 uint64_t
@@ -669,7 +675,7 @@ dash_mismatch
       if (pos.ep < pos.sp) break;
    }
    if (pos.sp <= pos.ep) 
-      return pos.ep - pos.sp + 1;
+      ppush(arg.hits,(pebble_t){.pos = pos, .depth = arg.kmer, .score = arg.tau});
 
    return 0;
 }

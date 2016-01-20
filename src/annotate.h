@@ -43,6 +43,7 @@ typedef struct {
    int         tau;
    index_t   * index;
    pstack_t ** pebbles;
+   pstack_t ** hits;
 } arg_t;
 
 typedef struct {
