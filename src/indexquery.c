@@ -134,36 +134,6 @@ get_occ_nt
 
 }
 
-int
-extend_bw_all
-(
- fmdpos_t   pos,
- fmdpos_t * new,
- index_t  * index
-)
-{
-   int64_t occ_sp[NUM_BASES];
-   int64_t occ_ep[NUM_BASES];
-   get_occ(pos.fp - 1, index->occ, occ_sp);
-   get_occ(pos.fp + pos.sz - 1, index->occ, occ_ep);
-   int64_t tot = 0;
-   for (int j = 0; j < NUM_BASES; j++) {
-      new[j].fp = index->c[j] + occ_sp[j];
-      new[j].sz = occ_ep[j] - occ_sp[j];
-      tot += new[j].sz;
-   }
-   // Intervals of the reverse strand pointer.
-   // T (wilcard '$' is inside this interval if tot < pos.sz)
-   new[3].rp = pos.rp + (tot < pos.sz);
-   // G-C-A
-   for (int j = 2; j >= 0; j--) new[j].rp = new[j+1].rp + new[j+1].sz;
-   // N
-   new[4].rp = new[0].rp + new[0].sz;
-   
-   return 1;
-}
-
-
 fmdpos_t
 extend_bw
 (
@@ -193,7 +163,7 @@ extend_bw
    // N
    rp[4] = rp[0] + sz[0];
    
-   return (fmdpos_t) {fp[nt], rp[nt], sz[nt]};
+   return (fmdpos_t) {fp[nt], rp[nt], sz[nt], pos.dp + 1};
 }
 
 
@@ -208,9 +178,39 @@ extend_fw
    // Reverse complement.
    if (nt < 4) nt = 3 - nt;
    // Lookup index using the reverse strand.
-   fmdpos_t newpos = extend_bw(nt, (fmdpos_t) {pos.rp, pos.fp, pos.sz}, index);
+   fmdpos_t newpos = extend_bw(nt, (fmdpos_t) {pos.rp, pos.fp, pos.sz, pos.dp}, index);
    // Return position wrt forward strand.
-   return (fmdpos_t){newpos.rp, newpos.fp, newpos.sz};
+   return (fmdpos_t){newpos.rp, newpos.fp, newpos.sz, newpos.dp};
+}
+
+int
+extend_bw_all
+(
+ fmdpos_t   pos,
+ fmdpos_t * new,
+ index_t  * index
+)
+{
+   int64_t occ_sp[NUM_BASES];
+   int64_t occ_ep[NUM_BASES];
+   get_occ(pos.fp - 1, index->occ, occ_sp);
+   get_occ(pos.fp + pos.sz - 1, index->occ, occ_ep);
+   int64_t tot = 0;
+   for (int j = 0; j < NUM_BASES; j++) {
+      new[j].fp = index->c[j] + occ_sp[j];
+      new[j].sz = occ_ep[j] - occ_sp[j];
+      new[j].dp = pos.dp + 1;
+      tot += new[j].sz;
+   }
+   // Intervals of the reverse strand pointer.
+   // T (wilcard '$' is inside this interval if tot < pos.sz)
+   new[3].rp = pos.rp + (tot < pos.sz);
+   // G-C-A
+   for (int j = 2; j >= 0; j--) new[j].rp = new[j+1].rp + new[j+1].sz;
+   // N
+   new[4].rp = new[0].rp + new[0].sz;
+   
+   return 1;
 }
 
 int
@@ -222,12 +222,12 @@ extend_fw_all
 )
 {
    fmdpos_t tmp[NUM_BASES];
-   extend_bw_all((fmdpos_t) {pos.rp, pos.fp, pos.sz}, tmp, index);
-   newpos[0] = (fmdpos_t) {tmp[3].rp, tmp[3].fp, tmp[3].sz};
-   newpos[1] = (fmdpos_t) {tmp[2].rp, tmp[2].fp, tmp[2].sz};
-   newpos[2] = (fmdpos_t) {tmp[1].rp, tmp[1].fp, tmp[1].sz};
-   newpos[3] = (fmdpos_t) {tmp[0].rp, tmp[0].fp, tmp[0].sz};
-   newpos[4] = (fmdpos_t) {tmp[4].rp, tmp[4].fp, tmp[4].sz};
+   extend_bw_all((fmdpos_t) {pos.rp, pos.fp, pos.sz, pos.dp}, tmp, index);
+   newpos[0] = (fmdpos_t) {tmp[3].rp, tmp[3].fp, tmp[3].sz, tmp[3].dp};
+   newpos[1] = (fmdpos_t) {tmp[2].rp, tmp[2].fp, tmp[2].sz, tmp[2].dp};
+   newpos[2] = (fmdpos_t) {tmp[1].rp, tmp[1].fp, tmp[1].sz, tmp[1].dp};
+   newpos[3] = (fmdpos_t) {tmp[0].rp, tmp[0].fp, tmp[0].sz, tmp[0].dp};
+   newpos[4] = (fmdpos_t) {tmp[4].rp, tmp[4].fp, tmp[4].sz, tmp[4].dp};
    return 0;
 }
 

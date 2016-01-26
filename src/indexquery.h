@@ -33,6 +33,7 @@ struct fmdpos_t {
    int64_t fp;
    int64_t rp;
    int64_t sz;
+   int64_t dp;
 };
 
 
