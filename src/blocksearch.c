@@ -98,6 +98,111 @@ blocksearch_rec
    return;
 }
 
+void
+blocksearch_trail
+(
+ uint8_t   * query,
+ int         slen,
+ int         tau,
+ int         trail,
+ index_t   * index,
+ pstree_t  * tree
+)
+{
+   if (trail >= slen) return;
+   if (trail < 0) trail = 0;
+   return blocksearch_trail_rec(query,0,slen,tau+1,trail,index,tree);
+}
+
+void
+blocksearch_trail_rec
+(
+ uint8_t   * query,
+ int         pos,
+ int         slen,
+ int         blocks,
+ int         trail,
+ index_t   * index,
+ pstree_t  * tree
+)
+{
+   // Reset hits.
+   tree->stack->pos = 0;
+
+   // Compute single block and return.
+   if (blocks == 1) {
+      spath_t p = {.pos = (fmdpos_t){.fp = 0, .rp = 0, .sz = index->size, .dp = 0}, .score = 0};
+      if (seqdash_bw(&p, query, 0, slen, index) == 0)
+         path_push(p, &(tree->stack));
+      return;
+   }
+   // Split block.
+   int blk_l = (blocks >> 1) + (blocks & 1);
+   int blk_r = (blocks >> 1);
+   int beg_r = (slen >> 1) + (slen & 1);
+
+   // Recursive call on left block, don't compute if current data is valid (trail).
+   if (beg_r > trail)
+      blocksearch_trail_rec(query, pos, beg_r, blk_l, trail, index, tree->next_l);
+   // Extend left block to the right.
+   for (int i = 0; i < tree->next_l->stack->pos; i++) {
+      spath_t p = tree->next_l->stack->path[i];
+      seqsearch_fw(p, query+pos+beg_r, 0, slen-beg_r, blocks-1, p.score, 0, index, &(tree->stack));
+   }
+
+   // Recursive call on right block.
+   blocksearch_trail_rec(query, pos + beg_r, slen-beg_r, blk_r, trail, index, tree->next_r);
+   // Extend right block to the left.
+   for (int i = 0; i < tree->next_r->stack->pos; i++) {
+      spath_t p = tree->next_r->stack->path[i];
+      seqsearch_bw(p, query+pos, 0, beg_r, blocks-1, p.score, blk_l, index, &(tree->stack));
+   }
+
+   return;
+}
+
+pstree_t *
+alloc_stack_tree
+(
+ int tau
+)
+{
+   return alloc_stack_tree_rec(tau+1);
+}
+
+pstree_t *
+alloc_stack_tree_rec
+(
+ int        block
+)
+{
+   // End of tree, return null.
+   if (block == 0) return NULL;
+   // Alloc stack for this node.
+   pstree_t * node = calloc(1,sizeof(pstree_t));
+   node->stack = pathstack_new(PATHSTACK_DEF_SIZE);
+   // Build tree with recursive calls.
+   if (block > 1) {
+      node->next_l = alloc_stack_tree_rec((block >> 1) + (block & 1));
+      node->next_r = alloc_stack_tree_rec(block >> 1);
+   } else {
+      node->next_l = node->next_r = NULL;
+   }
+   return node;
+}
+
+void
+free_stack_tree
+(
+ pstree_t * tree
+)
+{
+   free(tree->stack);
+   if (tree->next_l != NULL) free_stack_tree(tree->next_l);
+   if (tree->next_r != NULL) free_stack_tree(tree->next_r);
+   free(tree);
+}
+
 int
 seqsearch_bw
 (
