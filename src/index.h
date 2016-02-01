@@ -69,7 +69,8 @@ struct index_t {
    uint64_t  * lcp_extend_idx;
    lcpdata_t * lcp_sample;
    list64_t  * lcp_extend;
-   // Repeat annotation.
+   // Annotation.
+   void      * seeds;
    uint8_t   * repeats;
    // Chromosome index.
    chr_t     * chr;

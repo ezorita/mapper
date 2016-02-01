@@ -152,6 +152,53 @@ pushvec
    return 0;
 }
 
+/**************************/
+/*** htable  algorithms ***/
+/**************************/
+
+htable_t *
+htable_new
+(
+ uint8_t bits
+)
+{
+   size_t sz = sizeof(htable_t) + (((uint64_t)1)<<(bits-2));
+   htable_t * table = calloc(sz,1);
+   if (table == NULL) return NULL;
+   table->bits = bits;
+   table->mask = 0xFFFFFFFFFFFFFFFF >> (64-bits);
+   return table;
+}
+
+int
+htable_get
+(
+ htable_t * ht,
+ uint64_t   key
+)
+{
+   key &= ht->mask;
+   uint64_t ptr = key >> 2;
+   return (ht->table[ptr] >> ((key << 1) & 7)) & 3;
+}
+
+int
+htable_set
+(
+ htable_t * ht,
+ uint64_t   key,
+ uint8_t    value
+)
+{
+   key &= ht->mask;
+   uint64_t ptr = key >> 2;
+   int        s = (key << 1) & 7;
+   ht->table[ptr] &= ~(0x03 << s);
+   ht->table[ptr] |= (value & 3) << s;
+   return 0;
+}
+
+
 
 /**************************/
 /*** sorting algorithms ***/

@@ -110,28 +110,24 @@ int main(int argc, char *argv[])
 
       int kmer = 25, tau = 1, ann_threads = 10, repeat_thr = 20;
       fprintf(stderr, "annotating genome with (%d,%d) counts using %d threads.\n", kmer, tau, ann_threads);
-      annotate(kmer,tau,repeat_thr,index,ann_threads);
-      //      annotate_bs(kmer,tau,index,ann_threads);
+      annotation_t ann = annotate(kmer,tau,repeat_thr,index,ann_threads);
 
-      /*
-      // DEBUG.
-      fprintf(stderr,"done. Verbose (%d,%d):\n",kmer,tau);
-      char * gen = calloc(kmer+1,1);
-      for (int i = 0; i < index->size - kmer; i++) {
-         memcpy(gen,index->genome+i,kmer);
-         fprintf(stderr, "[%d] %d\t%s\n",i,counts[i],gen);
-      }
-      */
+
       // Write output file.
-      /*
       char * fname = malloc(strlen(argv[2])+4);
       strcpy(fname,argv[2]);
       strcpy(fname+strlen(argv[2]),".ann");
       int fd = open(fname,O_WRONLY | O_CREAT | O_TRUNC,0644);
       uint64_t bytes = 0;
-      while ((bytes += write(fd,counts+bytes,index->size-bytes)) < index->size);
+      // Write hash table.
+      size_t struct_size = sizeof(htable_t) + (((uint64_t)1)<<(ann.htable->bits-2));
+      while ((bytes += write(fd,ann.htable+bytes,struct_size-bytes)) < struct_size);
+      // Write bitfield.
+      struct_size = (index->size >> 4) + 1;
+      while ((bytes += write(fd,ann.bitfield+bytes,struct_size-bytes)) < struct_size);
+      // Close file stream.
       close(fd);
-      */
+
       return 0;
    }
 
@@ -599,7 +595,13 @@ index_format
    index->lcp_extend->size = *lcpext_size;
    index->lcp_extend->val = (int64_t *)(lcpext_size + 1);
    // ANN file.
-   index->repeats = files->ann_file;
+   if (files->ann_file != NULL) {
+      index->seeds = files->ann_file;
+      index->repeats = ((uint8_t *)index->seeds) + sizeof(htable_t) + ((uint64_t)1 << ((htable_t *)index->seeds)->bits);
+   } else {
+      index->seeds = NULL;
+      index->repeats = NULL;
+   }
    //CHR.
    index->chr = files->chr;
    

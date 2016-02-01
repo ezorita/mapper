@@ -8,23 +8,11 @@
 #include "blocksearch.h"
 
 #define COMPUTE_INDELS 0
-/*
+
 typedef struct {
-   size_t   count;
-   size_t   index_bits;
-   uint64_t index_bitmask;
-   size_t   probe_bits;
-   uint64_t probe_bitmask;
-   uint8_t  probe_datamask;
-   size_t   elm_size;
-   uint8_t  c[];
-} htable_t;
-*/
-typedef struct {
-   uint64_t mask;
-   uint8_t  bits;
-   uint8_t  table[];
-} htable_t;
+   htable_t * htable;
+   uint8_t  * bitfield;
+} annotation_t;
 
 typedef struct {
    int               kmer;
@@ -44,12 +32,25 @@ typedef struct {
    htable_t        * htable;
 } annjob_t;
 
-int         reverse_duplicate (uint8_t *, int);
-int         contains_n        (uint8_t *, int);
-int         annotate          (int, int, int, index_t *,int);
-void *      annotate_mt       (void*);
-htable_t *  htable_new        (uint8_t);
+int             reverse_duplicate (uint8_t *, int);
+int             contains_n        (uint8_t *, int);
+annotation_t    annotate          (int, int, int, index_t *,int);
+void          * annotate_mt       (void*);
+
+
 /*
 htable_t *  htable_new        (int, int, size_t);
 int         htable_insert     (uint8_t*, uint32_t, uint8_t, uint32_t, htable_t*, pthread_mutex_t*);
+
+typedef struct {
+   size_t   count;
+   size_t   index_bits;
+   uint64_t index_bitmask;
+   size_t   probe_bits;
+   uint64_t probe_bitmask;
+   uint8_t  probe_datamask;
+   size_t   elm_size;
+   uint8_t  c[];
+} htable_t;
+
 */

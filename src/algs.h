@@ -26,6 +26,7 @@ typedef struct seqstack_t  seqstack_t;
 typedef struct vstack_t    vstack_t;
 typedef struct match_t     match_t;
 typedef struct matchlist_t matchlist_t;
+typedef struct htable_t    htable_t;
 
 // Macros
 #define min(x,y) ((x) < (y) ? (x) : (y))
@@ -81,6 +82,14 @@ struct vstack_t {
    long val[];
 };
 
+// Hash tables.
+
+struct htable_t {
+   uint64_t mask;
+   uint8_t  bits;
+   uint8_t  table[];
+};
+
 // Parameter structs.
 
 struct sortargs_t {
@@ -112,6 +121,11 @@ int           push             (vstack_t ** stackp, long value);
 int           pushvec          (vstack_t ** stackp, long * vector, int vecsize);
 seqstack_t  * new_seqstack     (int size);
 int           seq_push         (seqstack_t ** stackp, const char* tag, const char* seq, const char* q);
+
+// 2-bit Hash table.
+htable_t    * htable_new       (uint8_t);
+int           htable_get       (htable_t *, uint64_t);
+int           htable_set       (htable_t *, uint64_t, uint8_t);
 
 // Matchlist functions.
 matchlist_t   * matchlist_new    (int elements);
