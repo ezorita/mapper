@@ -6,6 +6,7 @@
 #include <pthread.h>
 #include <stdint.h>
 #include "definitions.h"
+#include "xxhash.h"
 
 #ifndef _MAPPER_ALGS_H
 #define _MAPPER_ALGS_H

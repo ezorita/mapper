@@ -3,6 +3,8 @@
 #include "index.h"
 #include "indexquery.h"
 
+#ifndef _BLOCKSEARCH_H
+#define _BLOCKSEARCH_H
 #define PATHSTACK_DEF_SIZE 64
 
 typedef struct {
@@ -37,3 +39,5 @@ pathstack_t * pathstack_new          (int);
 pstree_t    * alloc_stack_tree       (int);
 pstree_t    * alloc_stack_tree_rec   (int);
 void          free_stack_tree        (pstree_t *);
+
+#endif

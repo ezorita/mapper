@@ -4,7 +4,6 @@
 #include "index.h"
 #include "indexquery.h"
 #include "algs.h"
-#include "xxhash.h"
 #include "blocksearch.h"
 
 #define COMPUTE_INDELS 0
@@ -22,6 +21,7 @@ typedef struct {
    uint64_t          end;
    uint64_t        * computed;
    uint64_t        * collision;
+   uint64_t        * htable_pos;
    uint8_t         * repeat_bf;
    int             * done;
    index_t         * index;

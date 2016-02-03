@@ -131,9 +131,8 @@ blocksearch_trail_rec
 
    // Compute single block and return.
    if (blocks == 1) {
-      spath_t p = {.pos = (fmdpos_t){.fp = 0, .rp = 0, .sz = index->size, .dp = 0}, .score = 0};
-      if (seqdash_bw(&p, query, 0, slen, index) == 0)
-         path_push(p, &(tree->stack));
+      spath_t empty = {.pos = (fmdpos_t){.fp = 0, .rp = 0, .sz = index->size, .dp = 0}, .score = 0};
+      seqsearch_bw(empty, query+pos, 0, slen, 0, 0, 0, index, &(tree->stack));
       return;
    }
    // Split block.

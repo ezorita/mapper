@@ -71,6 +71,7 @@ annotate
    uint64_t computed = 0;
    uint64_t kmers = 0;
    uint64_t collision = 0;
+   uint64_t htable_pos = 0;
    int32_t  done = 0;
    uint8_t  * repeat_bf = malloc(((index->size >> 4) + 1) * sizeof(uint8_t));
    // Hash table.
@@ -112,6 +113,7 @@ annotate
       job[i]->tau = tau;
       job[i]->kmers = &kmers;
       job[i]->collision = &collision;
+      job[i]->htable_pos = &htable_pos;
       job[i]->repeat_thr = repeat_thr;
       job[i]->repeat_bf = repeat_bf;
       job[i]->htable = ht;
@@ -155,7 +157,9 @@ annotate
    //   fprintf(stderr, "annotating... %ld/%ld\n", *computed, index->size);
    fprintf(stderr, "annotating... %.2f%%\n", computed*100.0/eff_size);
    fprintf(stderr, "kmers: %ld different kmers out of %ld processed loci (%.2f%%).\n",kmers,index->size/2,kmers*200.0/index->size);
+   fprintf(stderr, "hash occupancy: %ld (%.2f%%)\n", htable_pos, htable_pos*100.0/(1<<bits));
    fprintf(stderr, "hash table collisions: %ld (%.2f%%)\n", collision, collision*100.0/kmers);
+
 
    // Free variables.
    for (int i = 0; i < threads; i++) { free(job[i]); }
@@ -186,6 +190,7 @@ annotate_mt
    uint8_t * lastq = malloc(kmer);
    uint64_t kmers = 0;
    uint64_t ht_collision = 0;
+   uint64_t ht_pos = 0;
 
    // Force first trail to be 0.
    memset(lastq, 5, kmer);
@@ -227,8 +232,8 @@ annotate_mt
       // Search sequence.
       blocksearch_trail(query, kmer, tau, trail, index, stack_tree);
       // Count hits.
-      uint64_t hit_count = 0;
       pathstack_t * hits = stack_tree->stack;
+      uint64_t hit_count = 0;
       fmdpos_t self = {.fp = 0, .rp = 0, .sz = 1};
       for (int i = 0; i < hits->pos; i++) {
          spath_t p = hits->path[i];
@@ -236,6 +241,7 @@ annotate_mt
             self = p.pos;
          hit_count += p.pos.sz;
       }
+      
       if (hit_count > 1 && hit_count <= thr) hit_count = 2;
       else if(hit_count > thr) hit_count = 3;
       // Store count.
@@ -250,7 +256,10 @@ annotate_mt
       if (!ht_val || ht_val > hit_count)
          htable_set(job->htable, key, hit_count);
       // DEBUG.
-      ht_collision += (ht_val && ht_val != hit_count);
+      if (ht_val) 
+         ht_collision++;
+      else
+         ht_pos++;
       // DEBUG END.
       pthread_mutex_unlock(job->ht_mutex);
       // Update position.
@@ -264,6 +273,7 @@ annotate_mt
    *(job->computed) += job->end - computed;
    *(job->kmers) += kmers;
    *(job->collision) += ht_collision;
+   *(job->htable_pos) += ht_pos;
    pthread_cond_signal(job->monitor);
    pthread_mutex_unlock(job->mutex);
 
