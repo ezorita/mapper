@@ -2,6 +2,7 @@
 #include <string.h>
 #include "algs.h"
 #include "indexquery.h"
+#include "blocksearch.h"
 
 #ifndef _SEED_H
 #define _SEED_H
@@ -42,7 +43,11 @@ struct hit_t {
    uint16_t bulk;
 };
 
-
+// Annotated seed.
+int            find_uniq_seeds (int, int, uint8_t *, index_t *, seedstack_t **, seedstack_t **);
+seed_t         find_uniq_seed  (int, int, int, uint8_t *, index_t *, int *);
+int            find_thr_seed   (int, int, int, uint8_t *, index_t *);
+// Naive algorithms. (To compare with)
 seedstack_t  * naive_smem     (char *, seedopt_t, index_t *);
 // Seed functions.
 int            seed_mem       (char *, int32_t, int32_t, seedstack_t **, seedopt_t, index_t *);
