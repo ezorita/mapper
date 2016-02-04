@@ -22,8 +22,8 @@ print_and_free
          g_end   = index->size - match.ref_s - 2;
          dir = 1;
       } else {
-         g_start = match.ref_s + 1;
-         g_end   = match.ref_e + 1;
+         g_start = match.ref_s;
+         g_end   = match.ref_e;
          dir = 0;
       }
       // Search chromosome name.
