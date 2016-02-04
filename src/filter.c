@@ -44,10 +44,16 @@ align_matches
 
       // Find whether alignment is safe in repeat annotation.
       int safe = 0;
-      if (index->repeats != NULL) {
-         uint64_t ref_start = l_rstart - l_rlen;
-         for (uint64_t j = ref_start; j < ref_start + slen && !safe; j++) {
-            safe = (index->repeats[j>>3] >> (j&7)) & 1;
+      ann_t ann = index->ann->ann[0];
+      uint64_t ref_start = l_rstart - l_rlen + 1;
+      if (ref_start >= index->size/2) {
+         ref_start = index->size - 1 - ref_start - 25;
+         for (uint64_t j = ref_start; j >= ref_start - slen + 25 && !safe; j--) {
+            safe = (ann.data[j>>3] >> (j&7)) & 1;
+         }
+      } else {
+         for (uint64_t j = ref_start; j <= ref_start + slen - 25 && !safe; j++) {
+            safe = (ann.data[j>>3] >> (j&7)) & 1;
          }
       }
       
@@ -162,18 +168,16 @@ align_hits
       char * l_ref = index->genome + l_rstart;
 
       int safe = 0;
-      //      fprintf(stdout,"[%d] loc:%ld:\t",i,hits[i].locus);
-      if (index->repeats != NULL) {
-         uint64_t ref_start = l_rstart - l_rlen + 1;
-         if (ref_start >= index->size/2) {
-            ref_start = index->size - 1 - ref_start - 25;
-            for (uint64_t j = ref_start; j >= ref_start - slen + 25 && !safe; j--) {
-               safe = (index->repeats[j>>3] >> (j&7)) & 1;
-            }
-         } else {
-            for (uint64_t j = ref_start; j <= ref_start + slen - 25 && !safe; j++) {
-               safe = (index->repeats[j>>3] >> (j&7)) & 1;
-            }
+      ann_t ann = index->ann->ann[0];
+      uint64_t ref_start = l_rstart - l_rlen + 1;
+      if (ref_start >= index->size/2) {
+         ref_start = index->size - 1 - ref_start - 25;
+         for (uint64_t j = ref_start; j >= ref_start - slen + 25 && !safe; j--) {
+            safe = (ann.data[j>>3] >> (j&7)) & 1;
+         }
+      } else {
+         for (uint64_t j = ref_start; j <= ref_start + slen - 25 && !safe; j++) {
+            safe = (ann.data[j>>3] >> (j&7)) & 1;
          }
       }
       

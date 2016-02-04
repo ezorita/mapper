@@ -1,7 +1,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
-#include "indexquery.h"
+#include "bwtquery.h"
 #include "algs.h"
 #include "blocksearch.h"
 

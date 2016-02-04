@@ -3,8 +3,8 @@
 #include <stdint.h>
 #include "definitions.h"
 
-#ifndef _INDEXQUERY_H
-#define _INDEXQUERY_H
+#ifndef _BWTQUERY_H
+#define _BWTQUERY_H
 
 #define LUT_KMER_SIZE     9
 #define OCC_MARK_INTERVAL 14
@@ -18,23 +18,6 @@
 #define SSV_DIR_FWD       1
 #define SSV_DIR_BWD       -1
 
-typedef struct bwpos_t    bwpos_t;
-typedef struct fmdpos_t   fmdpos_t;
-
-struct bwpos_t {
-   int32_t depth;
-   int64_t sp;
-   int64_t ep;
-};
-
-struct fmdpos_t {
-   int64_t fp;
-   int64_t rp;
-   int64_t sz;
-   int64_t dp;
-};
-
-
 uint64_t get_sa            (uint64_t pos, sar_t * sa);
 int      get_sa_range      (uint64_t start, uint64_t size, uint64_t * out, sar_t * sa);
 int      get_occ           (int64_t pos, uint64_t * occ, int64_t * val);
@@ -45,6 +28,6 @@ int      extend_bw_all     (fmdpos_t pos, fmdpos_t * newpos, bwt_t * bwt);
 int      extend_fw_all     (fmdpos_t pos, fmdpos_t * newpos, bwt_t * bwt);
 int      suffix_extend     (int nt, bwpos_t pos, bwpos_t * newpos, bwt_t * bwt);
 int      suffix_extend_all (bwpos_t pos, bwpos_t * newpos, bwt_t * bwt);
-int      suffix_string     (char * suf, int slen, uint64_t minloci, bwpos_t * newpos, index_t * index);
+int      suffix_string     (char * suf, int slen, uint64_t minloci, bwpos_t * newpos, bwt_t * index);
 
 #endif

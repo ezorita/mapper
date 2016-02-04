@@ -40,6 +40,32 @@ typedef struct index_t    index_t;
 typedef struct bwt_t      bwt_t;
 typedef struct sar_t      sar_t;
 typedef struct chr_t      chr_t;
+typedef struct ann_t       ann_t;
+typedef struct sht_t       sht_t;
+typedef struct annlist_t   annlist_t;
+typedef struct shtlist_t   shtlist_t;
+typedef struct bwpos_t    bwpos_t;
+typedef struct fmdpos_t   fmdpos_t;
+typedef struct htable_t    htable_t;
+
+struct htable_t {
+   uint64_t mask;
+   uint8_t  bits;
+   uint8_t  table[];
+};
+
+struct bwpos_t {
+   int32_t depth;
+   int64_t sp;
+   int64_t ep;
+};
+
+struct fmdpos_t {
+   int64_t fp;
+   int64_t rp;
+   int64_t sz;
+   int64_t dp;
+};
 
 struct chr_t {
    int     nchr;
@@ -49,6 +75,8 @@ struct chr_t {
 
 struct bwt_t {
    uint64_t   occ_mark_int;
+   bwpos_t    bwt_base;
+   fmdpos_t   fmd_base;
    uint64_t * c;
    uint64_t * occ;
 };
@@ -58,19 +86,51 @@ struct sar_t {
    uint64_t * sa;
 };
 
+struct ann_t {
+   uint8_t    id;
+   int        k;
+   int        d;
+   uint64_t   size;
+   uint64_t   unique;
+   uint8_t  * data;
+};
+
+
+struct annlist_t {
+   uint8_t  count;
+   ann_t    ann[];
+};
+
+struct sht_t {
+   uint8_t    id;
+   uint8_t    bits;
+   int        k;
+   int        d;
+   int        repeat_thr;
+   uint64_t   set_count;
+   uint64_t   collision;
+   htable_t * htable;
+};
+
+struct shtlist_t {
+   uint8_t  count;
+   sht_t    sht[];
+};
+
 struct index_t {
    uint64_t    size;
    // Gen file.
    char      * genome;
-   // OCC.
+   // Bwt.
    bwt_t     * bwt;
    // Suffix Array.
    sar_t     * sar;
    // Chromosome index.
    chr_t     * chr;
-   // Annotation.
-   void      * seeds;
-   uint8_t   * repeats;
+   // Annotations.
+   annlist_t * ann;
+   // Seed tables.
+   shtlist_t * sht;
 };
 
 

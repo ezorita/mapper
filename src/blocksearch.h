@@ -1,6 +1,6 @@
 #include <stdint.h>
 #include <stdlib.h>
-#include "indexquery.h"
+#include "bwtquery.h"
 #include "definitions.h"
 
 #ifndef _BLOCKSEARCH_H

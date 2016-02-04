@@ -108,10 +108,10 @@ int main(int argc, char *argv[])
       say_map_usage();
       exit(EXIT_SUCCESS);
    }
-   opt_map_t in_params;
+   opt_map_t in_params = {0,0,0,0};
    char * qfile, *ifile;
    parse_opt_map(argc, argv, &in_params, &qfile, &ifile);
-   mapopt.threads = in_params.threads;
+   if (in_params.threads) mapopt.threads = in_params.threads;
    
 
    // Parse query filename.
@@ -121,11 +121,37 @@ int main(int argc, char *argv[])
       return EXIT_FAILURE;
    }
 
-   // Read FM index format.
+   // Read index.
    if (opt_verbose) fprintf(stderr, "loading index...\n");
    index_t * index = index_load_base(ifile);
    if (index == NULL)
       return EXIT_FAILURE;
+
+   // Read annotations and seed tables.
+   annlist_t * ann = ann_index_read(ifile);
+   if (ann == NULL)
+      return EXIT_FAILURE;
+   if (ann->count == 0) {
+      fprintf(stderr, "[error] no annotations found.\n");
+      return EXIT_FAILURE;
+   }
+   if (ann_index_load(ann, ifile))
+      return EXIT_FAILURE;
+   ann_print_index(ann);
+
+   shtlist_t * sht = sht_index_read(ifile);
+   if (sht == NULL)
+      return EXIT_FAILURE;
+   if (sht->count == 0) {
+      fprintf(stderr, "[error] no seed tables found.\n");
+      return EXIT_FAILURE;
+   }
+   if (sht_index_load(sht, ifile))
+      return EXIT_FAILURE;
+   sht_print_index(sht);
+
+   index->ann = ann;
+   index->sht = sht;
 
    // Read file.
    if (opt_verbose) fprintf(stderr, "reading query file...\n");
@@ -264,7 +290,6 @@ mt_worker
       // Align.
       map_matches->pos = 0;
       align_seeds(seq[i].seq, seeds, reeds, &map_matches, index, opt->filter, opt->align);
-      //      if (thrseeds->pos && (map_matches->pos == 0 || map_matches->match[0].interval != 2)) {
       if (map_matches->pos == 0 || map_matches->match[0].interval != 1) {
          int loci, beg = 0;
          do {

@@ -36,18 +36,19 @@ find_uniq_seeds
  seedstack_t ** good
 )
 {
+   ann_t ann = index->ann->ann[0];
+   sht_t sht = index->sht->sht[0];
    uint8_t * q = malloc(k);
-   htable_t * htable = (htable_t *)index->seeds;
    for (int i = 0; i <= slen - k; i++) {
       if (check_kmer(query+i, q, 25)) continue;
       uint64_t key = XXH64(q, k, 0);
-      uint8_t score = htable_get(htable, key);
+      uint8_t score = htable_get(sht.htable, key);
       if (score == 1) {
          bwpos_t pos = {0,0,index->size-1};
          for (int j = i+k-1; j >= i && pos.ep >= pos.sp; j--) suffix_extend(query[j],pos,&pos,index->bwt);
          if (pos.ep == pos.sp) {
             uint64_t locus = get_sa(pos.sp, index->sar);
-            if ((index->repeats[locus>>3] >> (locus&7))&1) {
+            if ((ann.data[locus>>3] >> (locus&7))&1) {
                seed_t seed = (seed_t) {.bulk = 0, .qry_pos = i, .ref_pos = pos};
                seedstack_push(seed, unique);
             }
@@ -76,38 +77,24 @@ find_uniq_seed
  int          * zero_cnt
 )
 {
+   ann_t ann = index->ann->ann[0];
+   sht_t sht = index->sht->sht[0];
    uint8_t * q = malloc(k);
-   htable_t * htable = (htable_t *)index->seeds;
-   //   fprintf(stderr,"unique search: ");
    for (int i = beg; i <= slen - k; i++) {
       if (check_kmer(query+i, q, k)) continue;
       uint64_t key = XXH64(q, k, 0);
-      int value = htable_get(htable, key);
-      //      fprintf(stderr," %d",value);
+      int value = htable_get(sht.htable, key);
       if (value == 1) {
-         bwpos_t pos = {0,0,index->size-1};
+         bwpos_t pos = index->bwt->bwt_base;
          for (int j = i+k-1; j >= i && pos.ep >= pos.sp; j--) suffix_extend(query[j],pos,&pos,index->bwt);
-         //         fprintf(stderr,(pos.ep < pos.sp ? "i" : pos.ep > pos.sp ? "m" : ""));
          if (pos.ep == pos.sp) {
             uint64_t locus = get_sa(pos.sp, index->sar);
-            //            fprintf(stderr,"locus: %ld (%ld)\n", locus, index->size - 1 - locus - k);
             if (locus >= index->size/2) locus = index->size - 1 - locus - k;
-            int unique = (index->repeats[locus>>3] >> (locus&7))&1;
-            //            if (!unique) fprintf(stderr,"a");
-            // DEBUG.
-            /*
-            pathstack_t * pstack = pathstack_new(PATHSTACK_DEF_SIZE);
-            blocksearch(q, 25, 1, index, &pstack);
-            if (pstack->pos == 1 && pstack->path[0].pos.sz == 1 && !unique)
-               fprintf(stderr, "annotation error, false negative at seq[%d]\n",i);
-            if (unique && pstack->pos == 1 && pstack->path[0].pos.sz == 1) {
-            */
+            int unique = (ann.data[locus>>3] >> (locus&7))&1;
             if (unique) {
-               //               fprintf(stderr," correct\n");
                free(q);
                return (seed_t) {.bulk = 0, .qry_pos = i, .ref_pos = pos};
             }
-            //            free(pstack);
          }
       } else if (value == 0) {
          *zero_cnt += 1;
@@ -128,15 +115,14 @@ find_thr_seed
  index_t      * index
 )
 {
+   sht_t sht = index->sht->sht[0];
    uint8_t * q = malloc(k);
-   htable_t * htable = (htable_t *)index->seeds;
    for (int i = beg; i <= slen - k; i++) {
       if (check_kmer(query+i, q, k)) continue;
       uint64_t key = XXH64(q, k, 0);
       // Test.
-      int value = htable_get(htable, key);
+      int value = htable_get(sht.htable, key);
       if (value == 0 || value == 2) {
-      //      if (htable_get(htable, key) == 2) {
          free(q);
          return i;
       }

@@ -1,4 +1,4 @@
-#include "indexquery.h"
+#include "bwtquery.h"
 
 uint64_t
 get_sa
@@ -237,16 +237,16 @@ suffix_string
  int       slen,
  uint64_t  minloci,
  bwpos_t * newpos,
- index_t * index
+ bwt_t   * bwt
 )
 // Extends from *suf until *(suf+slen-1) is reached or loci < minloci.
 {
    int64_t loci;
    int len = slen-1;
    do {
-      *newpos = (bwpos_t){0,0,index->size - 1};
+      *newpos = bwt->bwt_base;
       for (int i = len; i >= 0; i--)
-         if(suffix_extend(translate[(int)suf[i]], *newpos, newpos, index->bwt)) return -1;
+         if(suffix_extend(translate[(int)suf[i]], *newpos, newpos, bwt)) return -1;
       loci = (int64_t)newpos->ep - (int64_t)newpos->sp + 1;
       len--;
    } while (loci < minloci);

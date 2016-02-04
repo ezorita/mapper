@@ -12,7 +12,7 @@
 #include "definitions.h"
 #include "divsufsort.h"
 #include "index.h"
-#include "indexquery.h"
+#include "bwtquery.h"
 
 #ifndef _INDEXBUILD_H
 #define _INDEXBUILD_H

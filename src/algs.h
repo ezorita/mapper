@@ -27,7 +27,6 @@ typedef struct seqstack_t  seqstack_t;
 typedef struct vstack_t    vstack_t;
 typedef struct match_t     match_t;
 typedef struct matchlist_t matchlist_t;
-typedef struct htable_t    htable_t;
 
 // Macros
 #define min(x,y) ((x) < (y) ? (x) : (y))
@@ -81,14 +80,6 @@ struct vstack_t {
    long pos;
    long size;
    long val[];
-};
-
-// Hash tables.
-
-struct htable_t {
-   uint64_t mask;
-   uint8_t  bits;
-   uint8_t  table[];
 };
 
 // Parameter structs.

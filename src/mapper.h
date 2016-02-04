@@ -9,7 +9,7 @@
 #include <pthread.h>
 #include "algs.h"
 #include "seed.h"
-#include "indexquery.h"
+#include "bwtquery.h"
 #include "indexbuild.h"
 #include "filter.h"
 #include "format.h"

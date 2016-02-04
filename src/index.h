@@ -15,45 +15,8 @@
 #ifndef _INDEX_H
 #define _INDEX_H
 
-typedef struct ann_t       ann_t;
-typedef struct sht_t       sht_t;
-typedef struct annlist_t   annlist_t;
-typedef struct shtlist_t   shtlist_t;
-
-
 #define CHRSTR_SIZE   50
 #define BUFFER_SIZE   100
-
-struct ann_t {
-   uint8_t    id;
-   int        k;
-   int        d;
-   uint64_t   size;
-   uint64_t   unique;
-   uint8_t  * data;
-};
-
-
-struct annlist_t {
-   uint8_t  count;
-   ann_t    ann[];
-};
-
-struct sht_t {
-   uint8_t    id;
-   uint8_t    bits;
-   int        k;
-   int        d;
-   int        repeat_thr;
-   uint64_t   set_count;
-   uint64_t   collision;
-   htable_t * htable;
-};
-
-struct shtlist_t {
-   uint8_t  count;
-   sht_t    sht[];
-};
 
 char       * add_suffix            (const char *, const char *);
 annlist_t  * ann_index_read        (char *);
@@ -64,6 +27,8 @@ int          ann_index_load        (annlist_t *, char *);
 int          sht_index_load        (shtlist_t *, char *);
 int          ann_find_slot         (annlist_t *);
 int          sht_find_slot         (shtlist_t *);
+void         ann_print_index       (annlist_t *);
+void         sht_print_index       (shtlist_t *);
 int          index_add_annotation  (int, int, int, int, int, index_t *, char *);
 index_t    * index_load_base       (char *);
 char       * index_load_gen        (char *);

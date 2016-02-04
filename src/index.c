@@ -88,7 +88,7 @@ ann_index_load
       char * suffix = malloc(9);
       if (suffix == NULL)
          return -1;
-      sprintf(suffix, ".ann%d", index->ann[i].id);
+      sprintf(suffix, ".ann.%d", index->ann[i].id);
       char * fname = add_suffix(index_file, suffix);
       if (fname == NULL)
          return -1;
@@ -486,6 +486,10 @@ index_load_bwt
    bwt->occ_mark_int = *(uint64_t *) bwt_map;
    bwt->c = ((uint64_t *) bwt_map + 1);
    bwt->occ = bwt->c + NUM_BASES + 1;
+
+   // Base positions.
+   bwt->fmd_base = (fmdpos_t){.fp = 0, .rp = 0, .sz = bwt->c[NUM_BASES], .dp = 0};
+   bwt->bwt_base = (bwpos_t){.sp = 0, .ep = bwt->c[NUM_BASES] - 1, .depth = 0};
 
    return bwt;
 }
