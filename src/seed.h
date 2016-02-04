@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <string.h>
 #include "algs.h"
+#include "definitions.h"
 #include "indexquery.h"
 #include "blocksearch.h"
 

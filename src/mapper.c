@@ -1,97 +1,7 @@
 #include "mapper.h"
 #include <assert.h>
-#include <getopt.h>
 #include <time.h>
 
-char *USAGE =
-   "\n"
-   "Usage:"
-   "  mapper [options] input-file genome-index\n"
-   "\n"
-   "  options:\n"
-   "    -t --threads: number of concurrent threads (default 1)\n"
-   "    -a --all:     print all the hits found in each interval.\n"
-   "    -q --quality: do not print reads with mapping quality below [quality].\n"
-   "    -e --eval:    do not print reads with significance below [e-value].\n";
-
-
-void say_usage(void) { fprintf(stderr, "%s\n", USAGE); }
-
-int parse_opt(int argc, char *argv[], mapopt_t * opt, char ** qfile, char ** ifile) {
-   int arg_t = 0, arg_a = 0, arg_e = 0, arg_q = 0;
-   int c;
-   while (1) {
-      int option_index = 0;
-      static struct option long_options[] = {
-         {"all",      no_argument,       0, 'a'},
-         {"threads",  required_argument, 0, 't'},
-         {"eval",     required_argument, 0, 'e'},
-         {"quality",  required_argument, 0, 'q'},
-         {0, 0, 0, 0}
-      };
-
-      c = getopt_long(argc, argv, "at:e:q:",
-            long_options, &option_index);
-      if (c == -1) break;
-      switch (c) {
-      case 'a':
-         if (arg_a) {
-            fprintf(stderr, "error: option -a set more than once.\n");
-            say_usage();
-            exit(EXIT_FAILURE);
-         }
-         arg_a = 1;
-         opt->format.print_first = 0;
-         break;
-      case 't':
-         if (arg_t) {
-            fprintf(stderr, "error: option -t set more than once.\n");
-            say_usage();
-            exit(EXIT_FAILURE);
-         }
-         arg_t = 1;
-         opt->threads = atoi(optarg);
-         break;
-      case 'e':
-         if (arg_e) {
-            fprintf(stderr, "error: option -e set more than once.\n");
-            say_usage();
-            exit(EXIT_FAILURE);
-         }
-         arg_e = 1;
-         int eval = atoi(optarg);
-         if (eval > 0) eval = -eval;
-         opt->format.eval_thr = eval;
-         break;
-      case 'q':
-         if (arg_q) {
-            fprintf(stderr, "error: option -q set more than once.\n");
-            say_usage();
-            exit(EXIT_FAILURE);
-         }
-         arg_q = 1;
-         int q = atoi(optarg);
-         if (q < 0 || q > 60) {
-            fprintf(stderr, "error: quality value must be in interval [0,60].\n");
-            exit(EXIT_FAILURE);
-         }
-         opt->format.mapq_thr = q;
-         break;
-      }
-   }
-
-   if (optind != argc-2) {
-      fprintf(stderr, "error: not enough parameters.\n");
-      say_usage();
-      exit(EXIT_FAILURE);
-   }
-
-   // Store index and query files.
-   *qfile = argv[optind];
-   *ifile = argv[optind+1];
-
-   return 0;
-}
 
 
 int main(int argc, char *argv[])
@@ -99,36 +9,51 @@ int main(int argc, char *argv[])
    int opt_verbose = 1;
    size_t seqs_per_thread = 10000;
 
-   if (argc == 3 && strcmp(argv[1],"annotate") == 0) {
-      // Read FM index format.
-      fprintf(stderr, "Genome repeat annotation algorithm.\n");
-      if (opt_verbose) fprintf(stderr, "loading index...\n");
-      idxfiles_t * files = index_open(argv[2]);
-      index_t * index = index_format(files);
-      if (index == NULL)
-         return EXIT_FAILURE;
+   // Without params, print help.
+   if (argc == 1) {
+      say_map_usage();
+      return EXIT_SUCCESS;
+   }
 
-      int kmer = 25, tau = 1, ann_threads = 10, repeat_thr = 20;
-      fprintf(stderr, "annotating genome with (%d,%d) counts using %d threads.\n", kmer, tau, ann_threads);
-      annotation_t ann = annotate(kmer,tau,repeat_thr,index,ann_threads);
+   if (strcmp(argv[1],"index") == 0) {
+      // Without params, print help.    
+      if (argc == 2) {
+         say_index_usage();
+         return EXIT_SUCCESS;
+      } else if (strcmp(argv[2], "add") == 0) {
+         if (argc == 3) {
+            say_add_usage();
+            return EXIT_SUCCESS;
+         }
+         // Parse params.
+         char * index_file;
+         opt_add_t opt;
+         int rval;
+         if ((rval = parse_opt_add(argc, argv, &opt, &index_file))) {
+            return (rval == -1 ? EXIT_FAILURE : EXIT_SUCCESS);
+         }
+         // Load index.
+         index_t * index = index_load_base(index_file);
+         if (index == NULL)
+            return EXIT_FAILURE;
+         // Compute annotation.
+         return index_add_annotation(opt.k, opt.d, opt.repeat_thr, opt.mode,
+                                     opt.threads, index, index_file);
+      } else if (strcmp(argv[2], "build") == 0) {
+         if (argc == 3) {
+            say_build_usage();
+            return EXIT_SUCCESS;
+         }
+         // Parse params.
+         char * genome_file;
+         opt_add_t opt;
+         int rval;
+         if ((rval = parse_opt_build(argc, argv, &opt, &genome_file))) {
+            return (rval == -1 ? EXIT_FAILURE : EXIT_SUCCESS);
+         }
 
-
-      // Write output file.
-      char * fname = malloc(strlen(argv[2])+4);
-      strcpy(fname,argv[2]);
-      strcpy(fname+strlen(argv[2]),".ann");
-      int fd = open(fname,O_WRONLY | O_CREAT | O_TRUNC,0644);
-      uint64_t bytes = 0;
-      // Write hash table.
-      size_t struct_size = sizeof(htable_t) + (((uint64_t)1)<<(ann.htable->bits-2));
-      while ((bytes += write(fd,ann.htable+bytes,struct_size-bytes)) < struct_size);
-      // Write bitfield.
-      struct_size = (index->size >> 4) + 1;
-      while ((bytes += write(fd,ann.bitfield+bytes,struct_size-bytes)) < struct_size);
-      // Close file stream.
-      close(fd);
-
-      return 0;
+         return write_index(genome_file, opt.k, opt.d, opt.repeat_thr, opt.threads);
+      }
    }
 
    // DEFAULT Options.
@@ -170,7 +95,7 @@ int main(int argc, char *argv[])
       .mapq_thr = 0,
       .eval_thr = 0
    };
-   mapopt_t mapopt = {
+   param_map_t mapopt = {
       .seed = seedopt,
       .align = alignopt,
       .filter = filteropt,
@@ -180,13 +105,14 @@ int main(int argc, char *argv[])
 
    // Parse input parameters.
    if (argc == 1) {
-      say_usage();
+      say_map_usage();
       exit(EXIT_SUCCESS);
    }
+   opt_map_t in_params;
    char * qfile, *ifile;
-   parse_opt(argc, argv, &mapopt, &qfile, &ifile);
-
-
+   parse_opt_map(argc, argv, &in_params, &qfile, &ifile);
+   mapopt.threads = in_params.threads;
+   
 
    // Parse query filename.
    FILE * queryfile = fopen(qfile, "r");
@@ -197,11 +123,7 @@ int main(int argc, char *argv[])
 
    // Read FM index format.
    if (opt_verbose) fprintf(stderr, "loading index...\n");
-   idxfiles_t * files = index_open(ifile);
-   if (files->ann_file == NULL) {
-      fprintf(stderr, "warning -- could not open repeat annotation file: %s\n", strerror(errno));
-   }
-   index_t * index = index_format(files);
+   index_t * index = index_load_base(ifile);
    if (index == NULL)
       return EXIT_FAILURE;
 
@@ -218,27 +140,16 @@ int main(int argc, char *argv[])
 
    // Free memory.
    free(seqs);
-   free(index->lcp_sample);
-   free(index->lcp_extend);
    free(index);
-   free(files->chr->start);
-   for (int i = 0; i < files->chr->nchr; i++) free(files->chr->name[i]);
-   free(files->chr->name);
-   free(files->chr);
-   munmap(files->gen_file, files->gen_len);
-   munmap(files->occ_file, files->occ_len);
-   munmap(files->lcp_file, files->lcp_len);
-   munmap(files->sa_file, files->sa_len);
-   free(files);
 
-   return 0;
+   return EXIT_SUCCESS;
 }
 
 int
 mt_scheduler
 (
  seqstack_t * seqs,
- mapopt_t   * options,
+ param_map_t* options,
  index_t    * index,
  int          threads,
  size_t       thread_seq_count
@@ -317,16 +228,18 @@ mt_worker
 {
    mtjob_t * job = (mtjob_t *) args;
    // Get params.
-   seq_t    * seq   = job->seq;
-   mapopt_t * opt   = job->opt;
-   index_t  * index = job->index;
+   seq_t       * seq   = job->seq;
+   param_map_t * opt   = job->opt;
+   index_t     * index = job->index;
 
    // Alloc data structures.
    matchlist_t * seed_matches = matchlist_new(opt->filter.max_align_per_read);
    matchlist_t * map_matches = matchlist_new(64);
-   seedstack_t * seeds  = seedstack_new(SEEDSTACK_SIZE);
-   seedstack_t * reeds  = seedstack_new(SEEDSTACK_SIZE);
-   
+   seedstack_t * seeds    = seedstack_new(SEEDSTACK_SIZE);
+   seedstack_t * thrseeds = seedstack_new(SEEDSTACK_SIZE);
+   seedstack_t * reeds    = seedstack_new(SEEDSTACK_SIZE);
+   pathstack_t * pstack   = pathstack_new(PATHSTACK_DEF_SIZE);
+
    size_t mapped = 0;
    
    for (size_t i = 0; i < job->count; i++) {
@@ -335,50 +248,55 @@ mt_worker
       // Reset seeds.
       seeds->pos = 0;
       reeds->pos = 0;
-      // Get MEMs.
-      seed_mem(seq[i].seq, 0, slen, &seeds, opt->seed, index);
-      // Align MEMs.
+      thrseeds->pos = 0;
+
+      // Translate query.
+      uint8_t * query = malloc(slen);
+      for (int j = 0; j < slen; j++) query[j] = translate[(int)seq[i].seq[j]];
+
+      // Find unique seeds.
+      //find_uniq_seeds(slen,25,query,index,&seeds,&thrseeds);
+      /**/
+      int zero_cnt = 0;
+      seed_t sd = find_uniq_seed(0,slen,25,query,index,&zero_cnt);
+      if (!sd.bulk) seedstack_push(sd, &seeds);
+      /**/
+      // Align.
       map_matches->pos = 0;
       align_seeds(seq[i].seq, seeds, reeds, &map_matches, index, opt->filter, opt->align);
-      
+      //      if (thrseeds->pos && (map_matches->pos == 0 || map_matches->match[0].interval != 2)) {
+      if (map_matches->pos == 0 || map_matches->match[0].interval != 1) {
+         int loci, beg = 0;
+         do {
+            loci = 0;
+            if((beg = find_thr_seed(beg, slen, 25, query, index)) == -1) break;
+            pstack->pos = 0;
+            blocksearch(query + beg, 25, 1, index, &pstack);
+            for (int h = 0; h < pstack->pos; h++)
+               loci += pstack->path[h].pos.sz;
+            beg += 1;
+         } while (loci > 20 || loci == 0);
+
+         if (beg >= 0 && loci <= 20) {
+            seeds->pos = 0;
+            for (int h = 0; h < pstack->pos; h++) {
+               fmdpos_t fmdp = pstack->path[h].pos;
+               bwpos_t pos = {.depth = fmdp.dp, .sp = fmdp.fp, .ep = fmdp.fp + fmdp.sz - 1};
+               seedstack_push((seed_t) {.bulk = 0, .qry_pos = beg-1, .ref_pos = pos}, &seeds);
+            }
+            align_seeds(seq[i].seq, seeds, reeds, &map_matches, index, opt->filter, opt->align);
+         }
+         /**/
+      }
       // Reseed?
-      if (map_matches->pos == 0){
-         //         fprintf(stdout, " no seeds found, reseeding (25,1).\n");
-         // 25.1 everything.
-         /*
-         seeds->pos = 0;
-         reeds->pos = 0;
-         // forward block.
-         seed_block_all(seq[i].seq, slen, &seeds, index, 25, 1);
-         // reverse block.
-         char * rseq = rev_comp(seq[i].seq);
-         seed_block_all(rseq, slen, &reeds, index, 25, 0);
-         free(rseq);
+      if (map_matches->pos == 0 && zero_cnt) {
 
-         for (int p = 0; p < slen-25; p++)
-            find_mismatch(seq[i].seq + p, 25, p, &seeds, index);
-
-         // align forward/reverse.
-         chain_seeds(seeds,reeds,slen,seed_matches,index,5,1.05);
-         align_matches(seq[i].seq,seed_matches,&map_matches,index,opt->filter,opt->align);
-         //         align_seeds(seq[i].seq, seeds, reeds, &map_matches, index, opt->filter, opt->align);
-         */
       } 
       else if (map_matches->match[0].interval == 2 && map_matches->match[0].score > 0) {
-         /*
-         seeds->pos = 0;
-         // 25,1 only on best position.
-         int pos = min(slen-25,map_matches->match[0].score);
-         find_mismatch(seq[i].seq + pos, 25, pos, &seeds, index);
-         // DEBUG. Count hits.
-         int count = 0;
-         for (int i = 0; i < seeds->pos; i++) count += seeds->seed[i].ref_pos.ep - seeds->seed[i].ref_pos.sp + 1;
-         // align forward/reverse.
-         //    map_matches->pos = 0;
-         align_seeds(seq[i].seq, seeds, reeds, &map_matches, index, opt->filter, opt->align);
-         */
-      } 
+
+      }
       mapped += print_and_free(seq[i], map_matches, index, opt->format);
+      free(query);
    }
 
    // Free data structures.
@@ -399,291 +317,6 @@ mt_worker
 
    return NULL;
 }
-
-idxfiles_t *
-index_open
-(
- char * file
-)
-{
-   // Alloc index struct.
-   idxfiles_t * files = malloc(sizeof(idxfiles_t));
-   
-   // Read chromosome index.
-   char * chr_file = malloc(strlen(file)+5);
-   strcpy(chr_file, file);
-   strcpy(chr_file+strlen(file), ".chr");
-   files->chr = read_CHRindex(chr_file);
-   if (files->chr == NULL) {
-      fprintf(stderr, "error opening '%s': %s\n", chr_file, strerror(errno));      
-      return NULL;
-   }
-   free(chr_file);
-
-   // Open OCC file.
-   char * occ_file = malloc(strlen(file)+5);
-   strcpy(occ_file, file);
-   strcpy(occ_file+strlen(file), ".occ");
-   int fd_occ = open(occ_file, O_RDONLY);
-   if (fd_occ == -1) {
-      fprintf(stderr, "error opening '%s': %s\n", occ_file, strerror(errno));
-      return NULL;
-   }
-   free(occ_file);
-
-   // Open SA file.
-   char * sa_file = malloc(strlen(file)+5);
-   strcpy(sa_file, file);
-   strcpy(sa_file+strlen(file), ".sar");
-   int fd_sa = open(sa_file, O_RDONLY);
-   if (fd_sa == -1) {
-      fprintf(stderr, "error opening '%s': %s\n", sa_file, strerror(errno));
-      return NULL;
-   }
-   free(sa_file);
-
-   // Open GEN file.
-   char * gen_file = malloc(strlen(file)+5);
-   strcpy(gen_file, file);
-   strcpy(gen_file+strlen(file), ".gen");
-   int fd_gen = open(gen_file, O_RDONLY);
-   if (fd_gen == -1) {
-      fprintf(stderr, "error opening '%s': %s\n", gen_file, strerror(errno));
-      return NULL;
-   }
-   free(gen_file);
-
-   // Open LCP file.
-   char * lcp_file = malloc(strlen(file)+5);
-   strcpy(lcp_file, file);
-   strcpy(lcp_file+strlen(file), ".lcp");
-   int fd_lcp = open(lcp_file, O_RDONLY);
-   if (fd_lcp == -1) {
-      fprintf(stderr, "error opening '%s': %s\n", lcp_file, strerror(errno));
-      return NULL;
-   }
-   free(lcp_file);
-
-   // Open ANN file.
-   char * ann_file = malloc(strlen(file)+5);
-   strcpy(ann_file, file);
-   strcpy(ann_file+strlen(file), ".ann");
-   int fd_ann = open(lcp_file, O_RDONLY);
-   free(ann_file);
-
-   // Open LUT file.
-   /*
-   char * lut_file = malloc(strlen(file)+5);
-   strcpy(lut_file, file);
-   strcpy(lut_file+strlen(file), ".lut");
-   int fd_lut = open(lut_file, O_RDONLY);
-   if (fd_lut == -1) {
-      fprintf(stderr, "error opening '%s': %s\n", lut_file, strerror(errno));
-      return NULL;
-   }
-   free(lut_file);
-   */
-   // Load OCC index.
-   files->occ_len = lseek(fd_occ, 0, SEEK_END);
-   lseek(fd_occ, 0, SEEK_SET);
-   files->occ_file = mmap(NULL, files->occ_len, PROT_READ, MMAP_FLAGS, fd_occ, 0);
-   close(fd_occ);
-   if (files->occ_file == NULL) {
-      fprintf(stderr, "error mmaping .occ index file: %s.\n", strerror(errno));
-      return NULL;
-   }
-   // Load SA index.
-   files->sa_len = lseek(fd_sa, 0, SEEK_END);
-   lseek(fd_sa, 0, SEEK_SET);
-   files->sa_file = mmap(NULL, files->sa_len, PROT_READ, MMAP_FLAGS, fd_sa, 0);
-   close(fd_sa);
-   if (files->sa_file == NULL) {
-      fprintf(stderr, "error mmaping .sar index file: %s.\n", strerror(errno));
-      return NULL;
-   }
-   // Load GEN index.
-   files->gen_len = lseek(fd_gen, 0, SEEK_END);
-   lseek(fd_gen, 0, SEEK_SET);
-   files->gen_file = mmap(NULL, files->gen_len, PROT_READ, MMAP_FLAGS, fd_gen, 0);
-   close(fd_gen);
-   if (files->gen_file == NULL) {
-      fprintf(stderr, "error mmaping .gen index file: %s.\n", strerror(errno));
-      return NULL;
-   }
-   // Load LCP index.
-   files->lcp_len = lseek(fd_lcp, 0, SEEK_END);
-   lseek(fd_lcp, 0, SEEK_SET);
-   files->lcp_file = mmap(NULL, files->lcp_len, PROT_READ, MMAP_FLAGS, fd_lcp, 0);
-   close(fd_lcp);
-   if (files->lcp_file == NULL) {
-      fprintf(stderr, "error mmaping .lcp index file: %s.\n", strerror(errno));
-      return NULL;
-   }
-
-   // Load LCP index.
-   if (fd_ann > 0) {
-      files->ann_len = lseek(fd_ann, 0, SEEK_END);
-      lseek(fd_ann, 0, SEEK_SET);
-      files->ann_file = mmap(NULL, files->ann_len, PROT_READ, MMAP_FLAGS, fd_ann, 0);
-      close(fd_ann);
-      if (files->ann_file == NULL) {
-         fprintf(stderr, "error mmaping .ann index file: %s.\n", strerror(errno));
-         return NULL;
-      }
-   } else {
-      files->ann_file = NULL;
-      files->ann_len = 0;
-   }
-
-
-   // Load LUT index.
-   /*
-   idxsize = lseek(fd_lut, 0, SEEK_END);
-   lseek(fd_lut, 0, SEEK_SET);
-   files->lut_file = mmap(NULL, idxsize, PROT_READ, MMAP_FLAGS, fd_lut, 0);
-   close(fd_lut);
-   if (files->lut_file == NULL) {
-      fprintf(stderr, "error mmaping .lut index file: %s.\n", strerror(errno));
-      return NULL;
-   }
-   */
-   return files;
-
-}
-
-index_t *
-index_format
-(
- idxfiles_t * files
-)
-{
-   if (files == NULL) return NULL;
-   // Alloc index struct.
-   index_t * index = malloc(sizeof(index_t));
-   // GEN.
-   index->genome = (char *) files->gen_file;
-   // OCC.
-   index->occ_mark_int = *(uint64_t *) files->occ_file;
-   index->c = ((uint64_t *) files->occ_file + 1);
-   index->occ = index->c + NUM_BASES + 1;
-   // Genome size.
-   index->size = index->c[NUM_BASES]; // Count forward strand only.
-   // SAR.
-   index->sa_bits = *((uint64_t *) files->sa_file);
-   index->sa      = ((uint64_t *) files->sa_file) + 1;
-   // LUT.
-   //   index->lut_kmer = *((uint64_t *) files->lut_file);
-   //   index->lut = ((uint64_t *) files->lut_file) + 1;
-   // LCP.
-   // params
-   index->lcp_mark_int = *((uint64_t *)files->lcp_file);
-   index->lcp_min_depth =  *((uint64_t *)files->lcp_file + 1);
-   uint64_t lcp_idx_size = *((uint64_t *)files->lcp_file + 2);//((2*index->size + LCP_WORD_SIZE - 1)/LCP_WORD_SIZE + index->lcp_mark_int - 1)/index->lcp_mark_int * (index->lcp_mark_int + 1) + 1;
-   // index
-   index->lcp_sample_idx = ((uint64_t *) files->lcp_file + 3);
-   uint64_t ext_idx_size = *(index->lcp_sample_idx + lcp_idx_size);
-   index->lcp_extend_idx = index->lcp_sample_idx + lcp_idx_size + 1;
-   // alloc structures
-   index->lcp_sample = malloc(sizeof(lcpdata_t));
-   if (index->lcp_sample == NULL) return NULL;
-   index->lcp_extend = malloc(sizeof(list64_t));
-   if (index->lcp_extend == NULL) return NULL;
-   // data
-   index->lcp_sample->size = *(index->lcp_extend_idx + ext_idx_size)/2;
-   index->lcp_sample->lcp = (lcpval_t *)(index->lcp_extend_idx + ext_idx_size + 1);
-   uint64_t * lcpext_size = (uint64_t *)(index->lcp_sample->lcp + index->lcp_sample->size);
-   index->lcp_extend->size = *lcpext_size;
-   index->lcp_extend->val = (int64_t *)(lcpext_size + 1);
-   // ANN file.
-   if (files->ann_file != NULL) {
-      index->seeds = files->ann_file;
-      index->repeats = ((uint8_t *)index->seeds) + sizeof(htable_t) + ((uint64_t)1 << ((htable_t *)index->seeds)->bits);
-   } else {
-      index->seeds = NULL;
-      index->repeats = NULL;
-   }
-   //CHR.
-   index->chr = files->chr;
-   
-
-   return index;
-}
-
-chr_t *
-read_CHRindex
-(
- char * filename
-)
-{
-   // Files
-   FILE * input = fopen(filename,"r");
-   if (input == NULL) {
-      fprintf(stderr, "error in 'read_CHRindex' (fopen): %s\n", strerror(errno));
-      exit(EXIT_FAILURE);
-   }
-
-   int chrcount = 0;
-   int structsize = CHRSTR_SIZE;
-
-   long *  start = malloc(structsize*sizeof(long));
-   char ** names = malloc(structsize*sizeof(char*));
-
-   // File read vars
-   ssize_t rlen;
-   size_t  sz = BUFFER_SIZE;
-   char  * buffer = malloc(BUFFER_SIZE);
-   int lineno = 0;
-
-   // Read chromosome entries.
-   while ((rlen = getline(&buffer, &sz, input)) != -1) {
-      lineno++;
-      char *name;
-      int i = 0;
-      while (buffer[i] != '\t' && buffer[i] != '\n') i++;
-      if (buffer[i] == '\n') {
-         fprintf(stderr, "illegal format in %s (line %d) - ignoring chromosome: %s\n", filename, lineno, buffer);
-         continue;
-      }
-      
-      if (buffer[rlen-1] == '\n') buffer[rlen-1] = 0;
-
-      // Realloc stacks if necessary.
-      if (chrcount >= structsize) {
-         structsize *= 2;
-         start = realloc(start, structsize*sizeof(long));
-         names = realloc(names, structsize*sizeof(char*));
-         if (start == NULL || names == NULL) {
-            fprintf(stderr, "error in 'read_CHRindex' (realloc): %s\n", strerror(errno));
-            exit(EXIT_FAILURE);
-         }
-      }
-
-      // Save chromosome start position.
-      buffer[i] = 0;
-      start[chrcount] = atol(buffer);
-      // Save chromosome name.
-      name = buffer + i + 1;
-      names[chrcount] = malloc(strlen(name)+1);
-      strcpy(names[chrcount], name);
-      // Inc.
-      chrcount++;
-   }
-
-   // Return chromosome index structure.
-   chr_t * chrindex = malloc(sizeof(chr_t));
-   chrindex->nchr = chrcount;
-   chrindex->start= start;
-   chrindex->name = names;
-
-   // Close files.
-   fclose(input);
-
-   // Free memory.
-   free(buffer);
-
-   return chrindex;
-}
-
 
 seqstack_t *
 read_file

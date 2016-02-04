@@ -1,79 +1,74 @@
+#define _GNU_SOURCE
+#include <stdlib.h>
+#include <stdio.h>
+#include <stdint.h>
+#include <sys/mman.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <string.h>
+#include <errno.h>
+#include <unistd.h>
+#include "definitions.h"
+#include "annotate.h"
+
 #ifndef _INDEX_H
 #define _INDEX_H
 
-#define VERBOSE_DEBUG 0
+typedef struct ann_t       ann_t;
+typedef struct sht_t       sht_t;
+typedef struct annlist_t   annlist_t;
+typedef struct shtlist_t   shtlist_t;
 
-static const char bases[5] = "ACGTN";
 
-static const char translate[256] = {[0 ... 255] = 4,
-                           ['a'] = 0, ['c'] = 1, ['g'] = 2, ['t'] = 3, ['n'] = 4, ['$'] = 5,
-                           ['A'] = 0, ['C'] = 1, ['G'] = 2, ['T'] = 3, ['N'] = 4};
+#define CHRSTR_SIZE   50
+#define BUFFER_SIZE   100
 
-static const char translate_rc[256] = {[0 ... 255] = 4,
-                           ['a'] = 3, ['c'] = 2, ['g'] = 1, ['t'] = 0, ['n'] = 4, ['$'] = 5,
-                           ['A'] = 3, ['C'] = 2, ['G'] = 1, ['T'] = 0, ['N'] = 4};
-
-static const char revcomp[256] = {[0 ... 255] = 'N',
-                   ['a'] = 't', ['c'] = 'g', ['g'] = 'c', ['t'] = 'a', ['u'] = 'a',
-                   ['A'] = 'T', ['C'] = 'G', ['G'] = 'C', ['T'] = 'A', ['U'] = 'A' };
-
-static const char uppercase[256] = {[0 ... 255] = 'e',
-                           ['a'] = 'a', ['c'] = 'b', ['g'] = 'c', ['t'] = 'd', ['n'] = 'e', ['$'] = '$',
-                           ['A'] = 'a', ['C'] = 'b', ['G'] = 'c', ['T'] = 'd', ['N'] = 'e'};
-
-typedef struct index_t    index_t;
-typedef struct chr_t      chr_t;
-typedef struct lcpdata_t  lcpdata_t;
-typedef struct list64_t   list64_t;
-typedef struct lcpval_t   lcpval_t;
-
-struct lcpval_t {
-   uint8_t lcp;
-   int8_t  offset;
-};
-
-struct lcpdata_t {
+struct ann_t {
+   uint8_t    id;
+   int        k;
+   int        d;
    uint64_t   size;
-   lcpval_t * lcp;
+   uint64_t   unique;
+   uint8_t  * data;
 };
 
-struct list64_t {
-   uint64_t   size;
-   int64_t  * val;
+
+struct annlist_t {
+   uint8_t  count;
+   ann_t    ann[];
 };
 
-struct chr_t {
-   int     nchr;
-   long  * start;
-   char ** name;
+struct sht_t {
+   uint8_t    id;
+   uint8_t    bits;
+   int        k;
+   int        d;
+   int        repeat_thr;
+   uint64_t   set_count;
+   uint64_t   collision;
+   htable_t * htable;
 };
 
-struct index_t {
-   // Gen file.
-   uint64_t    size;
-   char      * genome;
-   // OCC.
-   uint64_t  * c;
-   uint64_t    occ_mark_int;
-   uint64_t  * occ;
-   // Suffix Array.
-   uint64_t    sa_bits;
-   uint64_t  * sa;
-   // Lookup table.
-   //   uint64_t    lut_kmer;
-   //   uint64_t  * lut;
-   // LCP index.
-   uint64_t    lcp_mark_int;
-   uint64_t    lcp_min_depth;
-   uint64_t  * lcp_sample_idx;
-   uint64_t  * lcp_extend_idx;
-   lcpdata_t * lcp_sample;
-   list64_t  * lcp_extend;
-   // Annotation.
-   void      * seeds;
-   uint8_t   * repeats;
-   // Chromosome index.
-   chr_t     * chr;
+struct shtlist_t {
+   uint8_t  count;
+   sht_t    sht[];
 };
+
+char       * add_suffix            (const char *, const char *);
+annlist_t  * ann_index_read        (char *);
+shtlist_t  * sht_index_read        (char *);
+int          ann_index_write       (annlist_t *, char *);
+int          sht_index_write       (shtlist_t *, char *);
+int          ann_index_load        (annlist_t *, char *);
+int          sht_index_load        (shtlist_t *, char *);
+int          ann_find_slot         (annlist_t *);
+int          sht_find_slot         (shtlist_t *);
+int          index_add_annotation  (int, int, int, int, int, index_t *, char *);
+index_t    * index_load_base       (char *);
+char       * index_load_gen        (char *);
+bwt_t      * index_load_bwt        (char *);
+sar_t      * index_load_sar        (char *);
+chr_t      * index_load_chr        (char *);
 
 #endif

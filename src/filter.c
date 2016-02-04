@@ -12,7 +12,7 @@ align_matches
 )
 {
    int slen = strlen(read);
-   mergesort_mt(hitlist->match, hitlist->pos, sizeof(match_t), 0, 1, compar_seedhits);
+   //   mergesort_mt(hitlist->match, hitlist->pos, sizeof(match_t), 0, 1, compar_seedhits);
    hit_t hits[20];
    int best = 0, second = 0;
    for(int i = 0; i < min(20,hitlist->pos); i++) {
@@ -24,7 +24,7 @@ align_matches
       long l_min  = 0;
       //long r_qstart = seed.read_s + 1;
       long r_qstart = hits[i].qrypos + 1;
-      long l_qstart = align_max(r_qstart - 1,0);
+      long l_qstart = align_max(hits[i].qrypos,0);
       //long r_rstart = seed.ref_s + 1;
       long r_rstart = hits[i].locus + 1; 
       //long l_rstart = seed.ref_s;
@@ -42,31 +42,13 @@ align_matches
       char * r_ref = index->genome + r_rstart;
       char * l_ref = index->genome + l_rstart;
 
-      double mean = 0, var = 0, smean = 0;
-      int seed_score = 255, safe = 0, reseed_pos = -1, reseed_hits = 21;
-      //      fprintf(stdout,"[%d] loc:%ld:\t",i,hits[i].locus);
+      // Find whether alignment is safe in repeat annotation.
+      int safe = 0;
       if (index->repeats != NULL) {
          uint64_t ref_start = l_rstart - l_rlen;
-         for (uint64_t j = ref_start; j < ref_start + slen; j++) {
-            //            fprintf(stdout, "%d ",index->repeats[j]);
-            mean += index->repeats[j];
+         for (uint64_t j = ref_start; j < ref_start + slen && !safe; j++) {
+            safe = (index->repeats[j>>3] >> (j&7)) & 1;
          }
-         mean *= 1.0/slen;
-         for (uint64_t j = ref_start; j < ref_start + slen; j++) {
-            var += (index->repeats[j]-mean)*(index->repeats[j]-mean);
-         }
-         var = sqrt(var)*1.0/slen;
-         for (uint64_t j = l_rstart; j <= l_rstart + max(((int)hits[i].depth)-25, 0); j++) {
-            smean += index->repeats[j];
-            if (index->repeats[j] == 1) safe = 1;
-            if (index->repeats[j] < reseed_hits) {
-               reseed_hits = index->repeats[j];
-               reseed_pos = l_qstart + (int)(j - hits[i].locus);
-            }
-         }
-         smean *= 1.0/max(((int)hits[i].depth)-24,1);
-         //         fprintf(stdout,"\n");
-         //         fprintf(stdout, "mean:%.2f\tvar:%.2f\tseed score:%d\n",mean,var,seed_score);
       }
       
       // Align forward and backward starting from (read_s, ref_s).
@@ -107,11 +89,7 @@ align_matches
          match_t hit;
          second = (*seqmatches)->pos ? best : (3*align_span)/4;
          hit.flags  = second;
-         hit.hits   = (safe ? seed_score : reseed_hits);
          hit.ident  = identities;
-         hit.mapq   = mean;
-         hit.e_exp  = smean;
-         hit.score  = reseed_pos;
          if (hitlist->pos == 1 && !safe)
             hit.interval = 2;
          else 
@@ -170,36 +148,33 @@ align_hits
             index->size - r_rstart);
       long l_rlen = align_min((long)(l_qlen * (1 + alignopt.width_ratio)),
             r_qstart);
+
+      // Added this line to avoid duplicate match when
+      // unique seed align is not safe (while reseeding).
+      if ((*seqmatches)->pos) {
+         int64_t d = ((int64_t)(*seqmatches)->match[0].ref_s) - ((int64_t)l_rstart - l_rlen);
+         if (d < slen && d > -slen) continue;
+      }
+
       char * r_qry = read + r_qstart;
       char * l_qry = read + l_qstart;
       char * r_ref = index->genome + r_rstart;
       char * l_ref = index->genome + l_rstart;
 
-      double mean = 0, var = 0, smean = 0;
-      int seed_score = 255, safe = 0, reseed_pos = -1, reseed_hits = 21;
+      int safe = 0;
       //      fprintf(stdout,"[%d] loc:%ld:\t",i,hits[i].locus);
       if (index->repeats != NULL) {
-         uint64_t ref_start = l_rstart - l_rlen;
-         for (uint64_t j = ref_start; j < ref_start + slen; j++) {
-            //            fprintf(stdout, "%d ",index->repeats[j]);
-            mean += index->repeats[j];
-         }
-         mean *= 1.0/slen;
-         for (uint64_t j = ref_start; j < ref_start + slen; j++) {
-            var += (index->repeats[j]-mean)*(index->repeats[j]-mean);
-         }
-         var = sqrt(var)*1.0/slen;
-         for (uint64_t j = l_rstart, k = l_qstart; j <= l_rstart + max(((int)hits[i].depth)-25, 0); j++, k++) {
-            smean += index->repeats[j];
-            if (index->repeats[j] == 1) safe = 1;
-            if (index->repeats[j] < reseed_hits) {
-               reseed_hits = index->repeats[j];
-               reseed_pos = l_qstart + (int)(j - hits[i].locus);
+         uint64_t ref_start = l_rstart - l_rlen + 1;
+         if (ref_start >= index->size/2) {
+            ref_start = index->size - 1 - ref_start - 25;
+            for (uint64_t j = ref_start; j >= ref_start - slen + 25 && !safe; j--) {
+               safe = (index->repeats[j>>3] >> (j&7)) & 1;
+            }
+         } else {
+            for (uint64_t j = ref_start; j <= ref_start + slen - 25 && !safe; j++) {
+               safe = (index->repeats[j>>3] >> (j&7)) & 1;
             }
          }
-         smean *= 1.0/max(((int)hits[i].depth)-24,1);
-         //         fprintf(stdout,"\n");
-         //         fprintf(stdout, "mean:%.2f\tvar:%.2f\tseed score:%d\n",mean,var,seed_score);
       }
       
       // Align forward and backward starting from (read_s, ref_s).
@@ -227,10 +202,14 @@ align_hits
          read_s = l_qstart + 1;
          ref_s  = l_rstart + 1;
       }
-      int align_span = align_r.row + align_l.row;
+      //      int align_span = align_r.row + align_l.row;
+      int align_span = read_e - read_s + 1;
       int identities = align_span - align_r.score - align_l.score;
       int ref_min = (*seqmatches)->match[0].ref_s - align_span;
       int ref_max = ref_min + 2*align_span;
+
+      // DEBUG.
+      //      fprintf(stdout, "alignment: [%ld<--<%ld,%d>--%ld][%ld--<%ld,%d>-->%ld]\n",read_s, l_qlen, align_l.score,l_qstart,r_qstart,r_qlen,align_r.score,read_e);
 
       
       // Compute significance.
@@ -240,11 +219,8 @@ align_hits
          match_t hit;
          second = (*seqmatches)->pos ? best : (3*align_span)/4;
          hit.flags  = second;
-         hit.hits   = (safe ? seed_score : reseed_hits);
          hit.ident  = identities;
-         hit.mapq   = mean;
-         hit.e_exp  = smean;
-         hit.score  = reseed_pos;
+         /*
          if (hits[i].bulk == 1) {
             if (safe) hit.interval = 1;
             else hit.interval = 2;
@@ -252,6 +228,8 @@ align_hits
             if (safe) hit.interval = 3;
             else hit.interval = 4;
          }
+         */
+         hit.interval = safe;
 
          // Fill/Update hit.
          hit.ref_e  = ref_e;

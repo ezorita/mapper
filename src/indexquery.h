@@ -1,9 +1,7 @@
-
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
 #include "definitions.h"
-#include "index.h"
 
 #ifndef _INDEXQUERY_H
 #define _INDEXQUERY_H
@@ -37,22 +35,16 @@ struct fmdpos_t {
 };
 
 
-uint64_t get_sa            (uint64_t pos, uint64_t * sa, int bits);
-int      get_sa_range      (uint64_t start, uint64_t size, uint64_t * sa, int bits, uint64_t * out);
+uint64_t get_sa            (uint64_t pos, sar_t * sa);
+int      get_sa_range      (uint64_t start, uint64_t size, uint64_t * out, sar_t * sa);
 int      get_occ           (int64_t pos, uint64_t * occ, int64_t * val);
 uint64_t get_occ_nt        (int64_t pos, uint64_t * occ, int nt);
-fmdpos_t extend_bw         (int nt, fmdpos_t pos, index_t * index);
-fmdpos_t extend_fw         (int nt, fmdpos_t pos, index_t * index);
-int      extend_bw_all     (fmdpos_t pos, fmdpos_t * newpos, index_t * index);
-int      extend_fw_all     (fmdpos_t pos, fmdpos_t * newpos, index_t * index);
-int      suffix_extend     (int nt, bwpos_t pos, bwpos_t * newpos, index_t * index);
-int      suffix_extend_all (bwpos_t pos, bwpos_t * newpos, index_t * index);
-int      suffix_shrink     (bwpos_t pos, bwpos_t * newpos, index_t * index);
-int      suffix_ssv_search (uint64_t pos, bwpos_t * newpos, index_t * index);
-int      suffix_ssv        (bwpos_t pos, bwpos_t * newpos, index_t * index);
+fmdpos_t extend_bw         (int nt, fmdpos_t pos, bwt_t * bwt);
+fmdpos_t extend_fw         (int nt, fmdpos_t pos, bwt_t * bwt);
+int      extend_bw_all     (fmdpos_t pos, fmdpos_t * newpos, bwt_t * bwt);
+int      extend_fw_all     (fmdpos_t pos, fmdpos_t * newpos, bwt_t * bwt);
+int      suffix_extend     (int nt, bwpos_t pos, bwpos_t * newpos, bwt_t * bwt);
+int      suffix_extend_all (bwpos_t pos, bwpos_t * newpos, bwt_t * bwt);
 int      suffix_string     (char * suf, int slen, uint64_t minloci, bwpos_t * newpos, index_t * index);
-
-// Deprecated functions.
-//int      suffix_lut        (char * suf, int slen, bwpos_t * newpos, index_t * index);
 
 #endif

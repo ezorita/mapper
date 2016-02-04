@@ -44,9 +44,9 @@ find_uniq_seeds
       uint8_t score = htable_get(htable, key);
       if (score == 1) {
          bwpos_t pos = {0,0,index->size-1};
-         for (int j = i+k-1; j >= i && pos.ep >= pos.sp; j--) suffix_extend(query[j],pos,&pos,index);
+         for (int j = i+k-1; j >= i && pos.ep >= pos.sp; j--) suffix_extend(query[j],pos,&pos,index->bwt);
          if (pos.ep == pos.sp) {
-            uint64_t locus = get_sa(pos.sp, index->sa, index->sa_bits);
+            uint64_t locus = get_sa(pos.sp, index->sar);
             if ((index->repeats[locus>>3] >> (locus&7))&1) {
                seed_t seed = (seed_t) {.bulk = 0, .qry_pos = i, .ref_pos = pos};
                seedstack_push(seed, unique);
@@ -54,7 +54,7 @@ find_uniq_seeds
          }
       } else if (score == 2) {
          bwpos_t pos = {0,0,index->size-1};
-         for (int j = i+k-1; j >= i && pos.ep >= pos.sp; j--) suffix_extend(query[j],pos,&pos,index);
+         for (int j = i+k-1; j >= i && pos.ep >= pos.sp; j--) suffix_extend(query[j],pos,&pos,index->bwt);
          if (pos.ep >= pos.sp && pos.ep - pos.sp + 1 <= 20) {
             seed_t seed = (seed_t) {.bulk = 0, .qry_pos = i, .ref_pos = pos};
             seedstack_push(seed, good);
@@ -86,10 +86,10 @@ find_uniq_seed
       //      fprintf(stderr," %d",value);
       if (value == 1) {
          bwpos_t pos = {0,0,index->size-1};
-         for (int j = i+k-1; j >= i && pos.ep >= pos.sp; j--) suffix_extend(query[j],pos,&pos,index);
+         for (int j = i+k-1; j >= i && pos.ep >= pos.sp; j--) suffix_extend(query[j],pos,&pos,index->bwt);
          //         fprintf(stderr,(pos.ep < pos.sp ? "i" : pos.ep > pos.sp ? "m" : ""));
          if (pos.ep == pos.sp) {
-            uint64_t locus = get_sa(pos.sp, index->sa, index->sa_bits);
+            uint64_t locus = get_sa(pos.sp, index->sar);
             //            fprintf(stderr,"locus: %ld (%ld)\n", locus, index->size - 1 - locus - k);
             if (locus >= index->size/2) locus = index->size - 1 - locus - k;
             int unique = (index->repeats[locus>>3] >> (locus&7))&1;
@@ -145,105 +145,6 @@ find_thr_seed
    return -1;
 }
 
-seed_t
-seed_locally
-(
-  char    * seq,
-  bwpos_t   pos,
-  int       mm,
-  index_t * index
-)
-// SYNOPSIS:
-// Find seed locally by extend/shrink.
-{
-
-   bwpos_t newpos = {0};
-
-   for (int i = mm-1 ; i > -1 ; i--) {
-
-      suffix_extend(translate[(uint8_t)seq[i]], pos, &newpos, index);
-
-      // Backtrack as nuch as needed.
-      while (newpos.ep < newpos.sp) {
-         suffix_shrink(pos, &pos, index);
-         suffix_extend(translate[(uint8_t)seq[i]], pos, &newpos, index);
-      }
-
-      // Tail must not go further than initial mismatch position.
-      if (i + newpos.depth - 1 < mm) break;
-      if (newpos.depth > 24) {
-         // XXX in this crapotype, bulk is just used to say that the seed XXX
-         // XXX is valid and it can be used for alignment...              XXX
-         return (seed_t) {.bulk = 1, .qry_pos = i+1, .ref_pos = newpos};
-      }
-
-      pos = newpos;
-
-   }
-
-   // Nothing found.
-   return (seed_t) {0};
-
-}
-
-int
-seed_the_right_way
-(
- char         * seq,
- seedstack_t ** stack,
- index_t      * index
-)
-{
-
-   bwpos_t pos = {.depth = 0, .sp = 0, .ep = index->size-1};
-
-   for (int i = strlen(seq)-1 ; i > -1 ; i--) {
-
-      bwpos_t newpos;
-      uint8_t c = translate[(uint8_t)seq[i]];
-
-      for (uint8_t a = 0 ; a < 4 ; a++) {
-         // Do not add the nucleotide present in the sequence.
-         if (a == c) continue;
-
-         // Add a different nucleotide and seed locally.
-         suffix_extend(a, pos, &newpos, index);
-         if (newpos.ep < newpos.sp) {
-            bwpos_t tmp = pos;
-            do {
-               suffix_shrink(tmp, &tmp, index);
-               suffix_extend(a, tmp, &newpos, index);
-            }
-            while (newpos.ep < newpos.sp);
-         }
-
-         seed_t seed = seed_locally(seq, newpos, i, index);
-         // XXX See comment above. XXX
-         if (seed.bulk) {
-            *stack[0]->seed = seed;
-            (*stack)->pos = 1;
-            return 0;
-         }
-
-      }
-
-      // Add the nucleotide present in the sequence.
-      suffix_extend(c, pos, &newpos, index);
-
-      // Backtrack as much as needed.
-      while (newpos.ep < newpos.sp) {
-         suffix_shrink(pos, &pos, index);
-         suffix_extend(translate[(uint8_t)seq[i]], pos, &newpos, index);
-      }
-
-      pos = newpos;
-
-   }
-
-   // Nothing found.
-   return 0;
-
-}
 
 int
 count_mismatch
@@ -260,12 +161,12 @@ count_mismatch
       bwpos_t next;
       for (int j = 0; j < 4; j++) {
           if (j == nt) {
-            suffix_extend(j, pos, &next, index);
+            suffix_extend(j, pos, &next, index->bwt);
          } else {
             bwpos_t tmp;
-            suffix_extend(j, pos, &tmp, index);
+            suffix_extend(j, pos, &tmp, index->bwt);
             for (int k = i-1; k >= 0 && tmp.ep >= tmp.sp; k--) {
-               suffix_extend(translate[(uint8_t)seq[k]], tmp, &tmp, index);
+               suffix_extend(translate[(uint8_t)seq[k]], tmp, &tmp, index->bwt);
             }
             if (tmp.ep >= tmp.sp) {
                count += tmp.ep - tmp.sp + 1;
@@ -295,12 +196,12 @@ find_mismatch
       bwpos_t next;
       for (int j = 0; j < 4; j++) {
           if (j == nt) {
-            suffix_extend(j, pos, &next, index);
+            suffix_extend(j, pos, &next, index->bwt);
          } else {
             bwpos_t tmp;
-            suffix_extend(j, pos, &tmp, index);
+            suffix_extend(j, pos, &tmp, index->bwt);
             for (int k = i-1; k >= 0 && tmp.ep >= tmp.sp; k--) {
-               suffix_extend(translate[(uint8_t)seq[k]], tmp, &tmp, index);
+               suffix_extend(translate[(uint8_t)seq[k]], tmp, &tmp, index->bwt);
             }
             if (tmp.ep >= tmp.sp) {
                seed_t seed = (seed_t) {.bulk = 0, .qry_pos = qrypos, .ref_pos = tmp};
@@ -334,13 +235,13 @@ seed_mismatch
    //  forward extend exact until c-1.
    int i = 0;
    for (; i < c; i++) {
-      pos = extend_fw(translate[(int)seq[i]],pos,index);
+      pos = extend_fw(translate[(int)seq[i]],pos,index->bwt);
    }
    //  mismatch all the next positions.
    for (; i < slen; i++) {
       int nt = translate[(int)seq[i]];
       fmdpos_t newpos[5];
-      extend_fw_all(pos, newpos, index);
+      extend_fw_all(pos, newpos, index->bwt);
       for (int j = 0; j < 4; j++) {
          if (j == nt) {
             // Extend perfect seed.
@@ -348,7 +249,7 @@ seed_mismatch
          } else {
             // Extend mismatched seed.
             for (int k = i+1; k < slen && newpos[j].sz; k++)
-               newpos[j] = extend_fw(translate[(int)seq[k]],newpos[j],index);
+               newpos[j] = extend_fw(translate[(int)seq[k]],newpos[j],index->bwt);
             if (newpos[j].sz) {
                // Save seed.
                bwpos_t refpos = {.sp = newpos[j].fp, .ep = newpos[j].fp + newpos[j].sz - 1, .depth = slen};
@@ -362,13 +263,13 @@ seed_mismatch
    pos = (fmdpos_t){0,0,index->size};
    i = slen-1;
    for (; i >= c; i--) {
-      pos = extend_bw(translate[(int)seq[i]],pos,index);
+      pos = extend_bw(translate[(int)seq[i]],pos,index->bwt);
    }
    //  mismatch all the next positions.
    for (; i >= 0; i--) {
       int nt = translate[(int)seq[i]];
       fmdpos_t newpos[5];
-      extend_bw_all(pos, newpos, index);
+      extend_bw_all(pos, newpos, index->bwt);
       for (int j = 0; j < 4; j++) {
          if (j == nt) {
             // Extend perfect seed.
@@ -376,7 +277,7 @@ seed_mismatch
          } else {
             // Extend mismatched seed.
             for (int k = i-1; k >= 0 && newpos[j].sz; k++)
-               newpos[j] = extend_bw(translate[(int)seq[k]],newpos[j],index);
+               newpos[j] = extend_bw(translate[(int)seq[k]],newpos[j],index->bwt);
             if (newpos[j].sz) {
                // Save seed.
                bwpos_t refpos = {.sp = newpos[j].fp, .ep = newpos[j].fp + newpos[j].sz - 1, .depth = slen};
@@ -389,277 +290,6 @@ seed_mismatch
    return 0;
 }
 
-int
-seed_block_all
-(
- char *         seq,
- size_t         slen,
- seedstack_t ** stack,
- index_t      * index,
- int            blen,
- int            fw
-)
-{
-   // Wing length.
-   // Convert block length to even number.
-   int c = (blen + (fw > 0)) / 2;
-   int v = blen - c;
-   // Allocate seed cache.
-   bwpos_t cache[100];
-   // Seed:
-   // - pre-compute constant part.
-   int e = slen-1;
-   int i = slen-1;
-   bwpos_t pos = (bwpos_t) {.sp = 0, .ep = index->size-1, .depth = 0};
-   while (i >= v) {
-      bwpos_t newpos;
-      suffix_extend(translate[(uint8_t)seq[i]], pos, &newpos, index);
-      if (newpos.sp <= newpos.ep) {
-         // If got length c, store and shrink.
-         if (newpos.depth == c) {
-            cache[e] = newpos;
-            bwpos_t tmp;
-            suffix_shrink(newpos, &tmp, index);
-            // This is necessary to avoid shrinking more than 1 nt.
-            if (tmp.depth < c-1) {
-               newpos.depth--;
-            } else {
-               newpos = tmp;
-            }
-            e--;
-         }
-         pos = newpos;
-         i--;
-      } else {
-         cache[e--] = newpos;
-         bwpos_t tmp;
-         int depth = pos.depth;
-         suffix_shrink(pos, &tmp, index);
-         if (tmp.depth < depth-1) {
-            pos.depth--;
-         } else {
-            pos = tmp;
-         }
-      }
-   }
-
-   // - seed for all mismatched positions (i).
-   for (int i = slen-1-c; i >= 0; i--) {
-      int beg = min(i+blen, slen-1);
-      int end = max(i+c, blen-1);
-      int nt  = translate[(uint8_t)seq[i]];
-      // Interval of this seed (p).
-      for (int p = beg; p >= end; p--) {
-         bwpos_t current = cache[p];
-         // Continue on broken seeds.
-         if (current.depth != p - i) continue;
-         /*
-         else if (current.depth == blen && current.ep - current.sp + 1 > 0 && fw == 1) {
-            // Save seed.
-            seed_t seed = (seed_t) {.bulk = 0, .qry_pos = p-blen+1, .ref_pos = current};
-            seedstack_push(seed, stack);
-         }
-         */
-         // Extend with the 4 possible mutations (m).
-         for (int m = 0; m < 4; m++) {
-            bwpos_t mpos = current;
-            suffix_extend(m, mpos, &mpos, index);
-            if (mpos.ep < mpos.sp) continue;
-            // Cache extension for the next mismatch.
-            if (m == nt) {
-               cache[p] = mpos;
-               continue;
-            } 
-            int k = i-1;
-            // Extend seed until block length.
-            while (mpos.ep >= mpos.sp && mpos.depth < blen)
-               suffix_extend(translate[(uint8_t)seq[k--]], mpos, &mpos, index);
-            // Save seed if seed exists.
-            if (mpos.ep >= mpos.sp) {
-               // Save seed.
-               seed_t seed = (seed_t) {.bulk = 0, .qry_pos = p-blen+1, .ref_pos = mpos};
-               seedstack_push(seed, stack);
-            }
-         }
-      }
-   }
-
-//      for (int i = 0; i < c; i++) {
-//         pos = extend_fw(translate[(uint8_t)seq[b+i]], pos, index);
-//         if (pos.sz == 0) break;
-//      }    
-//seed_t seed = (seed_t) {.bulk = 0, .qry_pos = b, .ref_pos = (bwpos_t) {.sp = mpos.fp, .ep = mpos.fp+mpos.sz-1, .depth = blen}};
-
-
-   return 0;
-}  
-
-
-char *
-rev_comp
-(
- char * seq
-)
-{
-   int64_t slen = strlen(seq);
-   char * rseq = malloc(slen+1);
-   for (int64_t i = 0; i < slen; i++)
-      rseq[slen-1-i] = revcomp[(uint8_t)seq[i]];
-   rseq[slen] = 0;
-   return rseq;
-}
-
-
-int
-seed_thr
-(
- char         * seq,
- size_t         slen,
- seedstack_t ** stack,
- seedopt_t      opt,
- index_t      * index
-)
-{
-   int32_t i = slen-1;
-   uint64_t new_loci;
-   // Start position.
-   bwpos_t pos = (bwpos_t){.depth = 0, .sp = 0, .ep = index->size-1};
-   while (i >= 0) {
-      int nt = translate[(uint8_t)seq[i]];
-      if (nt > 3) {
-         pos = (bwpos_t){.depth = 0, .sp = 0, .ep = index->size-1};
-         i--;
-         continue;
-      }
-      bwpos_t newpos;
-      // Extend suffix (Backward search).
-      suffix_extend(nt, pos, &newpos, index);
-      // Count loci.
-      new_loci = (newpos.ep < newpos.sp ? 0 : newpos.ep - newpos.sp + 1);
-      // Seed found, save and shrink suffix.
-      if (new_loci == 0) {
-         // Shrink suffix once.
-         suffix_shrink(pos, &newpos, index);
-         new_loci = newpos.ep - newpos.sp + 1;
-      } else if (new_loci <= opt.thr_seed && pos.depth >= opt.min_len) {
-         // Build seed.
-         int bulk = 0;//newpos.depth < opt.min_len;
-         seed_t seed = (seed_t) {.bulk = bulk, .qry_pos = i, .ref_pos = newpos};
-         // Save seed.
-         seedstack_push(seed, stack);
-
-         // Shrink previous suffix (it had loci_count > thr).
-         suffix_shrink(newpos, &newpos, index);
-         // Check Complementary matches.
-         if (newpos.depth > opt.min_len && newpos.ep - newpos.sp + 1 <= opt.min_loci) {
-            bwpos_t tmp;
-            do {
-               tmp = newpos;
-               suffix_shrink(newpos, &newpos, index);
-            } while (newpos.depth > opt.min_len && newpos.ep - newpos.sp + 1 <= opt.min_loci);
-            // Save seed if it bears new loci.
-            if (tmp.ep - tmp.sp + 1 > new_loci) {
-               seed_t seed = (seed_t) {.bulk = 0, .qry_pos = i, .ref_pos = tmp};
-               seedstack_push(seed, stack);
-            }
-         }
-         // Extend.
-         i--;
-      } else {
-         i--;
-      }
-      pos = newpos;
-   }
-
-   return 0;
-}
-
-
-int
-seed_mem
-(
- char         * seq,
- int32_t         beg,
- int32_t         end,
- seedstack_t ** stack,
- seedopt_t      opt,
- index_t      * index
-)
-{
-
-   int32_t i;
-   int32_t last_qry_pos = end;
-   uint64_t new_loci = index->size;//, last_loci;
-
-   int maxseedlength = 0;
-   int seed_pos = (*stack)->pos;
-   
-   // Start position.
-   bwpos_t pos = (bwpos_t){.depth = 0, .sp = 0, .ep = index->size-1};
-
-   for (i = end-1 ; i >= beg ; i--) {
-      bwpos_t newpos;
-      int nt = translate[(uint8_t)seq[i]];
-      // Extend suffix (Backward search).
-      suffix_extend(nt, pos, &newpos, index);
-      // Count loci.
-      //last_loci = new_loci;
-      new_loci = (newpos.ep < newpos.sp ? 0 : newpos.ep - newpos.sp + 1);
-
-      if (new_loci > opt.min_loci) {
-         pos = newpos;
-         continue;
-      }
-
-      // Seed found.
-      int seedlength = last_qry_pos - i - 1;
-
-      if (seedlength > 24) {
-         if (seedlength == maxseedlength) {
-            seed_t seed = (seed_t) {.bulk = 0, .qry_pos = i+1, .ref_pos = pos};
-            seedstack_push(seed, stack);
-         }
-         if (seedlength > maxseedlength) {
-            maxseedlength = seedlength;
-            (*stack)->seed[seed_pos].bulk = 0;
-            (*stack)->seed[seed_pos].qry_pos = i+1;
-            (*stack)->seed[seed_pos].ref_pos = pos;
-            (*stack)->pos = seed_pos+1;
-         }
-      }
-
-      if (nt == 4) {
-         // Reset 'pos' and jump over N.
-         last_qry_pos = i+1;
-         pos = (bwpos_t){.depth = 0, .sp = 0, .ep = index->size-1};
-      } else if (new_loci < 1){
-         do {
-            int origdepth = pos.depth;
-            suffix_shrink(pos, &pos, index);
-            new_loci = pos.ep - pos.sp + 1;
-            last_qry_pos -= (origdepth - pos.depth);
-         } while (new_loci < opt.min_loci);
-         // Redo the loop with updated 'pos'.
-         // Quite ugly by the way.
-         i++;
-      }
-   }
-
-   if (last_qry_pos > 24) {
-      if (last_qry_pos == maxseedlength) {
-         seed_t seed = (seed_t) {.bulk = 0, .qry_pos = 0, .ref_pos = pos};
-         seedstack_push(seed, stack);
-      }
-      if (last_qry_pos > maxseedlength) {
-         (*stack)->seed[seed_pos].bulk = 0;
-         (*stack)->seed[seed_pos].qry_pos = 0;
-         (*stack)->seed[seed_pos].ref_pos = pos;
-         (*stack)->pos = seed_pos+1;
-      }
-   }
-
-   return 0;
-}
 
 
 hit_t *
@@ -681,7 +311,7 @@ compute_hits
    for (size_t i = 0; i < seeds->pos; i++) {
       seed_t seed = seeds->seed[i];
       for (size_t j = seed.ref_pos.sp; j <= seed.ref_pos.ep; j++) {
-         int64_t loc = get_sa(j,index->sa,index->sa_bits);
+         int64_t loc = get_sa(j,index->sar);
          hits[l++] = (hit_t) {.locus = loc, .qrypos = seed.qry_pos, .depth = seed.ref_pos.depth, .bulk = seed.ref_pos.ep - seed.ref_pos.sp + 1};
       }
    }
@@ -1007,7 +637,7 @@ naive_smem
          bwpos_t newpos;
          int nt = translate[(uint8_t)seq[i-j]];
          // Extend suffix (Backward search).
-         suffix_extend(nt, pos, &newpos, index);
+         suffix_extend(nt, pos, &newpos, index->bwt);
          // Count loci.
          new_loci = (newpos.ep < newpos.sp ? 0 : newpos.ep - newpos.sp + 1);
 

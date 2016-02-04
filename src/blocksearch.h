@@ -1,7 +1,7 @@
 #include <stdint.h>
 #include <stdlib.h>
-#include "index.h"
 #include "indexquery.h"
+#include "definitions.h"
 
 #ifndef _BLOCKSEARCH_H
 #define _BLOCKSEARCH_H

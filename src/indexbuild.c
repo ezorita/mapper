@@ -15,99 +15,80 @@ void SIGSEGV_handler(int sig) {
    exit(1);
 }
 
-
-int main(int argc, char *argv[])
-{
-   //signal(SIGSEGV, SIGSEGV_handler);
-   if (argc != 2) {
-      fprintf(stderr, "usage: buildindex <genome file>\n");
-      exit(EXIT_FAILURE);
-   }
-
-   return write_index(argv[1]);
-}
-
-
 int
 write_index
 (
- char * filename
+ char * filename,
+ int    def_kmer,
+ int    def_tau,
+ int    def_rthr,
+ int    threads
 )
 {
    // Output files.
-   char * sarfile = malloc(strlen(filename)+5);
-   strcpy(sarfile, filename);
-   strcpy(sarfile + strlen(filename), ".sar");
-   char * occfile = malloc(strlen(filename)+5);
-   strcpy(occfile, filename);
-   strcpy(occfile + strlen(filename), ".occ");
-   char * genfile = malloc(strlen(filename)+5);
-   strcpy(genfile, filename);
-   strcpy(genfile + strlen(filename), ".gen");
-   //   char * lutfile = malloc(strlen(filename)+5);
-   //   strcpy(lutfile, filename);
-   //   strcpy(lutfile + strlen(filename), ".lut");
-   char * lcpfile = malloc(strlen(filename)+5);
-   strcpy(lcpfile, filename);
-   strcpy(lcpfile + strlen(filename), ".lcp");
+   char * sarfile = add_suffix(filename, ".sar");
+   char * bwtfile = add_suffix(filename, ".bwt");
+   char * genfile = add_suffix(filename, ".gen");
+   char * annfile = add_suffix(filename, ".ann");
+   char * shtfile = add_suffix(filename, ".sht");
 
    // Open files.
    int fsa = open(sarfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-   int foc = open(occfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+   int fbw = open(bwtfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
    int fgn = open(genfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-   //   int flt = open(lutfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-   int flc = open(lcpfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+   int fan = open(annfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+   int fsh = open(shtfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+
    // Error control.
    if (fsa == -1) {
-      fprintf(stderr, "error in write_index (open %s): %s.\n", sarfile, strerror(errno));
+      fprintf(stderr, "[error] opening '%s' file: %s.\n", sarfile, strerror(errno));
       exit(EXIT_FAILURE);
    }
-   if (foc == -1) {
-      fprintf(stderr, "error in write_index (open %s): %s.\n", occfile, strerror(errno));
+   if (fbw == -1) {
+      fprintf(stderr, "[error] opening '%s' file: %s.\n", bwtfile, strerror(errno));
       exit(EXIT_FAILURE);
    }
    if (fgn == -1) {
-      fprintf(stderr, "error in write_index (open %s): %s.\n", genfile, strerror(errno));
+      fprintf(stderr, "[error] opening '%s' file: %s.\n", genfile, strerror(errno));
       exit(EXIT_FAILURE);
    }
-   /*
-   if (flt == -1) {
-      fprintf(stderr, "error in write_index (open %s): %s.\n", lutfile, strerror(errno));
-      exit(EXIT_FAILURE);
+   if (fan == -1) {
+      fprintf(stderr, "[error] opening '%s' file: %s.\n", annfile, strerror(errno));
+      return EXIT_FAILURE;
    }
-   */
-   if (flc == -1) {
-      fprintf(stderr, "error in write_index (open %s): %s.\n", lcpfile, strerror(errno));
-      exit(EXIT_FAILURE);
+   if (fsh == -1) {
+      fprintf(stderr, "[error] opening '%s' file: %s.\n", shtfile, strerror(errno));
+      return EXIT_FAILURE;
    }
    
    free(sarfile);
-   free(occfile);
+   free(bwtfile);
    free(genfile);
-   //   free(lutfile);
-   free(lcpfile);
+   free(annfile);
+   free(shtfile);
+
 
    clock_t tstart;
    size_t s = 0, stot = 0, bytes;
    // Parse genome and reverse complement.
    uint64_t gsize;
-   fprintf(stderr, "reading      genome file  ..."); tstart = clock();
+   fprintf(stderr, "[proc] reading      genome file  ..."); tstart = clock();
    char * genome = compact_genome(filename, &gsize);
    fprintf(stderr, " done [%.3fs]\n", (clock()-tstart)*1.0/CLOCKS_PER_SEC);
 
    // Compute suffix array.
-   fprintf(stderr, "computing    suffix array ..."); tstart = clock();
+   fprintf(stderr, "[proc] computing    suffix array ..."); tstart = clock();
    uint64_t * sa = (uint64_t *)compute_sa(genome, gsize);
    fprintf(stderr, " done [%.3fs]\n", (clock()-tstart)*1.0/CLOCKS_PER_SEC);
 
    // Compute OCC.
    uint64_t occ_size;
-   fprintf(stderr, "computing    occ table    ..."); tstart = clock();
+   fprintf(stderr, "[proc] computing    occ table    ..."); tstart = clock();
    uint64_t * occ = compute_occ(genome, sa, gsize, &occ_size);
    fprintf(stderr, " done [%.3fs]\n", (clock()-tstart)*1.0/CLOCKS_PER_SEC);
 
    // Compress suffix array.
-   fprintf(stderr, "compressing  suffix array ..."); tstart = clock();
+   fprintf(stderr, "[proc] compressing  suffix array ..."); tstart = clock();
    uint64_t sa_bits = 0;
    while (gsize > ((uint64_t)1 << sa_bits)) sa_bits++;
    uint64_t sa_size = compact_array(sa, gsize, sa_bits);
@@ -115,66 +96,39 @@ write_index
    fprintf(stderr, " done [%.3fs]\n", (clock()-tstart)*1.0/CLOCKS_PER_SEC);
 
    // Compute C.
-   fprintf(stderr, "computing    C table      ..."); tstart = clock();
+   fprintf(stderr, "[proc] computing    C table      ..."); tstart = clock();
    uint64_t * c = compute_c(occ + occ_size - NUM_BASES);
    fprintf(stderr, " done [%.3fs]\n", (clock()-tstart)*1.0/CLOCKS_PER_SEC);
 
-   // Compute LUT
-   /*
-   fprintf(stderr, "computing    lookup table ..."); tstart = clock();
-   uint64_t * lut = compute_lut(c, occ, LUT_KMER_SIZE);
-   fprintf(stderr, " done [%.3fs]\n", (clock()-tstart)*1.0/CLOCKS_PER_SEC);
-
-   // Compress LUT.
-   fprintf(stderr, "compressing  lookup table ..."); tstart = clock();
-   uint64_t lut_kmers = 1 << (2*LUT_KMER_SIZE);
-   uint64_t lut_size = compact_array(lut, lut_kmers, sa_bits);
-   lut = realloc(lut, lut_size*sizeof(uint64_t));
-   fprintf(stderr, " done [%.3fs]\n", (clock()-tstart)*1.0/CLOCKS_PER_SEC);
-
-   // Write .LUT file
-   fprintf(stderr, "writing lut...");
-   bytes = s = 0;
-   uint64_t kmer_size = LUT_KMER_SIZE;
-   while (s < sizeof(uint64_t)) s += write(flt, &kmer_size, sizeof(uint64_t));
-   bytes += s;
-   s = 0;
-   while (s < lut_size*sizeof(uint64_t)) s += write(flt, lut + s/sizeof(uint64_t), lut_size*sizeof(uint64_t) - s);
-   bytes += s;
-   stot += bytes;
-   fprintf(stderr, " %ld bytes written.\n",bytes);
-   free(lut);
-   */
-   // Write .OCC file
-   fprintf(stderr, "writing occ...");
+   // Write .BWT file
+   fprintf(stderr, "[proc] writing bwt...");
    // mark interval
    s = 0;
    uint64_t mark_int = OCC_MARK_INTERVAL;
-   while (s < sizeof(uint64_t)) s += write(foc, &mark_int, sizeof(uint64_t));
+   while (s < sizeof(uint64_t)) s += write(fbw, &mark_int, sizeof(uint64_t));
    stot += s;
    // Write C
    s  = 0;
-   while (s < (NUM_BASES+1)*sizeof(uint64_t)) s += write(foc, c + s/sizeof(uint64_t), (NUM_BASES+1)*sizeof(uint64_t) - s);
+   while (s < (NUM_BASES+1)*sizeof(uint64_t)) s += write(fbw, c + s/sizeof(uint64_t), (NUM_BASES+1)*sizeof(uint64_t) - s);
    stot += s;
    // Write OCC.
    s = 0;
-   while (s < occ_size * sizeof(uint64_t)) s += write(foc,occ + s/sizeof(uint64_t), occ_size*sizeof(uint64_t) - s);
+   while (s < occ_size * sizeof(uint64_t)) s += write(fbw,occ + s/sizeof(uint64_t), occ_size*sizeof(uint64_t) - s);
    stot += s;
+   close(fbw);
    fprintf(stderr, " %ld bytes written.\n",stot);
    free(c); free(occ);
-   // Compute LCP.
-   fprintf(stderr, "computing    LCP intervals..."); tstart = clock();
-   lcp_t lcp = compute_lcp(gsize, LCP_MIN_DEPTH, sa_bits, sa, genome);
-   fprintf(stderr, " done [%.3fs]\n", (clock()-tstart)*1.0/CLOCKS_PER_SEC);
    // Write .GEN FILE
-   fprintf(stderr, "writing gen...");
+   fprintf(stderr, "[proc] writing gen...");
    // Write genome bases (forward and reverse strand).
    s = 0;
    while (s < gsize*sizeof(char)) s += write(fgn, genome + s/sizeof(char), gsize*sizeof(char) - s);
    stot += s;
+   close(fgn);
+   free(genome);
    fprintf(stderr, " %ld bytes written.\n",s);
    // .SAR FILE
-   fprintf(stderr, "writing sar...");
+   fprintf(stderr, "[proc] writing sar...");
    // Write sa word width.
    bytes = s = 0;
    while (s < sizeof(uint64_t)) s += write(fsa, &sa_bits, sizeof(uint64_t));
@@ -183,55 +137,31 @@ write_index
    while (s < sa_size*sizeof(uint64_t)) s += write(fsa, sa + s/sizeof(uint64_t), sa_size*sizeof(uint64_t) - s);
    bytes += s;
    stot += bytes;
+   close(fsa);
+   free(sa);
    fprintf(stderr, " %ld bytes written.\n",bytes);
-   // .LCP FILE
-   fprintf(stderr, "writing lcp...");
-   // LCP index.
-   bytes = s = 0;
-   mark_int = LCP_MARK_INTERVAL;
-   while (s < sizeof(uint64_t)) s += write(flc, &mark_int, sizeof(uint64_t));
-   bytes += s;
-   s = 0;
-   uint64_t min_depth = LCP_MIN_DEPTH;
-   while (s < sizeof(uint64_t)) s += write(flc, &min_depth, sizeof(uint64_t));
-   bytes += s;
-   // Write sample index szie.
-   s = 0;
-   while(s < sizeof(uint64_t)) s += write(flc, &(lcp.lcpidx_size), sizeof(uint64_t));
-   bytes += s;
-   // Write sample index.
-   s = 0;
-   while(s < lcp.lcpidx_size*sizeof(uint64_t)) s += write(flc, lcp.idx_sample + s/sizeof(uint64_t), lcp.lcpidx_size*sizeof(uint64_t) - s);
-   bytes += s;
-   // Write extended index size.
-   s = 0;
-   while(s < sizeof(uint64_t)) s += write(flc, &(lcp.extidx_size), sizeof(uint64_t));
-   bytes += s;
-   // Write extended index.
-   s = 0;
-   while(s < lcp.extidx_size*sizeof(uint64_t)) s += write(flc, lcp.idx_extend + s/sizeof(uint64_t), lcp.extidx_size*sizeof(uint64_t) - s);
-   bytes += s;
-   // Write LCP samples.
-   s = 0;
-   uint64_t nsamples = (lcp.lcp_sample)->pos;
-   while(s < sizeof(uint64_t)) s+= write(flc, &nsamples, sizeof(uint64_t));
-   bytes += s;
-   s = 0;
-   while(s < nsamples*sizeof(int8_t)) s += write(flc, (lcp.lcp_sample)->val + s/sizeof(int8_t), nsamples * sizeof(int8_t) - s);
-   bytes += s;
-   // Write ext samples.
-   s = 0;
-   nsamples = (lcp.lcp_extend)->pos;
-   while(s < sizeof(uint64_t)) s+= write(flc, &nsamples, sizeof(uint64_t));
-   bytes += s;
-   s = 0;
-   while(s < nsamples*sizeof(int64_t)) s += write(flc, (lcp.lcp_extend)->val + s/sizeof(int64_t), nsamples * sizeof(int64_t) - s);
-   bytes += s;
-   stot += bytes;
-   fprintf(stderr, " %ld bytes written.\n",bytes);
-
-   fprintf(stderr, "done. %ld bytes written.\n", stot);
-
+   fprintf(stderr, "[info] index base created successfully. %ld bytes written.\n", stot);
+   fprintf(stderr, "[info] default genome annotation: k:%d, d:%d, repeat_thr:%d.\n", def_kmer, def_tau, def_rthr);
+   fprintf(stderr, "[proc] reading index... ");
+   index_t * index = index_load_base(filename);
+   if (index == NULL)
+      return EXIT_FAILURE;
+   fprintf(stderr, "done.\n");
+   fprintf(stderr, "[proc] creating annotation index... ");
+   uint8_t count = 0;
+   if (write(fan, &count, sizeof(uint8_t)) < 1) {
+      fprintf(stderr, "\n[error] could not write annotation index.\n");
+      return EXIT_FAILURE;
+   }
+   close(fan);
+   fprintf(stderr, "done.\n[proc] creating seed table index... ");
+   if(write(fsh, &count, sizeof(uint8_t)) < 1) {
+      fprintf(stderr, "\n[error] could not write seed table index.\n");
+      return EXIT_FAILURE;
+   }
+   close(fsh);
+   fprintf(stderr, "done.\n");
+   index_add_annotation(def_kmer,def_tau,def_rthr,3,threads,index,filename);
    return 0;
 }
 
@@ -337,358 +267,39 @@ compute_c
    return C;
 }
 
-int
-stack_push_lcp
+
+uint64_t
+compact_array
 (
- stack8_t **  stackp,
- uint8_t      lcp,
- int64_t      offset
+ uint64_t * array,
+ uint64_t     len,
+ int         bits
 )
 {
-   stack8_t * stack = *stackp;
-   // Realloc stack if full.
-   if (stack->pos + sizeof(uint8_t) + sizeof(int64_t) >= stack->size) {
-      uint64_t newsize = (stack->size*2 < stack->pos+sizeof(int64_t)+sizeof(int8_t) ? stack->pos+sizeof(int64_t)+sizeof(int8_t) : stack->size * 2);
-      *stackp = stack = realloc(stack, sizeof(stack8_t) + newsize);
-      if (stack == NULL) return -1;
-      stack->size = newsize;
-   }
-   // Save LCP value.
-   stack->val[stack->pos++] = lcp;
-   // Save extended offset to parent as int32.
-   memcpy(stack->val + stack->pos, &offset, sizeof(int64_t));
-   stack->pos += sizeof(int64_t);
+   uint64_t mask = ((uint64_t)0xFFFFFFFFFFFFFFFF) >> (64-bits);
+   uint64_t word = 0;
+   int   lastbit = 0;
+   
+   // Clear upper bits of array[0].
+   array[0] &= mask;
 
-   return 0;
-}
-
-void
-lcp_index_set
-(
- uint64_t * lcp_index,
- uint64_t   pos
-)
-{
-   // Count number of marks.
-   uint64_t marks = pos / LCP_MARK_BITS + 1;
-   uint64_t word  = pos / LCP_WORD_SIZE;
-   int      bit   = pos % LCP_WORD_SIZE;
-   // LSB index 0
-   // ...
-   // MSB index 63
-   // Set bit.
-   lcp_index[word + marks] |= ((uint64_t)(1) << bit);
-}
-
-int
-seq_lcp
-(
- char * seq_a,
- char * seq_b
-)
-{
-   int lcp = 0;
-   while (translate[(int)seq_a[lcp]] == translate[(int)seq_b[lcp]] && lcp < 255) lcp++;
-   return lcp;
-}
-
-lcpcorner_t
-corner_pop
-(
- cstack_t * stack
-)
-{
-   if (stack->pos > 0)
-      return stack->c[--stack->pos];
-   else
-      return (lcpcorner_t){-1,-1,-1};
-}
-
-int
-corner_push
-(
- cstack_t    ** stackp,
- lcpcorner_t    c
-)
-{
-   cstack_t * stack = *stackp;
-   // Realloc if needed.
-   if (stack->pos >= stack->size) {
-      uint64_t newsize = stack->size * 2;
-      *stackp = stack = realloc(stack, sizeof(cstack_t) + newsize*sizeof(lcpcorner_t));
-      if (stack == NULL) return -1;
-      stack->size = newsize;
-   }
-   // Save corner.
-   stack->c[stack->pos++] = c;
-
-   return 0;
-}
-
-cstack_t *
-cstack_new
-(
- int size
-)
-{
-   cstack_t * stack = malloc(sizeof(cstack_t) + size*sizeof(lcpcorner_t));
-   if (stack == NULL) return NULL;
-   stack->size = size;
-   stack->pos  = 0;
-   return stack;
-}
-
-int
-sample_compar
-(
- const void * a,
- const void * b,
- const int c
-)
-{
-   lcpcorner_t * ca = (lcpcorner_t *)a;
-   lcpcorner_t * cb = (lcpcorner_t *)b;
-   return (ca->pos > cb->pos ? 1 : -1);
-}
-
-stack8_t *
-stack8_new
-(
- size_t size
-)
-{
-   stack8_t * stack = malloc(sizeof(stack8_t) + size);
-   if (stack == NULL) return NULL;
-   stack->pos = 0;
-   stack->size = size;
-   return stack;
-}
-
-stack64_t *
-stack64_new
-(
- size_t size
-)
-{
-   stack64_t * stack = malloc(sizeof(stack64_t) + size * sizeof(int64_t));
-   if (stack == NULL) return NULL;
-   stack->pos = 0;
-   stack->size = size;
-   return stack;
-}
-
-int64_t
-stack64_push
-(
- stack64_t ** stackp,
- int64_t      val
-)
-{
-   stack64_t * stack = *stackp;
-   if (stack->pos >= stack->size) {
-      uint64_t newsize = stack->size * 2;
-      *stackp = stack = realloc(stack, sizeof(stack64_t) + newsize * sizeof(int64_t));
-      if (stack == NULL) return -1;
-      stack->size = newsize;
-   }
-   stack->val[stack->pos++] = val;
-   return 0;
-}
-
-int64_t
-stack64_pop
-(
- stack64_t * stack
-)
-{
-   return stack->val[--stack->pos];
-}
-
-
-int64_t
-naive_lcp
-(
- int           min_depth,
- uint64_t      idxsize,
- uint64_t    * lcpsample,
- uint64_t    * lcpext,
- stack8_t   ** lcp,
- stack64_t  ** ext,
- uint64_t    * sar,
- int           sar_bits,
- char        * genome
-)
-{
-   cstack_t * top = cstack_new(STACK_LCP_INITIAL_SIZE);
-   cstack_t * bottom = cstack_new(STACK_LCP_INITIAL_SIZE);
-   // Push topmost corner.
-   corner_push(&top, (lcpcorner_t){-1, 0, 0, 0});
-   if (min_depth == 0) {
-      lcp_index_set(lcpsample, 0);
-      if (stack_push_lcp(lcp, 0, -1)) return -1;
-   }
-   // Compute LCP of i=1, store in previous.
-   uint64_t cp = get_sa(0,sar,sar_bits);
-   int cl = 0;
-   uint64_t pp = get_sa(1,sar,sar_bits);
-   int pl = seq_lcp(genome+pp, genome+cp);
-   for (uint64_t i = 2; i < idxsize; i++) {
-      // Current position and lcp.
-      cp = get_sa(i,sar,sar_bits);
-      cl = seq_lcp(genome+pp, genome+cp);
-      // If current LCP > previous LCP -> Previous was top corner.
-      if (cl > pl) {
-         // Top corner - save sample.
-         lcpcorner_t tcorner = top->c[top->pos-1];
-         int64_t offset = tcorner.pos - (i-1);
-         if (cl >= min_depth) {
-            lcp_index_set(lcpsample, i-1);
-            if (stack_push_lcp(lcp, pl, offset)) return -1;
-         }
-         // Push corner to the stack.
-         corner_push(&top, (lcpcorner_t){pl, cl, i-1, 0});
-      }
-      // If current LCP < previous LCP -> Previous was bottom corner.
-      else if (cl < pl) {
-         // Bottom corner - save sample.
-         if (pl >= min_depth) {
-            if (stack_push_lcp(lcp, pl, 0xFFFFFFFF)) return -1;
-         }
-         while (bottom->pos > 0) {
-            if (bottom->c[bottom->pos-1].lcp_next <= cl) break;
-            // Pop sample from bottom stack and save.
-            lcpcorner_t bcorner = corner_pop(bottom);
-            // Bottom corner - update sample.
-            if (bcorner.lcp >= min_depth) {
-               int64_t offset = i-1 - bcorner.pos;
-               memcpy((*lcp)->val + bcorner.ptr, &offset, sizeof(int64_t));
-               lcp_index_set(lcpsample, bcorner.pos);
-            }
-         }
-         // Save current bottom corner.
-         corner_push(&bottom, (lcpcorner_t){pl, cl, i-1, (*lcp)->pos - sizeof(int64_t)});
-         // Remove top corners from stack.
-         while (top->pos > 0) {
-            if (top->c[top->pos-1].lcp < cl) break;
-            top->pos--;
-         }
-      }
-
-
-      // Assign previous.
-      pp = cp;
-      pl = cl;
-   }
-
-   // Add remaining bottom nodes.
-   while (bottom->pos > 0) {
-      // Pop sample from bottom stack and save.
-      lcpcorner_t bcorner = corner_pop(bottom);
-      // Bottom corner - update sample.
-      if (bcorner.lcp >= min_depth) {
-         int offset = idxsize-1 - bcorner.pos;
-         memcpy((*lcp)->val + bcorner.ptr, &offset, sizeof(int64_t));
-         lcp_index_set(lcpsample, bcorner.pos);
+   for (uint64_t i = 0, current; i < len; i++) {
+      // Save the current value.
+      current = array[i];
+      // Store the compact version.
+      array[word] |= (current & mask) << lastbit;
+      // Update bit offset.
+      lastbit += bits;
+      // Word is full.
+      if (lastbit >= 64) {
+         lastbit = lastbit - 64;
+         // Complete with remainder or set to 0 (if lastbit = 0).
+         // This will clear the upper bits of array.
+         array[++word] = (current & mask) >> (bits - lastbit);
       }
    }
 
-   if (min_depth == 0) {
-      lcp_index_set(lcpsample, idxsize-1);
-      if (stack_push_lcp(lcp, pl, 0)) return -1;
-   }
-
-   // Push an extra sample with LCP = 0 and OFFSET = 0.
-   // Otherwise LCP[endindex+1] would be out of range.
-   if (stack_push_lcp(lcp, 0, 0)) return -1;
-
-   free(top);
-   free(bottom);
-
-   // Compact LCP.
-   stack8_t * stack = *lcp;
-   int64_t  val = 0;
-   uint64_t p = 0, i = 0;
-   while (i < stack->pos) {
-      // Save LCP value.
-      stack->val[p++] = stack->val[i++];
-      // Compress offset.
-      memcpy(&val, stack->val + i, sizeof(int64_t));
-      if (val < -127) {
-         lcp_index_set(lcpext,p/2);
-         stack->val[p++] = (int8_t)-128;
-         stack64_push(ext, val);
-      } else if (val > 127) {
-         lcp_index_set(lcpext,p/2);
-         stack->val[p++] = (int8_t)127;
-         stack64_push(ext, val);
-      } else {
-         stack->val[p++] = (int8_t)val - (val > 0);
-      }
-      i += sizeof(int64_t);
-   }
-
-   stack->pos = p;
-   *lcp = realloc(*lcp, sizeof(stack8_t) + stack->pos*sizeof(int8_t));
-   if (*lcp == NULL) return -1;
-   (*lcp)->size = p;
-
-   *ext = realloc(*ext, sizeof(stack64_t) + (*ext)->pos*sizeof(int64_t));
-   if (*ext == NULL) return -1;
-   (*ext)->size = (*ext)->pos;
-   return 0;
-}
-
-
-lcp_t
-compute_lcp
-(
- uint64_t    idxsize,
- int         min_depth,
- int         sar_bits,
- uint64_t  * sar,
- char      * genome
-)
-{
-   // Allocate LCP stack.
-   stack8_t * stack = stack8_new(STACK_LCP_INITIAL_SIZE);
-   stack64_t * ext  = stack64_new(STACK_LCP_INITIAL_SIZE);
-   // Allocate LCP index.
-   uint64_t words = (idxsize + LCP_WORD_SIZE - 1)/LCP_WORD_SIZE;
-   uint64_t intervals = (words + LCP_MARK_INTERVAL - 1) / LCP_MARK_INTERVAL;
-   uint64_t marks = intervals + 1;
-   uint64_t index_size = intervals*LCP_MARK_INTERVAL + marks;
-   uint64_t * lcp_sample = calloc(index_size,sizeof(uint64_t));
-   uint64_t * lcp_extend = calloc(index_size,sizeof(uint64_t));
-
-   naive_lcp(min_depth, idxsize, lcp_sample, lcp_extend, &stack, &ext, sar, sar_bits, genome);
-
-   // Resize lcp_extend index.
-   uint64_t lcpext_words = (stack->pos + LCP_WORD_SIZE - 1)/LCP_WORD_SIZE;
-   uint64_t lcpext_ints  = (lcpext_words + LCP_MARK_INTERVAL - 1)/LCP_MARK_INTERVAL;
-   uint64_t lcpext_marks = lcpext_ints + 1;
-   uint64_t lcpext_size = lcpext_ints*LCP_MARK_INTERVAL + lcpext_marks;
-   lcp_extend = realloc(lcp_extend, lcpext_size * sizeof(uint64_t));
-
-   // LCP sample marks.
-   uint64_t abs_pos = 0;
-   for (uint64_t i = 0, w = 0; i < words; i++) {
-      if (i%LCP_MARK_INTERVAL == 0) lcp_sample[w++] = abs_pos;
-      abs_pos += __builtin_popcountl(lcp_sample[w++]);
-   }
-   lcp_sample[index_size - 1] = abs_pos;
-
-   // LCP ext marks.
-   abs_pos = 0;
-   for (uint64_t i = 0, w = 0; i < lcpext_words; i++) {
-      if (i%LCP_MARK_INTERVAL == 0) lcp_extend[w++] = abs_pos;
-      abs_pos += __builtin_popcountl(lcp_extend[w++]);
-   }
-   lcp_extend[lcpext_size - 1] = abs_pos;
-
-   lcp_t lcp = {.lcpidx_size = index_size, .extidx_size = lcpext_size, .idx_sample = lcp_sample, .idx_extend = lcp_extend, .lcp_sample = stack, .lcp_extend = ext};
-
-   // Return stack.
-   return lcp;
+   return word + (lastbit > 0);
 }
 
 char *
@@ -773,86 +384,3 @@ compact_genome
    
    return genome;
 }
-
-uint64_t
-compact_array
-(
- uint64_t * array,
- uint64_t     len,
- int         bits
-)
-{
-   uint64_t mask = ((uint64_t)0xFFFFFFFFFFFFFFFF) >> (64-bits);
-   uint64_t word = 0;
-   int   lastbit = 0;
-   
-   // Clear upper bits of array[0].
-   array[0] &= mask;
-
-   for (uint64_t i = 0, current; i < len; i++) {
-      // Save the current value.
-      current = array[i];
-      // Store the compact version.
-      array[word] |= (current & mask) << lastbit;
-      // Update bit offset.
-      lastbit += bits;
-      // Word is full.
-      if (lastbit >= 64) {
-         lastbit = lastbit - 64;
-         // Complete with remainder or set to 0 (if lastbit = 0).
-         // This will clear the upper bits of array.
-         array[++word] = (current & mask) >> (bits - lastbit);
-      }
-   }
-
-   return word + (lastbit > 0);
-}
-
-/*
-uint64_t *
-compute_lut
-(
- uint64_t * c,
- uint64_t * occ,
- int        depth
-)
-{
-   // Alloc LUT table.
-   uint64_t * lut = malloc((1 << (2*depth))*sizeof(uint64_t));
-   if (lut == NULL) return NULL;
-   // Recursively compute k-mer start-end indices.
-   int path[depth];
-   recursive_lut(c,occ,lut,0,0,depth,path);
-
-   return lut;
-}
-
-void
-recursive_lut
-(
- uint64_t * c,
- uint64_t * occ,
- uint64_t * lut,
- uint64_t   ptr,
- int        d,
- int        maxd,
- int      * path
-)
-{
-   if (d == maxd) {
-      // Compute position from path.
-      uint64_t idx = 0;
-      for (int i = 0; i < maxd; i++) {
-         idx += path[i] * (1 << (2*i));
-      }
-      lut[idx] = ptr;
-      return;
-   }
-   // 'N' is not included.
-   for (int i = 0; i < NUM_BASES - 1; i++) {
-      uint64_t newptr = c[i] + get_occ_nt(ptr-1,occ,i);
-      path[d] = i;
-      recursive_lut(c,occ,lut,newptr,d+1,maxd,path);
-   }
-}
-*/

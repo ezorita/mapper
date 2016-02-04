@@ -218,7 +218,7 @@ seqsearch_bw
 {
    // Extend sequence.
    fmdpos_t tmp[NUM_BASES];
-   extend_bw_all(path.pos, tmp, index);
+   extend_bw_all(path.pos, tmp, index->bwt);
 
    // Iterate over nt.
    for (int nt = 0; nt < NUM_BASES; nt++) {
@@ -267,7 +267,7 @@ seqdash_bw
    // Dash until the end of the search region.
    for (int i = slen-1-depth; i >= 0; i--) {
       // Do not allow any mismatch. If sequence does not exits, return.
-      p = extend_bw(query[i], p, index);
+      p = extend_bw(query[i], p, index->bwt);
       if (p.sz < 1) return -1;
    }
    // Sequence found, return path in pointer.
@@ -292,7 +292,7 @@ seqsearch_fw
 {
    // Extend sequence.
    fmdpos_t tmp[NUM_BASES];
-   extend_fw_all(path.pos, tmp, index);
+   extend_fw_all(path.pos, tmp, index->bwt);
 
    // Iterate over nt.
    for (int nt = 0; nt < NUM_BASES; nt++) {
@@ -341,7 +341,7 @@ seqdash_fw
    // Dash until the end of the search region.
    for (int i = depth; i < slen; i++) {
       // Do not allow any mismatch. If sequence does not exits, return.
-      p = extend_fw(query[i], p, index);
+      p = extend_fw(query[i], p, index->bwt);
       if (p.sz < 1) return -1;
    }
    // Sequence found, return path in pointer.
