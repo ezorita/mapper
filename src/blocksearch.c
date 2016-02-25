@@ -81,7 +81,6 @@ blocksearch_rec
    for (int i = 0; i < tmp_hits->pos; i++) {
       seqsearch_fw(tmp_hits->path[i], query+beg_r, 0, slen-beg_r, blocks-1, tmp_hits->path[i].score, 0, index, hits);
    }
-
    // Reset temp hits.
    tmp_hits->pos = 0;
 
@@ -91,7 +90,6 @@ blocksearch_rec
    for (int i = 0; i < tmp_hits->pos; i++) {
       seqsearch_bw(tmp_hits->path[i], query, 0, beg_r, blocks-1, tmp_hits->path[i].score, blk_l, index, hits);
    }
-
    // Free memory.
    free(tmp_hits);
 
@@ -141,7 +139,7 @@ blocksearch_trail_rec
    int beg_r = (slen >> 1) + (slen & 1);
 
    // Recursive call on left block, don't compute if current data is valid (trail).
-   if (beg_r > trail)
+   if (trail < pos+beg_r)
       blocksearch_trail_rec(query, pos, beg_r, blk_l, trail, index, tree->next_l);
    // Extend left block to the right.
    for (int i = 0; i < tree->next_l->stack->pos; i++) {
