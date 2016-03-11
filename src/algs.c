@@ -1,5 +1,49 @@
 #include "algs.h"
 
+int
+map_score
+(
+ matchlist_t * matches,
+ double      * cumlog
+)
+{
+   static const double logpm = -0.4771213;
+   static const double logpe = -0.1760913;
+
+   for (size_t i = 0; i < matches->pos; i++) {
+      match_t m = matches->match[i];
+      int b,k,a,L,f;
+      L = m.read_e - m.read_s + 1;
+      b = L - (int)m.hits;
+      a = m.annotation;
+      if (m.interval == 0) {
+         f = (a>>1) + (a&1);
+         k = f + max(0,b - (a>>1));
+      } else {
+         k = L - (int)m.s_hits;
+         a = min(a, k);
+         f = (a+k-b)/2;
+      }
+      if ((m.interval && k==b) || a == 0) {
+         matches->match[i].mapq = 0;         
+         return 0;
+      }
+      double ppos = 0;
+      for (int t = f; t <= min(a,k); t++) {
+         double pnt = 0;
+         for (int j = f; j <= t; j++) {
+            pnt += pow(10,cumlog[t] - cumlog[t-j] - cumlog[j] + j*logpm + (t-j)*logpe);
+         }
+         ppos += pow(10,cumlog[a]-cumlog[a-t]+cumlog[k]-cumlog[k-t]-cumlog[L]+cumlog[L-a]+cumlog[L-k]-cumlog[L-k+t-a]-cumlog[t])*pnt;
+      }
+      //matches->match[i].mapq = -10*log10(ppos);
+      double idnt = m.hits*1.0/L;
+      matches->match[i].mapq = min(60,max(0,idnt*idnt*(-10*log10(ppos*m.s_cnt))));
+      if (VERBOSE_DEBUG) fprintf(stdout, "second=%d, b=%d, k=%d (cnt=%d), a=%d, L=%d, f=%d, mapq=%.2f\n", m.interval, b, k, m.s_cnt, a, L, f, matches->match[i].mapq);
+   }
+   return 0;
+}
+
 long
 bisect_search
 (

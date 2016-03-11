@@ -3,7 +3,7 @@
 char *USAGE_MAP =
    "\n"
    "usage:\n"
-   "  mapper [options] input-file index-file\n"
+   "  mapper [options] index-file input-file\n"
    "\n"
    "  options:\n"
    "    -t --threads: number of concurrent threads (default 1)\n"
@@ -12,7 +12,7 @@ char *USAGE_MAP =
    "    -e --eval:    do not print reads with significance below [e-value].\n"
    "\n"
    " to build/edit/extend an index-file type:\n"
-   "  mapper index\n";
+   "  \"mapper index -h\"\n";
 
 char *USAGE_ADD =
    "\n"
@@ -21,7 +21,8 @@ char *USAGE_ADD =
    "\n"
    "  options:\n"
    "    -k --kmer:       sequence length. [required]\n"
-   "    -d --distance:   sequence mismatches. [required]\n"
+   "    -d --distance:   sequence mismatches for annotation. [required]\n"
+   "    -s --seed_dist:  set different distance for seed table.\n"
    "    -r --repeat-thr: repeat threshold. (default 20)\n"
    "    -t --threads:    number of threads. (default 1)\n"
    "    --seed-save:     store the seed hash table.\n"
@@ -150,7 +151,7 @@ parse_opt_build
          break;
 
       case 'h':
-         say_add_usage();
+         say_build_usage();
          return 1;
 
       }
@@ -182,7 +183,7 @@ parse_opt_add
  char      ** ifile
 )
 {
-   int arg_k = -1, arg_d = -1, arg_t = -1, arg_r = -1;
+   int arg_k = -1, arg_d = -1, arg_t = -1, arg_r = -1, arg_s = -1;
    static int arg_m = 1;
    int c;
    while (1) {
@@ -193,12 +194,13 @@ parse_opt_add
          {"threads",    required_argument,      0, 't'},
          {"kmer",       required_argument,      0, 'k'},
          {"distance",   required_argument,      0, 'd'},
+         {"seed_dist",  required_argument,      0, 's'},
          {"repeat-thr", required_argument,      0, 'r'},
          {"help",       no_argument,            0, 'h'},
          {0, 0, 0, 0}
       };
 
-      c = getopt_long(argc, argv, "t:k:d:r:h", long_options, &option_index);
+      c = getopt_long(argc, argv, "t:k:d:r:s:h", long_options, &option_index);
 
       if (c == -1) break;
       switch (c) {
@@ -241,6 +243,19 @@ parse_opt_add
          }
          break;
 
+      case 's':
+         if (arg_s < 0) {
+            int v = atoi(optarg);
+            if (v < 0) {
+               fprintf(stderr, "[error] seed_dist option (-s) must be a non-negative number.\n");
+               return -1;
+            }
+            arg_s = v;
+         } else {
+            fprintf(stderr,"[error] seed_dist option (-s) set more than once.\n");
+         }
+         break;
+
       case 'r':
          if (arg_r < 0) {
             int v = atoi(optarg);
@@ -276,6 +291,7 @@ parse_opt_add
 
    opt->k          = arg_k;
    opt->d          = arg_d;
+   opt->sd         = (arg_s < 0 ? arg_d :arg_s);
    opt->threads    = (arg_t < 0 ? 1 : arg_t);
    opt->repeat_thr = (arg_r < 0 ? 20 : arg_r);
    opt->mode       = arg_m;
@@ -366,8 +382,8 @@ parse_opt_map
    }
 
    // Store index and query files.
-   *qfile = argv[optind];
-   *ifile = argv[optind+1];
+   *ifile = argv[optind];
+   *qfile = argv[optind+1];
 
    return 0;
 }

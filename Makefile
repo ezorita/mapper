@@ -3,7 +3,7 @@ INC_DIR= src
 OBJ_DIR= obj
 OBJECT_FILES= align.o
 SOURCE_FILES= mapper.c bwtquery.c algs.c seed.c filter.c format.c annotate.c xxhash.c blocksearch.c indexbuild.c divsufsort.c index.c interface.c
-HEADER_FILES= mapper.h bwtquery.h algs.h seed.h filter.h format.h index.h annotate.h xxhash.h blocksearch.h indexbuild.h divsufsort.h divsufsort_private.h interface.h
+HEADER_FILES= mapper.h bwtquery.h algs.h seed.h filter.h format.h index.h annotate.h xxhash.h blocksearch.h indexbuild.h divsufsort.h divsufsort_private.h interface.h definitions.h
 GSOURCE_FILES= gbrowser.c algs.c
 GHEADER_FILES= bwmapper.h algs.h
 ASOURCE_FILES= aligner.c align.c
@@ -19,11 +19,10 @@ ASOURCES= $(addprefix $(SRC_DIR)/,$(ASOURCE_FILES))
 AHEADERS= $(addprefix $(INC_DIR)/,$(AHEADER_FILES))
 INCLUDES= $(addprefix -I, $(INC_DIR))
 
-CFLAGS= -std=c99 -Wall -g -O3 -march=core-avx-i -mpopcnt
-#CFLAGS= -std=c99 -Wall -g -pg -O0 -march=core-avx-i -mpopcnt
-#CFLAGS= -std=c99 -Wall -g -O0 -march=core-avx-i -mpopcnt
+CFLAGS= -std=c99 -Wall -O3 -mpopcnt
+#CFLAGS= -std=c99 -Wall -g -pg -O0 -mpopcnt
+#CFLAGS= -std=c99 -Wall -g -O0 -mpopcnt
 LDLIBS= -lm -lpthread
-ILDLIBS= 
 CC= gcc
 
 all: mapper

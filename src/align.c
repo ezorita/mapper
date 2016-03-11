@@ -114,7 +114,28 @@ dbf_find_min
       }
    }
 
-   return (path_t){.score = min, .row = idx - row, .col = idx - col};
+   return (path_t){.score = min, .row = idx - row, .col = idx - col, .max_indel = 0};
+}
+
+path_t
+align_bp
+(
+ int         qlen,
+ char      * qry,
+ int         rlen,
+ char      * ref,
+ int         min_qlen,
+ int         dir_q,
+ int         dir_r,
+ alignopt_t  opt
+ )
+{
+   int w = (int)(align_max(rlen,qlen)*opt.width_ratio);
+   if (w > MAX_NAIVE_WIDTH) {
+      return dbf_align_bp(qlen, qry, rlen, ref, min_qlen, dir_q, dir_r, opt);
+   } else {
+      return naive_align_bp(qlen, qry, rlen, ref, min_qlen, dir_q, dir_r, opt);
+   }
 }
 
 path_t
@@ -130,17 +151,16 @@ dbf_align_bp
  alignopt_t  opt
  )
 {
-
-char translate[256] = {[0 ... 255] = 4,
+   char translate[256] = {[0 ... 255] = 4,
                        ['a'] = 0, ['c'] = 1, ['g'] = 2, ['t'] = 3,
                        ['A'] = 0, ['C'] = 1, ['G'] = 2, ['T'] = 3 };
 
-   if (qlen < 1 || rlen < 1) return (path_t){0,0,0};
+   if (qlen < 1 || rlen < 1) return (path_t){0,0,0,0};
    // TODO:
    // To align until align_max(qlen,rlen) the ends of qry must be padded with 'N'.
    int a_len = align_min(qlen,rlen);
    int align_w = (int)(a_len*opt.width_ratio);
-   if (align_w < (qlen > rlen ? qlen - rlen : rlen - qlen)) return (path_t){-1,0,0};
+   if (align_w < (qlen > rlen ? qlen - rlen : rlen - qlen)) return (path_t){-1,0,0,0};
    // Reduce width if align_w is bigger than the available query words.
    if (align_w > a_len) align_w = a_len;
    int awords = align_max(1,(align_w + WORD_SIZE - 1)/WORD_SIZE);
@@ -177,8 +197,8 @@ char translate[256] = {[0 ... 255] = 4,
    int    bp_pos  = 0;
    int    bp_ref  = 0;
    int    bp_cnt  = 0;
-   double logAe = log(opt.rand_error) - log(opt.read_error);
-   double logBe = log(1-opt.rand_error) - log(1-opt.read_error);
+   double logAe = opt.logAe;//log(opt.rand_error) - log(opt.read_error);
+   double logBe = opt.logBe;//log(1-opt.rand_error) - log(1-opt.read_error);
 
    // Horizontal/vertical input deltas.
    uint8_t Phinr, Mhinr, Phinb, Mhinb;
@@ -237,9 +257,12 @@ char translate[256] = {[0 ... 255] = 4,
 
       if (i%opt.bp_resolution == 0) {
          if (opt.bp_diagonal) {
-            bp_path[bp_pos] = (path_t) {score, i, i};
+            bp_path[bp_pos] = (path_t) {score, i, i, 0};
          } else {
             bp_path[bp_pos] = dbf_find_min(i,score,awords,Pr,Mr,Pb,Mb);
+            int indel = bp_path[bp_pos].col - bp_path[bp_pos].row;
+            indel = (indel >= 0 ? indel : -indel);
+            bp_path[bp_pos].max_indel = (bp_pos > 0 ? align_max(bp_path[bp_pos-1].max_indel, indel) : indel);
          }
          if ((period++)%opt.bp_period == 1 || opt.bp_period == opt.bp_resolution) {
             // Compute likelihood of current reference.
@@ -316,6 +339,176 @@ char translate[256] = {[0 ... 255] = 4,
 
 
 path_t
+naive_align_bp
+(
+ int         qlen,
+ char      * qry,
+ int         rlen,
+ char      * ref,
+ int         min_qlen,
+ int         dir_q,
+ int         dir_r,
+ alignopt_t  opt
+ )
+{
+
+   char t[256] = {[0 ... 255] = 4,
+                       ['a'] = 0, ['c'] = 1, ['g'] = 2, ['t'] = 3,
+                       ['A'] = 0, ['C'] = 1, ['G'] = 2, ['T'] = 3 };
+
+   if (qlen < 1 || rlen < 1) return (path_t){0,0,0,0};
+   // TODO:
+   // To align until align_max(qlen,rlen) the ends of qry must be padded with 'N'.
+   int a_len = align_min(qlen,rlen);
+   int w = align_max(opt.width_min, (int)(a_len*opt.width_ratio));
+   if (w < (qlen > rlen ? qlen - rlen : rlen - qlen)) return (path_t){-1,0,0,0};
+   // Reduce width if align_w is bigger than the available query words.
+   if (w > a_len) w = a_len;
+
+   // Breakpoint.
+   path_t   * bp_path = malloc((a_len/opt.bp_resolution+1)*sizeof(path_t));
+   int    period  = 0;
+   int    bp_pos  = 0;
+   int    bp_ref  = 0;
+   int    bp_cnt  = 0;
+   double logAe = opt.logAe;//log(opt.rand_error) - log(opt.read_error);
+   double logBe = opt.logBe;//log(1-opt.rand_error) - log(1-opt.read_error);
+
+   // Alloc cells.
+   int * cells = malloc((2*w+3)*sizeof(int));
+   int * c = cells + w + 1;
+   // Initialize scores.
+   c[-w-1] = c[w+1] = a_len;
+   for (int i = 1; i <= w; i++) {
+      c[-i] = c[i] = i;
+   }
+   c[0] = 0;
+
+   int score, col = 0, row = 0;
+   for (int i = 0; i < a_len; i++) {
+      score = a_len;
+      // Horizontal.
+      for (int32_t j = (i < w ? -i : -w); j < 0; j++) {
+         c[j] = align_min(align_min(c[j+1], c[j-1]) + 1, c[j] + (t[(int)qry[dir_q*(i+j)]] != t[(int)ref[dir_r*i]]));
+         if (c[j] <= score) {
+            col = i+j;
+            row = i;
+            score = c[j];
+         }
+      }
+      // Vertical and center.
+      for (int32_t j = (i < w ? i : w); j >= 0; j--) {
+         c[j] = align_min(align_min(c[j+1], c[j-1]) + 1, c[j] + (t[(int)qry[dir_q*i]] != t[(int)ref[dir_r*(i-j)]]));
+         if (c[j] <= score) {
+            col = i;
+            row = i-j;
+            score = c[j];
+         }
+      }
+
+      // Check alignment width.
+      if (col-row == w || row-col == w) {
+         opt.width_min = w+2;
+         return naive_align_bp(qlen,qry,rlen,ref,min_qlen,dir_q,dir_r, opt);
+      }
+      
+      if (i%opt.bp_resolution == 0) {
+         bp_path[bp_pos] = (path_t) {score, row, col, 0};
+         int indel = bp_path[bp_pos].col - bp_path[bp_pos].row;
+         indel = (indel >= 0 ? indel : -indel);
+         bp_path[bp_pos].max_indel = (bp_pos > 0 ? align_max(bp_path[bp_pos-1].max_indel, indel) : indel);
+         if ((period++)%opt.bp_period == 1 || opt.bp_period == opt.bp_resolution) {
+            // Compute likelihood of current reference.
+            int Ee = bp_path[bp_pos].score - bp_path[bp_ref].score;
+            int Me = i - bp_ref*opt.bp_resolution - Ee;
+            float Je = Ee*logAe + Me*logBe;
+            if (Je > opt.bp_thr) {
+               bp_cnt++;
+               //               fprintf(stdout, "\tML algorithm (i=%d, score=%d, cnt=%d) {bp_ref = %d (Je = %.2f)}\n", i, bp_path[bp_pos].score, bp_cnt, bp_ref*opt.bp_resolution, Je);
+               if ((bp_cnt >= opt.bp_repeats && i >= min_qlen) || Je > opt.bp_max_thr) {
+                  bp_cnt = opt.bp_repeats;
+                  break;
+               }
+            } else {
+               double maxJe;
+               maxJe = -INFINITY;
+               bp_cnt = 0;
+               for (int b = 0; b < bp_pos; b += opt.bp_period) {
+                  Ee = bp_path[bp_pos].score - bp_path[b].score;
+                  Me = i - b*opt.bp_resolution - Ee;
+                  Je = Ee*logAe + Me*logBe;
+                  if (Je > maxJe) { maxJe = Je; bp_ref = b; }
+               }
+               if (maxJe > opt.bp_max_thr) {
+                  bp_cnt = opt.bp_repeats;
+                  break;
+               }
+               if (maxJe > opt.bp_thr) {
+                  bp_cnt = 1;
+               }
+               //               fprintf(stdout, "\tML algorithm (i=%d, score=%d, cnt=%d) {*bp_ref = %d (Je = %.2f)}\n", i, bp_path[bp_pos].score, bp_cnt, bp_ref*opt.bp_resolution, maxJe);
+            }
+         }
+         // Increase bp list position.
+         bp_pos++;
+      }
+   }
+
+   // High resolution breakpoint computation.
+   path_t best_bp;
+   int start = 0, end = bp_pos;
+   if (bp_cnt >= opt.bp_repeats) {
+      start = align_max(bp_ref - opt.bp_period + 1, 0);
+      end   = align_min(bp_ref + opt.bp_period, bp_pos);
+   }
+   // Recompute highest likelihood.
+   double maxJe = -INFINITY;
+   //   fprintf(stdout, "FINE ML (%d to %d):\n", start, end);
+   for (int b = start; b < end; b++) {
+      int Ee = score - bp_path[b].score;
+      int Me = bp_pos*opt.bp_resolution - b*opt.bp_resolution - Ee;
+      double Je = Ee*logAe + Me*logBe;
+      //      fprintf(stdout, "\tJe(%d)=%.2f [score = %d, len = %d]\n", b*opt.bp_resolution, Je, bp_path[b].score, a_len-1);
+      if (Je > maxJe) { maxJe = Je; bp_ref = b; }
+   }
+   //   fprintf(stdout, "FINE ML (%d to %d) bp_ref=%d (maxJe = %.2f)\n", start, end, bp_ref*opt.bp_resolution, maxJe);
+   if (maxJe >= opt.bp_thr) best_bp = bp_path[bp_ref];
+   else best_bp = bp_path[bp_pos-1];
+
+   // Free memory.
+   free(cells);
+   free(bp_path);
+
+   if (best_bp.row >= qlen) best_bp.row = qlen-1;
+   if (best_bp.col >= rlen) best_bp.row = rlen-1;
+
+   return best_bp;
+}
+
+int
+align
+(
+ int         qlen,
+ char      * qry,
+ int         rlen,
+ char      * ref,
+ int         dir_q,
+ int         dir_r,
+ int         max_score,
+ alignopt_t  opt,
+ path_t    * path
+ )
+{
+   int w = (int)(align_max(rlen,qlen)*opt.width_ratio);
+   if (w > MAX_NAIVE_WIDTH) {
+      return dbf_align(qlen, qry, rlen, ref, dir_q, dir_r, max_score, opt, path);
+   } else {
+      return naive_align(qlen, qry, rlen, ref, dir_q, dir_r, max_score, opt, path);
+   }
+}
+
+
+int
 dbf_align
 (
  int         qlen,
@@ -324,18 +517,23 @@ dbf_align
  char      * ref,
  int         dir_q,
  int         dir_r,
- double      width_ratio
+ int         max_score,
+ alignopt_t  opt,
+ path_t    * path
  )
 {
 
-char translate[256] = {[0 ... 255] = 4,
-                       ['a'] = 0, ['c'] = 1, ['g'] = 2, ['t'] = 3,
-                       ['A'] = 0, ['C'] = 1, ['G'] = 2, ['T'] = 3 };
+   char translate[256] = {[0 ... 255] = 4,
+                          ['a'] = 0, ['c'] = 1, ['g'] = 2, ['t'] = 3,
+                          ['A'] = 0, ['C'] = 1, ['G'] = 2, ['T'] = 3 };
 
-   if (qlen < 1 || rlen < 1) return (path_t){0,0,0};
+   if (qlen < 1 || rlen < 1) {
+      *path = (path_t){0,0,0,0};
+      return 0;
+   }
    int a_len = align_max(qlen,rlen);
-   int align_w = (int)(a_len*width_ratio);
-   if (align_w < (qlen > rlen ? qlen - rlen : rlen - qlen)) return (path_t){-1,0,0};
+   int align_w = align_max(opt.width_min,(int)(a_len*opt.width_ratio));
+   if (align_w < (qlen > rlen ? qlen - rlen : rlen - qlen)) return -1;
    // Reduce width if align_w is bigger than the available query words.
    if (align_w > a_len) align_w = a_len;
    int awords = (align_w + WORD_SIZE - 1)/WORD_SIZE;
@@ -369,8 +567,8 @@ char translate[256] = {[0 ... 255] = 4,
    // Horizontal/vertical input deltas.
    uint8_t Phinr, Mhinr, Phinb, Mhinb;
    uint32_t score = 0;
-
-   for (int i = 0; i < a_len; i++) {
+   int i = 0;
+   for (; i < a_len; i++) {
       Phinr = Phinb = 1;
       Mhinr = Mhinb = 0;
 
@@ -409,6 +607,9 @@ char translate[256] = {[0 ... 255] = 4,
       }
 
       score += Phinr - Mhinr + Pvc - Mvc;
+      if (score > max_score) {
+         return 1;
+      }
 
       // Now shift the bitfields and insert center cell.
       int j;
@@ -422,8 +623,9 @@ char translate[256] = {[0 ... 255] = 4,
       Mb[j] = (Mb[j] >> 1) | (Mhc << (WORD_SIZE-1));
    }
 
-   path_t path = dbf_find_min(a_len-1,score,awords,Pr,Mr,Pb,Mb);
-
+   *path = dbf_find_min(i-1,score,awords,Pr,Mr,Pb,Mb);
+   // TODO: this will not detect partial indels that compensate back to 0.
+   path->max_indel = path->col - path->row;
 
    // Free memory.
    free(Eqr);
@@ -432,11 +634,85 @@ char translate[256] = {[0 ... 255] = 4,
    dbf_free_eq(Req, eqwords);
    free(Mr); free(Pr); free(Mb); free(Pb);
 
-   if (path.row >= qlen) path.row = qlen-1;
-   if (path.col >= rlen) path.row = rlen-1;
+   if (path->row >= qlen) path->row = qlen-1;
+   if (path->col >= rlen) path->col = rlen-1;
 
 
-   return path;
+   return 0;
+}
+
+int
+naive_align
+(
+ int         qlen,
+ char      * qry,
+ int         rlen,
+ char      * ref,
+ int         dir_q,
+ int         dir_r,
+ int         max_score,
+ alignopt_t  opt,
+ path_t    * path
+ )
+{
+
+   char t[256] = {[0 ... 255] = 4,
+                          ['a'] = 0, ['c'] = 1, ['g'] = 2, ['t'] = 3,
+                          ['A'] = 0, ['C'] = 1, ['G'] = 2, ['T'] = 3 };
+
+   if (qlen < 1 || rlen < 1) {
+      *path = (path_t){0,0,0,0};
+      return 0;
+   }
+   int a_len = align_max(qlen,rlen);
+   int w = align_max(opt.width_min,(int)(a_len*opt.width_ratio));
+   if (w < (qlen > rlen ? qlen - rlen : rlen - qlen)) return -1;
+   // Reduce width if align_w is bigger than the available query words.
+   if (w > a_len) w = a_len;
+
+   // Alloc cells.
+   int * cells = malloc((2*w+3)*sizeof(int));
+   int * c = cells + w + 1;
+   // Initialize scores.
+   c[-w-1] = c[w+1] = a_len;
+   for (int i = 1; i <= w; i++) {
+      c[-i] = c[i] = i;
+   }
+   c[0] = 0;
+   // Iterate.
+   int score = a_len, col = 0, row = 0, indel = 0;
+   for (int i = 0; i < a_len; i++) {
+      score = a_len;
+      // Horizontal.
+      for (int32_t j = (i < w ? -i : -w); j < 0; j++) {
+         c[j] = align_min(align_min(c[j+1], c[j-1]) + 1, c[j] + (t[(int)qry[dir_q*(i+j)]] != t[(int)ref[dir_r*i]]));
+         if (c[j] <= score) {
+            score = c[j];
+            col = i+j;
+            row = i;
+         }
+      }
+      // Vertical and center.
+      for (int32_t j = (i < w ? i : w); j >= 0; j--) {
+         c[j] = align_min(align_min(c[j+1], c[j-1]) + 1, c[j] + (t[(int)qry[dir_q*i]] != t[(int)ref[dir_r*(i-j)]]));
+         if (c[j] <= score) {
+            score = c[j];
+            col = i;
+            row = i-j;
+         }
+      }
+      int p_id = col - row;
+      p_id = (p_id >= 0 ? p_id : -p_id);
+      indel = align_max(indel, p_id);
+      if (score > max_score) return 1;
+   }
+
+   // Save path.
+   *path = (path_t){score, row, col, indel};
+   if (path->row >= qlen) path->row = qlen-1;
+   if (path->col >= rlen) path->col = rlen-1;
+
+   return 0;
 }
 
 

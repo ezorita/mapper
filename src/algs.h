@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <pthread.h>
 #include <stdint.h>
+#include <math.h>
 #include "definitions.h"
 #include "xxhash.h"
 
@@ -43,11 +44,13 @@ struct match_t {
    int read_s;
    int read_e;
    int hits;
-   int score;
-   int flags;
+   int s_hits;
+   int s_cnt;
    int interval;
+   int annotation;
    double ident;
-   double e_exp;
+   double second;
+   double e_exp[3];
    double mapq;
 };
 
@@ -98,6 +101,8 @@ struct sortargs_t {
 
 // Function headers.
 
+// Map score.
+int           map_score        (matchlist_t *, double *);
 // Sorting algorithms.
 int           mergesort_mt     (void * data, int numels, size_t elmsize, int param, int thrmax, int (*compar)(const void*, const void*, const int));
 void        * _mergesort       (void * args);

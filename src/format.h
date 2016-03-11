@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <math.h>
 #include "index.h"
 #include "algs.h"
 
@@ -15,6 +16,6 @@ struct formatopt_t {
    double eval_thr;
 };
 
-int print_and_free (seq_t seq, matchlist_t *, index_t * index, formatopt_t opt);
+int print_and_free (seq_t seq, matchlist_t *, index_t * index, formatopt_t opt, int);
 
 #endif

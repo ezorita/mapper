@@ -2,8 +2,6 @@
 #include <assert.h>
 #include <time.h>
 
-
-
 int main(int argc, char *argv[])
 {
    int opt_verbose = 1;
@@ -37,7 +35,7 @@ int main(int argc, char *argv[])
          if (index == NULL)
             return EXIT_FAILURE;
          // Compute annotation.
-         return index_add_annotation(opt.k, opt.d, opt.repeat_thr, opt.mode,
+         return index_add_annotation(opt.k, opt.d, opt.sd, opt.repeat_thr, opt.mode,
                                      opt.threads, index, index_file);
       } else if (strcmp(argv[2], "build") == 0) {
          if (argc == 3) {
@@ -259,74 +257,164 @@ mt_worker
    index_t     * index = job->index;
 
    // Alloc data structures.
-   matchlist_t * seed_matches = matchlist_new(opt->filter.max_align_per_read);
    matchlist_t * map_matches = matchlist_new(64);
    seedstack_t * seeds    = seedstack_new(SEEDSTACK_SIZE);
-   seedstack_t * thrseeds = seedstack_new(SEEDSTACK_SIZE);
-   seedstack_t * reeds    = seedstack_new(SEEDSTACK_SIZE);
    pathstack_t * pstack   = pathstack_new(PATHSTACK_DEF_SIZE);
+   int k = index->sht->sht[0].k;
+   int d = index->sht->sht[0].d;
+   int r = index->sht->sht[0].repeat_thr;
+   int mem_abs_max_align = 100;
+
+   // Precompute log table.
+   int cumlog_max = 0;
+   double * cumlog = malloc(1);
+   *cumlog = 0;
+   
 
    size_t mapped = 0;
    
    for (size_t i = 0; i < job->count; i++) {
-      if (VERBOSE_DEBUG) fprintf(stdout, "seq: %s\n", seq[i].seq);
+      if (VERBOSE_DEBUG) fprintf(stdout, "%s\t%s\n", seq[i].tag, seq[i].seq);
+
+      // Read length and alloc memory.
       size_t slen = strlen(seq[i].seq);
-      // Reset seeds.
-      seeds->pos = 0;
-      reeds->pos = 0;
-      thrseeds->pos = 0;
+      uint8_t * query = malloc(slen);
+      uint8_t * value = malloc(slen);
+      for (int j = 0; j < slen; j++) value[j] = -1;
+
+      // Extend cumlog table.
+      if (slen > cumlog_max) {
+         cumlog = realloc(cumlog, (slen+1)*sizeof(double));
+         for (int c = cumlog_max+1; c <= slen; c++)
+            cumlog[c] = cumlog[c-1] + log10(c);
+         cumlog_max = slen;
+      }
 
       // Translate query.
-      uint8_t * query = malloc(slen);
       for (int j = 0; j < slen; j++) query[j] = translate[(int)seq[i].seq[j]];
-
-      // Find unique seeds.
-      //find_uniq_seeds(slen,25,query,index,&seeds,&thrseeds);
-      /**/
-      int zero_cnt = 0;
-      seed_t sd = find_uniq_seed(0,slen,25,query,index,&zero_cnt);
-      if (!sd.bulk) seedstack_push(sd, &seeds);
-      /**/
-      // Align.
+      // Reset matches.
       map_matches->pos = 0;
-      align_seeds(seq[i].seq, seeds, reeds, &map_matches, index, opt->filter, opt->align);
-      if (map_matches->pos == 0 || map_matches->match[0].interval != 1) {
-         int loci, beg = 0;
-         do {
-            loci = 0;
-            if((beg = find_thr_seed(beg, slen, 25, query, index)) == -1) break;
-            pstack->pos = 0;
-            blocksearch(query + beg, 25, 1, index, &pstack);
-            for (int h = 0; h < pstack->pos; h++)
-               loci += pstack->path[h].pos.sz;
-            beg += 1;
-         } while (loci > 20 || loci == 0);
-
-         if (beg >= 0 && loci <= 20) {
-            seeds->pos = 0;
-            for (int h = 0; h < pstack->pos; h++) {
-               fmdpos_t fmdp = pstack->path[h].pos;
-               bwpos_t pos = {.depth = fmdp.dp, .sp = fmdp.fp, .ep = fmdp.fp + fmdp.sz - 1};
-               seedstack_push((seed_t) {.bulk = 0, .qry_pos = beg-1, .ref_pos = pos}, &seeds);
-            }
-            align_seeds(seq[i].seq, seeds, reeds, &map_matches, index, opt->filter, opt->align);
+      // Align unique seeds.
+      int seed_stage = 1;
+      int beg = 0;
+      do {
+         // Find first unique seed.
+         hit_t hit = find_uniq_seed(beg,slen,query,value,index);
+         beg = hit.qrypos + 1;
+         if (hit.bulk)
+            // No seed found.
+            break;
+         else {
+            // Align.
+            if (VERBOSE_DEBUG) fprintf(stdout, "aligning from uniq seed\n");
+            align_hits(seq[i].seq, &hit, 1, &map_matches, index, opt->filter, opt->align);
          }
-         /**/
+      } while (map_matches->pos == 0);// || map_matches->match[0].interval == 0);
+      /*
+      seeds->pos = 0;
+      find_uniq_seeds(slen,query,value,index,&seeds);
+      align_seeds(seq[i].seq, seeds, NULL, &map_matches, index, opt->filter, opt->align);
+      */
+      // DEBUG
+      if (VERBOSE_DEBUG) {
+         fprintf(stdout, "seed table: ");
+         for (int v = 0; v <= slen-k; v++) {
+            fprintf(stdout, "%d ", value[v]);
+         }
+         fprintf(stdout, "\n");
       }
-      // Reseed?
-      if (map_matches->pos == 0 && zero_cnt) {
 
-      } 
-      else if (map_matches->match[0].interval == 2 && map_matches->match[0].score > 0) {
+      if (map_matches->pos) goto map_end;
 
+      int v[2] = {2,0};
+      // Align acceptable seeds (less than repeat_thr loci) then the not found ones.
+      for (int l = 0; l < 2; l++) {
+         if (map_matches->pos == 0 || map_matches->match[0].interval == 0) {
+            seed_stage = v[l];
+            if (VERBOSE_DEBUG) {
+               if (map_matches->pos == 0)
+                  fprintf(stdout, "seed_stage:%d because [matches->pos=%d]\n", seed_stage, map_matches->pos);
+               else {
+                  match_t m = map_matches->match[0];
+                  fprintf(stdout, "seed_stage:%d because [match.interval=%d] and [best(25,2)=%.2f, best(36,3)=%.2f, best(48,4)=%.2f]\n",seed_stage, m.interval, m.e_exp[0], m.e_exp[1], m.e_exp[2]);
+               }
+            }
+            for (int j = 0; j <= slen-k; j++) {
+               if (value[j] == v[l]) {
+                  // DEBUG.
+                  // Compute (k,d) matches.
+                  pstack->pos = 0;
+                  blocksearch(query + j, k, d, index, &pstack);
+                  int64_t loci = 0;
+                  for (int h = 0; h < pstack->pos; h++)
+                     loci += pstack->path[h].pos.sz;
+                  if (VERBOSE_DEBUG) fprintf(stdout, "value[%d]=%d\tloci=%ld\n",j,v[l],loci);
+                  // Continue if repeat_thr is exceeded.
+                  //if (loci > r) continue;
+                  // Align otherwise.
+                  loci = 0;
+                  seeds->pos = 0;
+                  for (int h = 0; h < pstack->pos && loci < r; h++) {
+                     fmdpos_t fmdp = pstack->path[h].pos;
+                     if (VERBOSE_DEBUG) fprintf(stdout, "found imperfect seed: depth:%ld pos:%ld\n", fmdp.dp, fmdp.fp);
+                     loci += fmdp.sz;
+                     if (loci > r) fmdp.sz -= loci-r;
+                     bwpos_t pos = {.depth = fmdp.dp, .sp = fmdp.fp, .ep = fmdp.fp + fmdp.sz - 1};
+                     seedstack_push((seed_t) {.bulk = 0, .qry_pos = j, .ref_pos = pos}, &seeds);
+                  }
+                  if (VERBOSE_DEBUG) fprintf(stdout, "aligning from imperfect seed\n");
+                  align_seeds(seq[i].seq, seeds, NULL, &map_matches, index, opt->filter, opt->align);
+                  if (map_matches->pos > 0 && map_matches->match[0].interval == 1) {
+                     if (VERBOSE_DEBUG) fprintf(stdout, "map_matches->pos=%d, match[0].interval=%d, skipping\n",map_matches->pos, map_matches->match[0].interval);
+                     break;
+                  }
+               }
+            }
+         }
       }
-      mapped += print_and_free(seq[i], map_matches, index, opt->format);
+
+      // Final round, try best SMEM for super-repeated reads.
+      if (map_matches->pos == 0 || map_matches->match[0].interval == 0) {
+         seed_stage = 3;
+         seedstack_t * mems = seedstack_new(64);
+         seedstack_t * last_round = seedstack_new(64);
+         seed_mem(query, slen, index, &mems);
+         // Find longest MEM.
+         seeds->pos = 0;
+         seed_t sd = mems->seed[0];
+         for (int j = 0; j < mems->pos; j++) {
+            seed_t s = mems->seed[j];
+            if (VERBOSE_DEBUG) {
+               fprintf(stdout, "MEM: pos;%d, len:%d, loci: %ld\n", s.qry_pos, s.ref_pos.depth, s.ref_pos.ep - s.ref_pos.sp + 1);
+            }
+            uint64_t loci = s.ref_pos.ep - s.ref_pos.sp + 1;
+            // Save MEMS with loci <= r.
+            if (loci > r) {
+               s.ref_pos.ep = s.ref_pos.sp + r - 1;
+            }
+            seedstack_push(s, &seeds);
+            // Update longest MEM.
+            if (s.ref_pos.depth > sd.ref_pos.depth) {
+               sd = s;
+            }
+         }
+         free(mems);
+         if (VERBOSE_DEBUG) fprintf(stdout, "aligning from MEM seed\n");
+         if (seeds->pos) 
+            align_seeds(seq[i].seq, seeds, NULL, &map_matches, index, opt->filter, opt->align);
+         free(last_round);
+      }
+
+
+   map_end:
+      map_score(map_matches,cumlog);
+      mapped += print_and_free(seq[i], map_matches, index, opt->format, seed_stage);
       free(query);
+      free(value);
    }
 
    // Free data structures.
    free(seeds);
-   free(seed_matches);
    free(map_matches);
    
    // Report to scheduler.
@@ -338,8 +426,6 @@ mt_worker
 
    // Free args.
    free(args);
-
-
    return NULL;
 }
 

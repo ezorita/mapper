@@ -161,7 +161,7 @@ write_index
    }
    close(fsh);
    fprintf(stderr, "done.\n");
-   index_add_annotation(def_kmer,def_tau,def_rthr,3,threads,index,filename);
+   index_add_annotation(def_kmer,def_tau,def_tau,def_rthr,3,threads,index,filename);
    return 0;
 }
 

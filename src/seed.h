@@ -4,6 +4,7 @@
 #include "definitions.h"
 #include "bwtquery.h"
 #include "blocksearch.h"
+#include "index.h"
 
 #ifndef _SEED_H
 #define _SEED_H
@@ -45,13 +46,18 @@ struct hit_t {
 };
 
 // Annotated seed.
-int            find_uniq_seeds (int, int, uint8_t *, index_t *, seedstack_t **, seedstack_t **);
-seed_t         find_uniq_seed  (int, int, int, uint8_t *, index_t *, int *);
+int            find_uniq_seeds (int, uint8_t *, uint8_t *, index_t *, seedstack_t **);
+hit_t          find_uniq_seed  (int, int, uint8_t *, uint8_t *, index_t *);
 int            find_thr_seed   (int, int, int, uint8_t *, index_t *);
+// Longest MEM strategy.
+seed_t         longest_mem     (char *, index_t *);
 // Naive algorithms. (To compare with)
 seedstack_t  * naive_smem     (char *, seedopt_t, index_t *);
 // Seed functions.
-int            seed_mem       (char *, int32_t, int32_t, seedstack_t **, seedopt_t, index_t *);
+int            seed_mem       (uint8_t *, int, index_t *, seedstack_t **);
+int            extend_lr      (uint8_t *, int, int, fmdpos_t *, index_t *);
+int            seed_mem_bp    (uint8_t *, int, int, index_t *, seedstack_t **);
+int            extend_lr_bp   (uint8_t *, int, int, int, fmdpos_t *, index_t *);
 int            seed_mismatch  (char *, size_t, int, seedstack_t **, index_t *);
 int            find_mismatch  (char *, size_t, int, seedstack_t **, index_t *);
 int            seed_the_right_way (char *, seedstack_t **, index_t *);

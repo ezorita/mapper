@@ -270,6 +270,7 @@ index_add_annotation
 (
  int       kmer,
  int       tau,
+ int       seed_tau,
  int       repeat_thr,
  int       mode,
  int       threads,
@@ -277,23 +278,31 @@ index_add_annotation
  char    * index_file
  )
 {
-   int ann_slot = 0, sht_slot = 0;
+   int ann_slot = -1, ann_pos = -1, sht_slot = 0;
    annlist_t * annlist = NULL;
    shtlist_t * shtlist = NULL;
    // Check current annotations.
    if (mode & STORE_ANNOTATION) {
       annlist = ann_index_read(index_file);
+      ann_print_index(annlist);
       if (annlist == NULL)
          return EXIT_FAILURE;
       for (int i = 0; i < annlist->count; i++) {
-         if (kmer == annlist->ann[i].k && tau == annlist->ann[i].d) {
-            fprintf(stderr, "[warning] the index already has a (%d,%d) annotation.\n",kmer,tau);
-            mode &= 2;
-            break;
+         if (kmer == annlist->ann[i].k) {
+            if (tau <= annlist->ann[i].d) {
+               fprintf(stderr, "[warning] the index already has a (%d,%d) annotation.\n",kmer,tau);
+               mode &= 2;
+               break;
+            } else {
+               ann_slot = annlist->ann[i].id;
+               ann_pos  = i;
+               fprintf(stderr, "[warning] the existing (%d,%d) annotation will be overwritten (id=%d).\n",kmer,annlist->ann[i].d,ann_slot);
+               break;
+            }
          }
       }
       // Find slot to store annotation.
-      ann_slot = ann_find_slot(annlist);
+      if (ann_slot < 0) ann_slot = ann_find_slot(annlist);
    }
 
    // Check current seed tables.
@@ -318,7 +327,7 @@ index_add_annotation
    }
 
    fprintf(stderr, "[info] computing (%d,%d) genomic hits using %d threads.\n", kmer, tau, threads);
-   annotation_t ann = annotate(kmer,tau,repeat_thr,index,threads,mode);
+   annotation_t ann = annotate(kmer,tau,seed_tau,repeat_thr,index,threads,mode);
 
    // Write output file.
    if (mode & STORE_ANNOTATION) {
@@ -336,7 +345,9 @@ index_add_annotation
       free(fname);
       size_t bytes = 0;
       // Write annotation.
-      size_t struct_size = (index->size >> 4) + 1;
+      int bits = 0;
+      while ((tau >> bits) > 0) bits++;
+      size_t struct_size = ((index->size >> 4) + 1)*(bits+2);
       fprintf(stderr,"[info] writing annotation (%ld bytes)... ",struct_size);
       while ((bytes += write(fd,ann.bitfield+bytes,struct_size-bytes)) < struct_size);
       fprintf(stderr,"%ld bytes written.\n",bytes);
@@ -345,7 +356,8 @@ index_add_annotation
       // Update table.
       fprintf(stderr,"[info] updating annotation index... ");
       annlist = realloc(annlist, sizeof(annlist_t) + (annlist->count + 1)*sizeof(ann_t));
-      annlist->ann[annlist->count++] = (ann_t){
+      if (ann_pos < 0) ann_pos = annlist->count++;
+      annlist->ann[ann_pos] = (ann_t) {
          .id = ann_slot,
          .k = kmer,
          .d = tau,
@@ -610,4 +622,58 @@ index_load_chr
    free(buffer);
 
    return chrindex;
+}
+
+
+int
+ann_read
+(
+ ann_t      ann,
+ uint64_t   locus,
+ int      * cnt
+)
+{
+   int bits = 0;
+   while ((ann.d >> bits) > 0) bits++;
+   bits += 2;
+   uint16_t mask = 0xFFFF;
+   mask >>= (16-bits);
+   uint64_t bit = bits*locus;
+   uint64_t word = bit >> 3;
+   uint8_t shift = bit & 7;
+   uint16_t w = (((uint16_t)ann.data[word]) >> shift) | (((uint16_t)ann.data[word+1]) << (8-shift));
+   int d        = w & (mask >> 2);
+   int log10cnt = (w >> (bits-2)) & 3;
+   if (d == 0 && log10cnt == 3) {
+      log10cnt = 0;
+      d = ann.d+1;
+   }
+   if (cnt != NULL) *cnt = log10cnt;
+   return d;
+}
+
+int
+ann_find
+(
+ int         k,
+ annlist_t * list,
+ ann_t     * ann
+)
+{
+   if (list->count == 0) return -1;
+   uint32_t dist = 0xFFFFFFFF;
+   ann_t best;
+   for (int i = 0; i < list->count; i++) {
+      if (list->ann[i].k == k) {
+         *ann = list->ann[i];
+         return 0;
+      } else {
+         int d = list->ann[i].k - k;
+         d = (d < 0 ? -d : d);
+         if (d < dist)
+            best = list->ann[i];
+      }
+   }
+   *ann = best;
+   return 1;
 }

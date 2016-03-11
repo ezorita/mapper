@@ -24,6 +24,7 @@ typedef struct {
 typedef struct {
    int               kmer;
    int               tau;
+   int               seed_tau;
    int               repeat_thr;
    int               mode;
    uint64_t          beg;
@@ -44,7 +45,7 @@ typedef struct {
 
 int             reverse_duplicate (uint8_t *, int);
 int             contains_n        (uint8_t *, int);
-annotation_t    annotate          (int, int, int, index_t *,int, int);
+annotation_t    annotate          (int, int, int, int, index_t *,int, int);
 void          * annotate_mt       (void*);
 
 

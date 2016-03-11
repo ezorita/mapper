@@ -29,36 +29,80 @@ int
 find_uniq_seeds
 (
  int            slen,
- int            k,
  uint8_t      * query,
+ uint8_t      * values,
  index_t      * index,
- seedstack_t ** unique,
- seedstack_t ** good
+ seedstack_t ** seeds
 )
 {
-   ann_t ann = index->ann->ann[0];
+   // Load seed table.
    sht_t sht = index->sht->sht[0];
+   int k = sht.k;
+   int d = sht.d;
+   int r = sht.repeat_thr;
+   int z = 0;
+   int zp = -k;
+   ann_t ann;
+   ann_find(k,index->ann,&ann);
+   // Query buffer.
    uint8_t * q = malloc(k);
    for (int i = 0; i <= slen - k; i++) {
-      if (check_kmer(query+i, q, 25)) continue;
+      if (check_kmer(query+i, q, k)) {
+         values[i] = -1;
+         continue;
+      }
       uint64_t key = XXH64(q, k, 0);
-      uint8_t score = htable_get(sht.htable, key);
-      if (score == 1) {
-         bwpos_t pos = {0,0,index->size-1};
+      uint8_t value = htable_get(sht.htable, key);
+      values[i] = value;
+
+      //DEBUG
+      if (VERBOSE_DEBUG) {
+         pathstack_t * ps = pathstack_new(64);
+         blocksearch(q, k, d, index, &ps);
+         int count = 0;
+         for (int c = 0; c < ps->pos; c++) {
+            count += ps->path[c].pos.sz;
+         }
+         fprintf(stdout, "[%d] ann:%d, loci:%d\n", i, value,count);
+         free(ps);
+      }
+
+      // Mask out mismatched seeds.
+      if (value > 0) {
+         if (i-zp < k) {
+            values[i] = 0;
+            continue;
+         }
+         z = 1;
+      } else if (z) {
+         z = 0;
+         zp = i;
+      }
+      // Check value
+      if (value == 1) {
+         // Mask out mismatched seeds.
+         if (i-zp < k) {
+            values[i] = 0;
+            continue;
+         }
+         // Set last existing to current.
+         z = i;
+         // Find seed in index.
+         bwpos_t pos = index->bwt->bwt_base;
          for (int j = i+k-1; j >= i && pos.ep >= pos.sp; j--) suffix_extend(query[j],pos,&pos,index->bwt);
          if (pos.ep == pos.sp) {
             uint64_t locus = get_sa(pos.sp, index->sar);
-            if ((ann.data[locus>>3] >> (locus&7))&1) {
+            uint64_t loc = locus;
+            if (loc >= index->size/2) loc = index->size - 1 - loc - k;
+             int ann_d = ann_read(ann, loc, NULL);
+            if (ann_d > d) {
                seed_t seed = (seed_t) {.bulk = 0, .qry_pos = i, .ref_pos = pos};
-               seedstack_push(seed, unique);
+               seedstack_push(seed, seeds);
+            } else {
+               values[i] = 2;
             }
-         }
-      } else if (score == 2) {
-         bwpos_t pos = {0,0,index->size-1};
-         for (int j = i+k-1; j >= i && pos.ep >= pos.sp; j--) suffix_extend(query[j],pos,&pos,index->bwt);
-         if (pos.ep >= pos.sp && pos.ep - pos.sp + 1 <= 20) {
-            seed_t seed = (seed_t) {.bulk = 0, .qry_pos = i, .ref_pos = pos};
-            seedstack_push(seed, good);
+         } else {
+            values[i] = (pos.ep < pos.sp ? 0 : (pos.ep - pos.sp < r ? 2 : 3));
          }
       }
    }
@@ -66,43 +110,93 @@ find_uniq_seeds
    return 0;
 }
 
-seed_t
+hit_t
 find_uniq_seed
 (
  int            beg,
  int            slen,
- int            k,
  uint8_t      * query,
- index_t      * index,
- int          * zero_cnt
+ uint8_t      * values,
+ index_t      * index
 )
 {
-   ann_t ann = index->ann->ann[0];
+   // Load seed table.
    sht_t sht = index->sht->sht[0];
+   int     k = sht.k;
+   int     d = sht.d;
+   int     r = sht.repeat_thr;
+   int     z = 0;
+   int    zp = -k;
+   // Find annotation table with same k.
+   ann_t ann;
+   ann_find(k, index->ann, &ann);
+   // Query buffer.
    uint8_t * q = malloc(k);
    for (int i = beg; i <= slen - k; i++) {
-      if (check_kmer(query+i, q, k)) continue;
+      if (check_kmer(query+i, q, k)) {
+         values[i] = -1;
+         continue;
+      }
       uint64_t key = XXH64(q, k, 0);
       int value = htable_get(sht.htable, key);
+      values[i] = value;
+      // DEBUG.
+      /*
+      if (VERBOSE_DEBUG) {
+         fprintf(stdout, "[%d] ", i);
+         for (int n = 0; n < k; n++) fprintf(stdout, "%c", bases[q[n]]);
+         fprintf(stdout, "\t%d", value);
+         pathstack_t * ps = pathstack_new(64);
+         blocksearch(q, k, d, index, &ps);
+         int count = 0;
+         for (int c = 0; c < ps->pos; c++) {
+            count += ps->path[c].pos.sz;
+         }
+         fprintf(stdout, "\t(%d)\t",count);
+         for (int c = 0; c < ps->pos; c++) {
+            uint64_t l = get_sa(ps->path[c].pos.fp, index->sar);
+            fprintf(stdout, "[p:%ld,s:%d]", l, ps->path[c].score);
+            for (int n = 0; n < k; n++)
+               fprintf(stdout, "%c", index->genome[l+n]);
+            fprintf(stdout, "\t");
+         }
+         fprintf(stdout, "\n");
+         free(ps);
+      }
+      */
+      if (value > 0) {
+         // Mask out mismatched seeds.
+         if (i-zp < k) {
+            values[i] = 0;
+            continue;
+         }
+         z = 1;
+      }
       if (value == 1) {
+         // Find seed in genome.
          bwpos_t pos = index->bwt->bwt_base;
          for (int j = i+k-1; j >= i && pos.ep >= pos.sp; j--) suffix_extend(query[j],pos,&pos,index->bwt);
          if (pos.ep == pos.sp) {
             uint64_t locus = get_sa(pos.sp, index->sar);
-            if (locus >= index->size/2) locus = index->size - 1 - locus - k;
-            int unique = (ann.data[locus>>3] >> (locus&7))&1;
-            if (unique) {
+            uint64_t loc = locus;
+            if (loc >= index->size/2) loc = index->size - 1 - loc - k;
+            int ann_d = ann_read(ann, loc, NULL);
+            if (ann_d > d) {
                free(q);
-               return (seed_t) {.bulk = 0, .qry_pos = i, .ref_pos = pos};
+               return (hit_t) {.locus = locus, .qrypos = i, .depth = k, .bulk = 0};
+            } else {
+               values[i] = 2;
             }
+         } else {
+            values[i] = (pos.ep < pos.sp ? 0 : (pos.ep - pos.sp < r ? 2 : 3));
          }
-      } else if (value == 0) {
-         *zero_cnt += 1;
-      }
+      } else if (value == 0 && z) {
+         zp = i;
+         z = 0;
+      } 
    }
-   //   fprintf(stderr," not found\n");
    free(q);
-   return (seed_t) {.bulk = 1, .qry_pos = -1};
+   return (hit_t) {.bulk = 1};
 }
 
 int
@@ -494,8 +588,8 @@ chain_seeds
          match.ref_s  = lbeg;
          match.read_s = rbeg;
          match.hits   = span;
-         match.flags  = 0;
-         match.score  = 0;
+         match.s_hits = 0;
+         match.s_cnt  = 0;
 
          // Debug match
          if (VERBOSE_DEBUG) {
@@ -565,6 +659,108 @@ compar_hit_locus_qsort
    if (ha->locus > hb->locus) return 1;
    else if (ha->locus < hb->locus) return -1;
    else return (ha->depth > hb->depth ? 1 : -1);
+}
+
+int
+seed_mem
+(
+ uint8_t      * q,
+ int            slen,
+ index_t      * index,
+ seedstack_t ** stack
+)
+{
+   int pos = 0;
+   while (pos < slen) {
+      fmdpos_t bwpos;
+      pos = extend_lr(q, pos, slen, &bwpos, index);
+      bwpos_t ref_pos = {.sp = bwpos.fp, .ep = bwpos.fp + bwpos.sz - 1, .depth = bwpos.dp};
+      seedstack_push((seed_t){.bulk = 0, .qry_pos = pos-bwpos.dp, .ref_pos = ref_pos},stack);
+   }
+   return 0;
+}
+
+int
+extend_lr
+(
+ uint8_t  * q,
+ int        p,
+ int        qlen,
+ fmdpos_t * bwpos,
+ index_t  * index
+)
+{
+   fmdpos_t next = *bwpos = (fmdpos_t){.fp = 0, .rp = 0, .sz = index->size, .dp = 0};
+   // Extend max to the left, starting from p.
+   int i = p;
+   while (i >= 0 && q[i] < 4) {
+      next = extend_bw(q[i--], next, index->bwt);
+      if (next.sz) *bwpos = next;
+      else break;
+   }
+   // Extend now max to the right.
+   next = *bwpos;
+   i = p+1;
+   while (i < qlen && q[i] < 4) {
+      next = extend_fw(q[i++], next, index->bwt);
+      if (next.sz) *bwpos = next;
+      else { i--; break; }
+   }
+   // Return next R position.
+   return i + (i < qlen ? (q[i] > 3) : 0);
+}
+
+int
+seed_mem_bp
+(
+ uint8_t      * q,
+ int            slen,
+ int            bp,
+ index_t      * index,
+ seedstack_t ** stack
+)
+{
+   int pos = 0;
+   while (pos < slen) {
+      fmdpos_t bwpos;
+      pos = extend_lr_bp(q, pos, slen, bp, &bwpos, index);
+      if (bwpos.dp) {
+         bwpos_t ref_pos = {.sp = bwpos.fp, .ep = bwpos.fp + bwpos.sz - 1, .depth = bwpos.dp};
+         seedstack_push((seed_t){.bulk = 0, .qry_pos = pos-bwpos.dp, .ref_pos = ref_pos},stack);
+      }
+   }
+   return 0;
+}
+
+int
+extend_lr_bp
+(
+ uint8_t  * q,
+ int        p,
+ int        qlen,
+ int        bp,
+ fmdpos_t * bwpos,
+ index_t  * index
+)
+{
+   fmdpos_t next = *bwpos = (fmdpos_t){.fp = 0, .rp = 0, .sz = index->size, .dp = 0};
+   // Extend max to the left, starting from p.
+   int i = p;
+   while (i >= 0 && q[i] < 4) {
+      next = extend_bw(q[i--], next, index->bwt);
+      if (next.sz == 0) break;
+      if (!bwpos->dp && next.sz <= bp) *bwpos = next;
+   }
+   // Extend now max to the right.
+   next = *bwpos;
+   i = p+1;
+   while (i < qlen && q[i] < 4) {
+      next = extend_fw(q[i++], next, index->bwt);
+      if (next.sz == 0) { i--; break; }
+      if (!bwpos->dp && next.sz <= bp) *bwpos = next;
+   }
+   // Return next R position.
+   return i + (i < qlen ? (q[i] > 3) : 0);
 }
 
 int
@@ -655,6 +851,56 @@ naive_smem
       }
    }
    return stack;
+}
+
+seed_t
+longest_mem
+(
+ char * seq,
+ index_t * index
+)
+{
+   uint32_t slen = strlen(seq);
+   int32_t mlen = 0;
+   int32_t qry_end = slen - 1;
+   seed_t seed;
+
+   for (int i = slen-1; i > 0; i--) {
+      // Start position.
+      bwpos_t pos = (bwpos_t){.depth = 0, .sp = 0, .ep = index->size-1};
+      qry_end = i;
+      int j;
+      uint64_t new_loci;
+      for (j = 0; j <= i; j++) {
+         bwpos_t newpos;
+         int nt = translate[(uint8_t)seq[i-j]];
+         // Extend suffix (Backward search).
+         suffix_extend(nt, pos, &newpos, index->bwt);
+         // Count loci.
+         new_loci = (newpos.ep < newpos.sp ? 0 : newpos.ep - newpos.sp + 1);
+         if (!new_loci || nt == 4) {
+            // Check previous suffix.
+            if (pos.depth > mlen) {
+               mlen = pos.depth;
+               // Store longest seed.
+               seed = (seed_t) {.qry_pos = qry_end + 1 - newpos.depth, .ref_pos = pos};
+            }
+            if (nt == 4) {
+               i = i - j;
+            }
+            break;
+         } else if (j == i) {
+            if (newpos.depth > mlen) {
+               mlen = newpos.depth;
+               // Store longest seed.
+               seed = (seed_t) {.qry_pos = qry_end + 1 - newpos.depth, .ref_pos = newpos};
+            }
+            break;
+         }
+         pos = newpos;
+      }
+   }
+   return seed;
 }
 
 

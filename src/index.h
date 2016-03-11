@@ -29,11 +29,12 @@ int          ann_find_slot         (annlist_t *);
 int          sht_find_slot         (shtlist_t *);
 void         ann_print_index       (annlist_t *);
 void         sht_print_index       (shtlist_t *);
-int          index_add_annotation  (int, int, int, int, int, index_t *, char *);
+int          index_add_annotation  (int, int, int, int, int, int, index_t *, char *);
 index_t    * index_load_base       (char *);
 char       * index_load_gen        (char *);
 bwt_t      * index_load_bwt        (char *);
 sar_t      * index_load_sar        (char *);
 chr_t      * index_load_chr        (char *);
-
+int          ann_read              (ann_t, uint64_t, int *);
+int          ann_find              (int, annlist_t *, ann_t *);
 #endif

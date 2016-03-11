@@ -7,6 +7,9 @@
 #ifndef _ALIGN_H
 #define _ALIGN_H
 
+// Algorithm select.
+#define MAX_NAIVE_WIDTH 8
+
 // BF-alignment
 #define WORD_SIZE 64
 #define MASK_MSB 0x8000000000000000
@@ -54,17 +57,24 @@ struct alignopt_t {
    double read_error;
    double rand_error;
    double width_ratio;
+   int    width_min;
+   double logAe;
+   double logBe;
 };
 
 struct path_t {
    uint32_t score;
    uint32_t row;
    uint32_t col;
+   uint32_t max_indel;
 };
 
-
-path_t dbf_align_bp (int qlen,char* query,int rlen,char* ref,int min_len,int dir_r,int dir_q,alignopt_t opt);
-path_t dbf_align    (int qlen,char* query,int rlen,char* ref,int dir_r,int dir_q, double width_ratio);
+int    align        (int qlen,char* query,int rlen,char* ref,int dir_r,int dir_q,int max,alignopt_t o,path_t * path);
+int    dbf_align    (int qlen,char* query,int rlen,char* ref,int dir_r,int dir_q,int max,alignopt_t o,path_t * path);
+int    naive_align  (int qlen,char* query,int rlen,char* ref,int dir_r,int dir_q,int max,alignopt_t o,path_t * path);
+path_t align_bp       (int qlen,char* query,int rlen,char* ref,int min_len,int dir_r,int dir_q,alignopt_t opt);
+path_t dbf_align_bp   (int qlen,char* query,int rlen,char* ref,int min_len,int dir_r,int dir_q,alignopt_t opt);
+path_t naive_align_bp (int qlen,char* query,int rlen,char* ref,int min_len,int dir_r,int dir_q,alignopt_t opt);
 int    mapq_align   (const char*, const char*, const char*, const int, const int, int*);
 
 #endif

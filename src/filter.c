@@ -44,16 +44,19 @@ align_matches
 
       // Find whether alignment is safe in repeat annotation.
       int safe = 0;
+      const int safe_tau = 1;
       ann_t ann = index->ann->ann[0];
       uint64_t ref_start = l_rstart - l_rlen + 1;
       if (ref_start >= index->size/2) {
          ref_start = index->size - 1 - ref_start - 25;
          for (uint64_t j = ref_start; j >= ref_start - slen + 25 && !safe; j--) {
-            safe = (ann.data[j>>3] >> (j&7)) & 1;
+            uint64_t bit = (ann.d+1)*j+safe_tau;
+            safe = (ann.data[bit>>3] >> (bit&7)) & 1;
          }
       } else {
          for (uint64_t j = ref_start; j <= ref_start + slen - 25 && !safe; j++) {
-            safe = (ann.data[j>>3] >> (j&7)) & 1;
+            uint64_t bit = (ann.d+1)*j+safe_tau;
+            safe = (ann.data[bit>>3] >> (bit&7)) & 1;
          }
       }
       
@@ -62,7 +65,7 @@ align_matches
       path_t align_r = (path_t){0,0,0}, align_l = (path_t){0,0,0};
       // Forward alignment (right).
       if(r_qlen) {
-         align_r = dbf_align_bp(r_qlen, r_qry, r_rlen, r_ref, r_min,
+         align_r = align_bp(r_qlen, r_qry, r_rlen, r_ref, r_min,
                ALIGN_FORWARD, ALIGN_FORWARD, alignopt);
          read_e = r_qstart + align_r.row;
          ref_e = r_rstart + align_r.col;
@@ -73,7 +76,7 @@ align_matches
       }
       // Backward alignment (left).
       if(l_qlen) {
-         align_l = dbf_align_bp(l_qlen, l_qry, l_rlen, l_ref, l_min,
+         align_l = align_bp(l_qlen, l_qry, l_rlen, l_ref, l_min,
                ALIGN_BACKWARD, ALIGN_BACKWARD, alignopt);
          read_s =  l_qstart - align_l.row;
          ref_s = l_rstart - align_l.col;
@@ -93,13 +96,10 @@ align_matches
       if (identities > best) {
          // If significant, store.
          match_t hit;
-         second = (*seqmatches)->pos ? best : (3*align_span)/4;
-         hit.flags  = second;
+         second = best;
+         hit.interval = (safe ? safe : (second ? -1 : 0));
+         //         hit.interval = safe;
          hit.ident  = identities;
-         if (hitlist->pos == 1 && !safe)
-            hit.interval = 2;
-         else 
-            hit.interval = safe;
 
          // Fill/Update hit.
          hit.ref_e  = ref_e;
@@ -107,17 +107,48 @@ align_matches
          hit.read_e = read_e;
          hit.read_s = read_s;
 
+         // Mapping quality based on annotation table:
+         double mapq = 0.0;
+         size_t span = read_e - read_s;
+         for (int a = 0; a < index->ann->count; a++) {
+            ann = index->ann->ann[a];
+            int bits = 0;
+            while ((ann.d >> bits) > 0) bits++;
+            bits += 2;
+            uint16_t mask = 0xFFFF;
+            mask >>= (16-bits);
+            for (uint64_t j = ref_start; j <= ref_start + span - ann.k && !safe; j++) {
+               int log10cnt;
+               int d =ann_read(ann, j, &log10cnt); 
+               /*
+               uint64_t word = bit >> 3;
+               uint8_t shift = bit & 7;
+               uint16_t w = (((uint16_t)ann.data[word]) >> shift) | (((uint16_t)ann.data[word+1]) << (8-shift));
+               int d        = w & (mask >> 2);
+               int log10cnt = (w >> (bits-2)) & 3;
+               */
+               const double Perr = 0.01;
+               // This is the first approximation, we are not taking into account the alignment
+               // mismatches in this kmer, so it is a quite optimistic approximation.
+               mapq = max(mapq, -10*(log10cnt+log10(d)*log10(Perr)-log10(binom(span,d))-d*log10(3)));
+            }
+         }
+         hit.mapq = mapq;
          (*seqmatches)->match[0] = hit;
          (*seqmatches)->pos = 1;
          // update best.
          best = identities;
       } else if (identities >= second && (ref_min >= ref_s || ref_max <= ref_s)) {
-         second = identities;
-         (*seqmatches)->match[0].flags = identities;
+         if (second == identities) {
+            (*seqmatches)->match[0].s_cnt++;
+         } else {
+            second = identities;
+            (*seqmatches)->match[0].s_hits = identities;
+            (*seqmatches)->match[0].s_cnt = 1;
+         }
       }
    }
    return 0;
-
 }
 
 int
@@ -133,8 +164,13 @@ align_hits
 )
 {
    int slen = strlen(read);
-   int best = 0, second = 0;
-   for(int i = 0; i < min(20,hit_count); i++) {
+   int best = 0, s_hits = 0, s_cnt = 1;
+   if ((*seqmatches)->pos > 0) {
+      best = (*seqmatches)->match[0].hits;
+      s_hits = (*seqmatches)->match[0].s_hits;
+      s_cnt = (*seqmatches)->match[0].s_cnt;
+   }
+   for(int i = 0; i < hit_count; i++) {
       // Compute alignment limits.
       //long r_min  = seed.read_e - seed.read_s + 1;
       long r_min  = hits[i].depth + 1;
@@ -146,6 +182,15 @@ align_hits
       long r_rstart = hits[i].locus + 1; 
       //long l_rstart = seed.ref_s;
       long l_rstart = hits[i].locus; 
+
+      // DEBUG.
+      if (VERBOSE_DEBUG) {
+         char * rf = malloc(slen+1);
+         memcpy(rf, index->genome+hits[i].locus-hits[i].qrypos, slen);
+         rf[slen] = 0;
+         fprintf(stdout, "sequence alignment [qrypos:%d, locus:%ld]:\nq:%s\nr:%s\n",hits[i].qrypos, hits[i].locus,read,rf);
+         free(rf);
+      }
 
       long r_qlen = slen - r_qstart;
       long l_qlen = l_qstart + 1;
@@ -159,7 +204,10 @@ align_hits
       // unique seed align is not safe (while reseeding).
       if ((*seqmatches)->pos) {
          int64_t d = ((int64_t)(*seqmatches)->match[0].ref_s) - ((int64_t)l_rstart - l_rlen);
-         if (d < slen && d > -slen) continue;
+         if (d < slen && d > -slen) {
+            if (VERBOSE_DEBUG) fprintf(stdout, "repeated alignment, skipping\n");
+            continue;
+         }
       }
 
       char * r_qry = read + r_qstart;
@@ -167,26 +215,12 @@ align_hits
       char * r_ref = index->genome + r_rstart;
       char * l_ref = index->genome + l_rstart;
 
-      int safe = 0;
-      ann_t ann = index->ann->ann[0];
-      uint64_t ref_start = l_rstart - l_rlen + 1;
-      if (ref_start >= index->size/2) {
-         ref_start = index->size - 1 - ref_start - 25;
-         for (uint64_t j = ref_start; j >= ref_start - slen + 25 && !safe; j--) {
-            safe = (ann.data[j>>3] >> (j&7)) & 1;
-         }
-      } else {
-         for (uint64_t j = ref_start; j <= ref_start + slen - 25 && !safe; j++) {
-            safe = (ann.data[j>>3] >> (j&7)) & 1;
-         }
-      }
-      
       // Align forward and backward starting from (read_s, ref_s).
       long read_s, read_e, ref_s, ref_e;
       path_t align_r = (path_t){0,0,0}, align_l = (path_t){0,0,0};
       // Forward alignment (right).
       if(r_qlen) {
-         align_r = dbf_align_bp(r_qlen, r_qry, r_rlen, r_ref, r_min,
+         align_r = align_bp(r_qlen, r_qry, r_rlen, r_ref, r_min,
                ALIGN_FORWARD, ALIGN_FORWARD, alignopt);
          read_e = r_qstart + align_r.row;
          ref_e = r_rstart + align_r.col;
@@ -197,7 +231,7 @@ align_hits
       }
       // Backward alignment (left).
       if(l_qlen) {
-         align_l = dbf_align_bp(l_qlen, l_qry, l_rlen, l_ref, l_min,
+         align_l = align_bp(l_qlen, l_qry, l_rlen, l_ref, l_min,
                ALIGN_BACKWARD, ALIGN_BACKWARD, alignopt);
          read_s =  l_qstart - align_l.row;
          ref_s = l_rstart - align_l.col;
@@ -213,47 +247,97 @@ align_hits
       int ref_max = ref_min + 2*align_span;
 
       // DEBUG.
-      //      fprintf(stdout, "alignment: [%ld<--<%ld,%d>--%ld][%ld--<%ld,%d>-->%ld]\n",read_s, l_qlen, align_l.score,l_qstart,r_qstart,r_qlen,align_r.score,read_e);
+      if (VERBOSE_DEBUG) fprintf(stdout, "alignment: [%ld<--<%ld,%d>--%ld][%ld--<%ld,%d>-->%ld]\n",read_s, l_qlen, align_l.score,l_qstart,r_qstart,r_qlen,align_r.score,read_e);
 
-      
-      // Compute significance.
-//      long score = extend_score + align_l.score + align_r.score;
-      if (identities > best) {
-         // If significant, store.
+      // Filter out low indentity alignments.
+      //      if (identities*1.0/slen < 0.85) continue;
+      // Hit.
+      //      if (identities > best) {
+      if (identities > best && identities*1.0/slen >= 0.85) {
          match_t hit;
-         second = (*seqmatches)->pos ? best : (3*align_span)/4;
-         hit.flags  = second;
-         hit.ident  = identities;
-         /*
-         if (hits[i].bulk == 1) {
-            if (safe) hit.interval = 1;
-            else hit.interval = 2;
-         } else {
-            if (safe) hit.interval = 3;
-            else hit.interval = 4;
-         }
-         */
-         hit.interval = safe;
-
+         // Update scores.
+         if (best > 0) hit.interval = 1;
+         if (s_hits != best) s_cnt = 1;
+         else s_cnt++;
+         
+         s_hits = best;
+         best = identities;
          // Fill/Update hit.
          hit.ref_e  = ref_e;
          hit.ref_s  = ref_s;
          hit.read_e = read_e;
          hit.read_s = read_s;
 
+         // Undo reverse complement.
+         int64_t ref_start = ref_s;
+         if (ref_s >= index->size/2) {
+            ref_start = index->size - 2 - ref_e;
+         }
+         // TEST DEBUG FOR FEATURE ONLY.
+         hit.e_exp[0] = hit.e_exp[1] = hit.e_exp[2] = 0;
+         int max_dist = 0, max_cnt = 0;
+         // Gather annotation scores.
+         for (int a = 0; a < index->ann->count; a++) {
+            ann_t ann = index->ann->ann[a];
+            int kmers = ref_e - ref_s + 1 - ann.k + 1;
+            int dis = 0, cnt = 0, span = 0, last = -ann.k;
+            for (int n = 0; n < kmers; n++) {
+               int log10cnt;
+               int d = ann_read(ann, ref_start + n, &log10cnt); 
+               if (d > dis) {
+                  dis = d;
+                  cnt = log10cnt;
+                  span = ann.k;
+                  last = n;
+               } else if (d == dis) {
+                  span += min(n - last, ann.k);
+                  last = n;
+               }
+            }
+            hit.e_exp[a] = dis*(span*1.0/ann.k);
+            if (hit.e_exp[a] > max_dist) {
+               max_dist = hit.e_exp[a];
+               max_cnt = cnt;
+            }
+            if (VERBOSE_DEBUG) fprintf(stdout, "\nannotation (%d,%d): d=%d, cnt=%d, max_dist=(%d,%d)\n",ann.k, ann.d, dis, cnt,max_dist,max_cnt);
+         }
+         // Best and second best identities.
+         if (s_hits < identities - max_dist) {
+            s_hits = identities-max_dist;
+            s_cnt = pow(10,max_cnt);
+            hit.interval = 0;
+         }
+         hit.hits = best;
+         hit.s_cnt = s_cnt;
+         hit.s_hits = s_hits;
+         hit.annotation = max_dist;
+         if (VERBOSE_DEBUG) fprintf(stdout, "set BEST=%d (%.2f) [second=%d (%.2f), cnt=%d]\n", best, best*1.0/slen, s_hits, s_hits*1.0/slen,s_cnt);
+         // Alignment flag.
+         if ((*seqmatches)->pos == 1)
+            hit.interval = (*seqmatches)->match[0].interval;
+         else {
+            hit.interval = 0;
+            (*seqmatches)->pos = 1;
+         }
+         // Set best match.
          (*seqmatches)->match[0] = hit;
-         (*seqmatches)->pos = 1;
-         // update best.
-         best = identities;
-      } else if (identities >= second && (ref_min >= ref_s || ref_max <= ref_s)) {
-         second = identities;
-         (*seqmatches)->match[0].flags = identities;
+
+      } else if ((*seqmatches)->pos && identities >= s_hits && (ref_min >= ref_s || ref_max <= ref_s)) {
+         if (identities == s_hits && (*seqmatches)->match[0].interval) {
+            s_cnt++;
+            (*seqmatches)->match[0].s_cnt = s_cnt;
+         } else {
+            s_hits = identities;
+            s_cnt = 1;
+            (*seqmatches)->match[0].s_hits = identities;
+            (*seqmatches)->match[0].s_cnt = 1;
+            (*seqmatches)->match[0].interval = 1;
+         }
+         if (VERBOSE_DEBUG) fprintf(stdout, "SECOND=%d (%.2f) cnt=%d [best=%d (%.2f)]\n", (int)s_hits, s_hits*1.0/slen, s_cnt, (int)best, best*1.0/slen);
+
       }
    }
-
-   free(hits);
    return 0;
-
 }
 
 int
@@ -275,7 +359,7 @@ align_seeds
    // Forward seeds.
    hit_t * hits = compute_hits(seeds, index, &hit_count);
    // Reverse seeds.
-   if (rseeds->pos > 0) {
+   if (rseeds != NULL && rseeds->pos > 0) {
       hit_t * rhits = compute_hits(rseeds, index, &rev_count);
       // Revert hits.
       for (int i = 0; i < rev_count; i++) {
@@ -288,94 +372,11 @@ align_seeds
       hit_count += rev_count;
       free(rhits);
    }
-   /*   
-   uint64_t hit_count;
-   hit_t * hits = compute_hits(stack, index, &hit_count);
-   */
-   /*
-   if (hit_count > 20) {
-      goto clean_and_return;
-   }
-   */
-   //   fprintf(stdout,"alignment: %s\n",read);
-   return align_hits(read,hits,hit_count,seqmatches,index,opt,alignopt);
+   int rval = align_hits(read,hits,hit_count,seqmatches,index,opt,alignopt);
+   free(hits);
+   return rval;
 }
 
-
-int
-compute_mapq
-(
- matchlist_t ** intervals,
- int n_int,
- double eval_ratio,
- double err_rate,
- seq_t seq,
- index_t * index
-)
-{
-   for (int i = 1; i < n_int; i++) {
-      matchlist_t * interval = intervals[i];
-      match_t match = interval->match[0];
-      double exp_thr = match.e_exp * eval_ratio;
-      int beg = match.read_s;
-      int len = match.read_e - match.read_s + 1;
-      int err = (int) ((1-match.ident) * len);
-      if (interval->pos < 2 || (interval->pos >= 2 && interval->match[1].e_exp > exp_thr)) {
-         double e_exp = -10*match.e_exp - 3;
-         double ident = 0;
-         if (1-match.ident > err_rate)
-            ident = -10*(log10(binom(len,err)) + (len-err)*log10(1-err_rate) + err*log10(err_rate));
-         double mapq = (e_exp < 60 ? e_exp : 60) - ident;
-         interval->match[0].mapq = (mapq < 0 ? 0 : mapq);
-         continue;
-      }
-
-      if (VERBOSE_DEBUG) {
-         fprintf(stdout, "mapq:\n");
-      }
-
-      /*
-      int errs;
-      int mapq = mapq_align(seq.seq + beg, seq.q + beg, index->genome + match.ref_s, len, len*0.02, &errs);
-      // Assign mapq.
-      interval->match[0].mapq = pow(10.0, -(mapq/10.0)) * binom(len,errs);
-      if (VERBOSE_DEBUG) {
-         fprintf(stdout, "[0] errors = %d, score = %d, prob = %f\n", errs, mapq, interval->match[0].mapq);
-      }
-      psum += interval->match[0].mapq;
-      */
-      double psum = 0.0;
-      double * binoms = malloc(interval->pos*sizeof(double));
-      int    * n_err = malloc(interval->pos*sizeof(int));
-      int j;
-      for (j = 0; j < interval->pos; j++) {
-         match_t match = interval->match[j];         
-         if (match.e_exp < exp_thr) {
-            char * ref_ptr = index->genome + match.ref_s + beg - match.read_s;
-            int mapq = mapq_align(seq.seq + beg, seq.q + beg, ref_ptr, len, len*0.02, n_err+j);
-            binoms[j] = binom(len,n_err[j]);
-            interval->match[j].mapq = pow(10.0, -(mapq/10.0)) * binoms[j];
-            if (VERBOSE_DEBUG) {
-               fprintf(stdout, "[%d] errors = %d, score = %d, prob = %f\n", j, n_err[j], mapq, interval->match[j].mapq);
-            }
-            psum += interval->match[j].mapq;
-         } else break;
-      }
-      j--;
-      for (; j >= 0; j--) {
-         double p_div = interval->match[j].mapq/psum;
-         double p_exp = (int)(-10*log10(max(1-p_div, 0.0000001)));
-         double e_exp = (int)(-10*interval->match[j].e_exp) - 3;
-         double ident = 0;
-         if (n_err[j]*1.0/len > err_rate)
-            ident = (int)(-10*(log10(binoms[j]) + (len-n_err[j])*log10(1-err_rate) + n_err[j]*log10(err_rate)));
-         double quality = min(p_exp, e_exp);
-         quality = (quality > 60 ? 60 : quality) - ident;
-         interval->match[j].mapq = (quality < 0 ? 0 : quality);
-      }
-   }
-   return 0;
-}
 
 
 matchlist_t **
@@ -465,7 +466,7 @@ merge_intervals
 
    return intervals;
 }
-
+/*
 int
 filter_repeats
 (
@@ -511,7 +512,7 @@ filter_repeats
    }
    return 0;
 }
-
+*/
 double
 e_value
 (

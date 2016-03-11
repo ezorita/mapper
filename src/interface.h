@@ -20,6 +20,7 @@ struct opt_map_t {
 struct opt_add_t {
    int k;
    int d;
+   int sd;
    int threads;
    int repeat_thr;
    int mode;
