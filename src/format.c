@@ -46,16 +46,13 @@ print_and_free
       //      fprintf(stdout, "span=%d, err_b=%.2f, err_s=%.2f, log10(p_b)=%.2f, p_s=%.2f, n2=%d, p_b=%f, binom_s(%d,%f)=%f,perr^n_s=%f, p_s=%f\n",span,nerr_b, nerr_s, p_b, p_s, match.flags, binom(span,round(nerr_b))*pow(perr,nerr_b), span, round(nerr_s),binom(span,round(nerr_s)),pow(perr,nerr_s),binom(span,round(nerr_s))*pow(perr,nerr_s));
       mapq = max(0,min(-10*(match.flags + p_s - p_b),60));
       */
-      fprintf(stdout, "%s\t%s\t%ld\t%c\t%d\t%d\t%d\t%d\t%d\t%.2f\t%.2f\t%.2f\t%.2f\t%.2f\t%d\n",
+      fprintf(stdout, "%s\t%s\t%ld\t%c\t%d\t%d\t%.2f\t%.2f\t%.2f\t%.2f\t%.2f\t%d\n",
               seq.tag,
               index->chr->name[chrnum],
               g_start - index->chr->start[chrnum]+1,
               dir ? '-' : '+',
               span,
-              seed_stage == 1,
-              seed_stage == 2,
-              seed_stage == 0,
-              seed_stage == 3,
+              seed_stage,
               match.hits*1.0/span,
               match.s_hits*1.0/span,
               match.e_exp[0],

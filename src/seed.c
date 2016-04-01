@@ -748,16 +748,16 @@ extend_lr_bp
    int i = p;
    while (i >= 0 && q[i] < 4) {
       next = extend_bw(q[i--], next, index->bwt);
-      if (next.sz == 0) break;
-      if (!bwpos->dp && next.sz <= bp) *bwpos = next;
+      if (next.sz >= bp) *bwpos = next;
+      else break;
    }
    // Extend now max to the right.
    next = *bwpos;
    i = p+1;
    while (i < qlen && q[i] < 4) {
       next = extend_fw(q[i++], next, index->bwt);
-      if (next.sz == 0) { i--; break; }
-      if (!bwpos->dp && next.sz <= bp) *bwpos = next;
+      if (next.sz >= bp) *bwpos = next;
+      else {i--; break;}
    }
    // Return next R position.
    return i + (i < qlen ? (q[i] > 3) : 0);

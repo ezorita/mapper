@@ -29,7 +29,6 @@ struct filteropt_t {
 // Aligning
 int             align_seeds      (char *, seedstack_t *, seedstack_t *, matchlist_t **, index_t *, filteropt_t, alignopt_t);
 int             align_hits       (char *, hit_t *, uint64_t, matchlist_t **, index_t *, filteropt_t, alignopt_t);
-int             align_matches    (char *, matchlist_t *, matchlist_t **, index_t *, filteropt_t, alignopt_t);
 double          e_value          (int L, int m, long gsize);
 
 // Post-processing functions.

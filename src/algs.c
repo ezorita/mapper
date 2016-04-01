@@ -38,7 +38,7 @@ map_score
       }
       //matches->match[i].mapq = -10*log10(ppos);
       double idnt = m.hits*1.0/L;
-      matches->match[i].mapq = min(60,max(0,idnt*idnt*(-10*log10(ppos*m.s_cnt))));
+      matches->match[i].mapq = min(40,max(0,idnt*idnt*(-10*log10(ppos*m.s_cnt))));
       if (VERBOSE_DEBUG) fprintf(stdout, "second=%d, b=%d, k=%d (cnt=%d), a=%d, L=%d, f=%d, mapq=%.2f\n", m.interval, b, k, m.s_cnt, a, L, f, matches->match[i].mapq);
    }
    return 0;
@@ -102,7 +102,7 @@ seq_push
    
    // Copy tag
    seqt->tag = strdup(tag);
-   seqt->tag = strtok(seqt->tag, " ");
+   //   seqt->tag = strtok(seqt->tag, " ");
    seqt->seq = strdup(seq);
    if (q) seqt->q = strdup(q);
    else seqt->q = calloc(strlen(seqt->seq),sizeof(char));

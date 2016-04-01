@@ -23,7 +23,7 @@ char *USAGE_ADD =
    "    -k --kmer:       sequence length. [required]\n"
    "    -d --distance:   sequence mismatches for annotation. [required]\n"
    "    -s --seed_dist:  set different distance for seed table.\n"
-   "    -r --repeat-thr: repeat threshold. (default 20)\n"
+   "    -r --repeat-thr: repeat threshold. (default 100)\n"
    "    -t --threads:    number of threads. (default 1)\n"
    "    --seed-save:     store the seed hash table.\n"
    "    --seed-only:     store only the seed hash table.\n";
@@ -168,7 +168,7 @@ parse_opt_build
    opt->k          = (arg_k < 0 ? 25 : arg_k);
    opt->d          = (arg_d < 0 ? 1 : arg_d);
    opt->threads    = (arg_t < 0 ? 1 : arg_t);
-   opt->repeat_thr = (arg_r < 0 ? 20 : arg_r);
+   opt->repeat_thr = (arg_r < 0 ? 100 : arg_r);
 
    return 0;
 }

@@ -56,13 +56,13 @@ int main(int argc, char *argv[])
 
    // DEFAULT Options.
    seedopt_t seedopt = { // MEM
-      .min_len = 12,
+      .min_len = 16,
       .max_len = 1000,
       .min_loci = 0,
       .max_loci = 200,
       .aux_loci = 1000,
-      .thr_seed = 20,
-      .reseed_len = 28
+      .reseed_len = 28,
+      .sensitive_mem = 0
    };
    filteropt_t filteropt = {
       .dist_accept = 10,
@@ -88,6 +88,11 @@ int main(int argc, char *argv[])
       .rand_error   = 0.50,
       .width_ratio  = 0.05
    };
+
+   // Precompute logarithms.
+   alignopt.logAe = log(alignopt.rand_error) - log(alignopt.read_error);
+   alignopt.logBe = log(1-alignopt.rand_error) - log(1-alignopt.read_error);
+
    formatopt_t formatopt = {
       .print_first = 2, // 2 for first_only
       .mapq_thr = 0,
@@ -263,6 +268,7 @@ mt_worker
    int k = index->sht->sht[0].k;
    int d = index->sht->sht[0].d;
    int r = index->sht->sht[0].repeat_thr;
+   int max_align = 20;
    int mem_abs_max_align = 100;
 
    // Precompute log table.
@@ -329,7 +335,7 @@ mt_worker
       int v[2] = {2,0};
       // Align acceptable seeds (less than repeat_thr loci) then the not found ones.
       for (int l = 0; l < 2; l++) {
-         if (map_matches->pos == 0 || map_matches->match[0].interval == 0) {
+         if (map_matches->pos == 0) {// || map_matches->match[0].interval == 0) {
             seed_stage = v[l];
             if (VERBOSE_DEBUG) {
                if (map_matches->pos == 0)
@@ -339,7 +345,7 @@ mt_worker
                   fprintf(stdout, "seed_stage:%d because [match.interval=%d] and [best(25,2)=%.2f, best(36,3)=%.2f, best(48,4)=%.2f]\n",seed_stage, m.interval, m.e_exp[0], m.e_exp[1], m.e_exp[2]);
                }
             }
-            for (int j = 0; j <= slen-k; j++) {
+            for (int j = 0; j <= (int)slen-(int)k; j++) {
                if (value[j] == v[l]) {
                   // DEBUG.
                   // Compute (k,d) matches.
@@ -350,15 +356,15 @@ mt_worker
                      loci += pstack->path[h].pos.sz;
                   if (VERBOSE_DEBUG) fprintf(stdout, "value[%d]=%d\tloci=%ld\n",j,v[l],loci);
                   // Continue if repeat_thr is exceeded.
-                  //if (loci > r) continue;
+                  if (loci > r) continue;
                   // Align otherwise.
                   loci = 0;
                   seeds->pos = 0;
-                  for (int h = 0; h < pstack->pos && loci < r; h++) {
+                  for (int h = 0; h < pstack->pos && loci < max_align; h++) {
                      fmdpos_t fmdp = pstack->path[h].pos;
                      if (VERBOSE_DEBUG) fprintf(stdout, "found imperfect seed: depth:%ld pos:%ld\n", fmdp.dp, fmdp.fp);
                      loci += fmdp.sz;
-                     if (loci > r) fmdp.sz -= loci-r;
+                     if (loci > max_align) fmdp.sz -= loci-max_align;
                      bwpos_t pos = {.depth = fmdp.dp, .sp = fmdp.fp, .ep = fmdp.fp + fmdp.sz - 1};
                      seedstack_push((seed_t) {.bulk = 0, .qry_pos = j, .ref_pos = pos}, &seeds);
                   }
@@ -377,32 +383,60 @@ mt_worker
       if (map_matches->pos == 0 || map_matches->match[0].interval == 0) {
          seed_stage = 3;
          seedstack_t * mems = seedstack_new(64);
-         seedstack_t * last_round = seedstack_new(64);
-         seed_mem(query, slen, index, &mems);
-         // Find longest MEM.
-         seeds->pos = 0;
-         seed_t sd = mems->seed[0];
-         for (int j = 0; j < mems->pos; j++) {
-            seed_t s = mems->seed[j];
-            if (VERBOSE_DEBUG) {
-               fprintf(stdout, "MEM: pos;%d, len:%d, loci: %ld\n", s.qry_pos, s.ref_pos.depth, s.ref_pos.ep - s.ref_pos.sp + 1);
+         // Not recommended, unless it's quite clear that path 3 is adding a lot of FP.
+         // For dmel 2% err (15% indels) produces a 2 fold reduction of path 3 FP. (~2 times slower)
+         if (opt->seed.sensitive_mem) {
+            seed_mem_bp(query,slen,2,index,&mems);
+            for (int j = 0; j < mems->pos; j++) {
+               seed_t s = mems->seed[j];
+               uint64_t loci = s.ref_pos.ep - s.ref_pos.sp + 1;
+               // Save MEMS with loci <= r.
+               if (loci > r) {
+                  s.ref_pos.ep = s.ref_pos.sp + r - 1;
+               }
+               seedstack_push(s, &seeds);
             }
-            uint64_t loci = s.ref_pos.ep - s.ref_pos.sp + 1;
-            // Save MEMS with loci <= r.
-            if (loci > r) {
-               s.ref_pos.ep = s.ref_pos.sp + r - 1;
+         } else {
+            seedstack_t * resd = seedstack_new(64);
+            seed_mem(query, slen, index, &mems);
+            // Find longest MEM.
+            seeds->pos = 0;
+            for (int j = 0; j < mems->pos; j++) {
+               seed_t s = mems->seed[j];
+               if (VERBOSE_DEBUG) {
+                  fprintf(stdout, "MEM: pos;%d, len:%d, loci: %ld\n", s.qry_pos, s.ref_pos.depth, s.ref_pos.ep - s.ref_pos.sp + 1);
+               }
+               uint64_t loci = s.ref_pos.ep - s.ref_pos.sp + 1;
+               // Save MEMS with loci <= r.
+               if (loci > r) {
+                  s.ref_pos.ep = s.ref_pos.sp + r - 1;
+                  seedstack_push(s, &seeds);
+               }
+               else if (loci == 1 && s.ref_pos.depth >= opt->seed.reseed_len) {
+                  // Reseed.
+                  seed_mem_bp(query + s.qry_pos, s.ref_pos.depth, loci + 1, index, &resd);
+               } else {
+                  seedstack_push(s, &seeds);
+               }
             }
-            seedstack_push(s, &seeds);
-            // Update longest MEM.
-            if (s.ref_pos.depth > sd.ref_pos.depth) {
-               sd = s;
+            for (int j = 0; j < resd->pos; j++) {
+               seed_t s = resd->seed[j];
+               if (VERBOSE_DEBUG) {
+                  fprintf(stdout, "RESEED: pos;%d, len:%d, loci: %ld\n", s.qry_pos, s.ref_pos.depth, s.ref_pos.ep - s.ref_pos.sp + 1);
+               }
+               uint64_t loci = s.ref_pos.ep - s.ref_pos.sp + 1;
+               // Save MEMS with loci <= r.
+               if (loci > r) {
+                  s.ref_pos.ep = s.ref_pos.sp + r - 1;
+               }
+               seedstack_push(s, &seeds);
             }
+            free(resd);
          }
          free(mems);
          if (VERBOSE_DEBUG) fprintf(stdout, "aligning from MEM seed\n");
          if (seeds->pos) 
             align_seeds(seq[i].seq, seeds, NULL, &map_matches, index, opt->filter, opt->align);
-         free(last_round);
       }
 
 

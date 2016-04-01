@@ -422,9 +422,14 @@ naive_align_bp
             int Ee = bp_path[bp_pos].score - bp_path[bp_ref].score;
             int Me = i - bp_ref*opt.bp_resolution - Ee;
             float Je = Ee*logAe + Me*logBe;
+            if (BREAKPOINT_DEBUG) {
+               fprintf(stdout, "\tML algorithm (i=%d, score=%d, cnt=%d) {bp_ref = %d (Je = Ee(%d)*logAe(%.2f)+Me(%d)*logBe(%.2f) = %.2f)}\n", i, bp_path[bp_pos].score, bp_cnt, bp_ref*opt.bp_resolution, Ee, logAe, Me, logBe, Je);
+            }
             if (Je > opt.bp_thr) {
                bp_cnt++;
-               //               fprintf(stdout, "\tML algorithm (i=%d, score=%d, cnt=%d) {bp_ref = %d (Je = %.2f)}\n", i, bp_path[bp_pos].score, bp_cnt, bp_ref*opt.bp_resolution, Je);
+               if (BREAKPOINT_DEBUG) {
+                  fprintf(stdout, "\tML algorithm (i=%d, score=%d, cnt=%d) {bp_ref = %d (Je = %.2f)}\n", i, bp_path[bp_pos].score, bp_cnt, bp_ref*opt.bp_resolution, Je);
+               }
                if ((bp_cnt >= opt.bp_repeats && i >= min_qlen) || Je > opt.bp_max_thr) {
                   bp_cnt = opt.bp_repeats;
                   break;
@@ -446,7 +451,9 @@ naive_align_bp
                if (maxJe > opt.bp_thr) {
                   bp_cnt = 1;
                }
-               //               fprintf(stdout, "\tML algorithm (i=%d, score=%d, cnt=%d) {*bp_ref = %d (Je = %.2f)}\n", i, bp_path[bp_pos].score, bp_cnt, bp_ref*opt.bp_resolution, maxJe);
+               if (BREAKPOINT_DEBUG) {
+                  fprintf(stdout, "\tML algorithm (i=%d, score=%d, cnt=%d) {*bp_ref = %d (Je = %.2f)}\n", i, bp_path[bp_pos].score, bp_cnt, bp_ref*opt.bp_resolution, maxJe);
+               }
             }
          }
          // Increase bp list position.
@@ -463,15 +470,21 @@ naive_align_bp
    }
    // Recompute highest likelihood.
    double maxJe = -INFINITY;
-   //   fprintf(stdout, "FINE ML (%d to %d):\n", start, end);
-   for (int b = start; b < end; b++) {
+   if (BREAKPOINT_DEBUG) {
+      fprintf(stdout, "FINE ML (%d to %d):\n", start, end);
+   }
+   for (int b = start; b <= end; b++) {
       int Ee = score - bp_path[b].score;
       int Me = bp_pos*opt.bp_resolution - b*opt.bp_resolution - Ee;
       double Je = Ee*logAe + Me*logBe;
-      //      fprintf(stdout, "\tJe(%d)=%.2f [score = %d, len = %d]\n", b*opt.bp_resolution, Je, bp_path[b].score, a_len-1);
+      if (BREAKPOINT_DEBUG) {
+         fprintf(stdout, "\tJe(%d)=%.2f [score = %d, len = %d]\n", b*opt.bp_resolution, Je, bp_path[b].score, a_len-1);
+      }
       if (Je > maxJe) { maxJe = Je; bp_ref = b; }
    }
-   //   fprintf(stdout, "FINE ML (%d to %d) bp_ref=%d (maxJe = %.2f)\n", start, end, bp_ref*opt.bp_resolution, maxJe);
+   if (BREAKPOINT_DEBUG) {
+      fprintf(stdout, "FINE ML (%d to %d) bp_ref=%d (maxJe = %.2f)\n", start, end, bp_ref*opt.bp_resolution, maxJe);
+   }
    if (maxJe >= opt.bp_thr) best_bp = bp_path[bp_ref];
    else best_bp = bp_path[bp_pos-1];
 

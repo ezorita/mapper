@@ -22,8 +22,8 @@ struct seedopt_t {
    int32_t min_loci;
    int32_t max_loci;
    int32_t aux_loci;
-   int32_t reseed_len;
-   uint64_t thr_seed;
+   int16_t reseed_len;
+   int16_t sensitive_mem;
 };
 
 struct seed_t {
