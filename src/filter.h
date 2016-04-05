@@ -20,16 +20,22 @@ struct filteropt_t {
    double overlap_max_tolerance;
    double align_seed_filter_thr;
    int    align_seed_filter_dif;
+   int    min_interval_size;
+   int    min_interval_hits;
    double align_filter_ident;
    double align_filter_eexp;
    double mapq_evalue_ratio;
+   double min_best_to_second;
 };
 
 
 // Aligning
-int             align_seeds      (char *, seedstack_t *, seedstack_t *, matchlist_t **, index_t *, filteropt_t, alignopt_t);
-int             align_hits       (char *, hit_t *, uint64_t, matchlist_t **, index_t *, filteropt_t, alignopt_t);
-double          e_value          (int L, int m, long gsize);
+int             align_seeds         (char *, seedstack_t *, matchlist_t **, index_t *, filteropt_t, alignopt_t);
+int             align_hits          (char *, hit_t *, uint64_t, matchlist_t **, index_t *, filteropt_t, alignopt_t);
+int             extend_align_bp     (match_t *, char *, size_t, index_t *, alignopt_t);
+int             check_neighbor_info (match_t *, index_t *);
+int             add_align_info      (match_t, matchlist_t **, index_t *, filteropt_t);
+double          e_value             (int L, int m, long gsize);
 
 // Post-processing functions.
 matchlist_t **  merge_intervals  (matchlist_t *, double, int32_t *);

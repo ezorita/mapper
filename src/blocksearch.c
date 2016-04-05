@@ -346,3 +346,19 @@ seqdash_fw
    path->pos = p;
    return 0;
 }
+
+
+int
+compar_path_score
+(
+ const void * pa,
+ const void * pb
+)
+{
+   spath_t * a = (spath_t *)pa;
+   spath_t * b = (spath_t *)pb;
+
+   if (a->score < b->score) return -1;
+   else if (a->score > b->score) return 1;
+   else return (a->pos.sz < b->pos.sz ? -1 : 1);
+}

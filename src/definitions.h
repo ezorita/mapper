@@ -4,7 +4,6 @@
 #define _BWM_DEFINITIONS_H
 
 #define VERBOSE_DEBUG 0
-#define BREAKPOINT_DEBUG 0
 
 static const char bases[5] = "ACGTN";
 

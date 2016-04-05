@@ -7,6 +7,8 @@
 #ifndef _ALIGN_H
 #define _ALIGN_H
 
+#define BREAKPOINT_DEBUG 0
+
 // Algorithm select.
 #define MAX_NAIVE_WIDTH 8
 
@@ -66,7 +68,6 @@ struct path_t {
    uint32_t score;
    uint32_t row;
    uint32_t col;
-   uint32_t max_indel;
 };
 
 int    align        (int qlen,char* query,int rlen,char* ref,int dir_r,int dir_q,int max,alignopt_t o,path_t * path);

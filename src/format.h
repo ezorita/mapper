@@ -16,6 +16,6 @@ struct formatopt_t {
    double eval_thr;
 };
 
-int print_and_free (seq_t seq, matchlist_t *, index_t * index, formatopt_t opt, int);
+int print_and_free (seq_t seq, matchlist_t *, index_t * index, formatopt_t opt);
 
 #endif

@@ -114,7 +114,7 @@ dbf_find_min
       }
    }
 
-   return (path_t){.score = min, .row = idx - row, .col = idx - col, .max_indel = 0};
+   return (path_t){.score = min, .row = idx - row, .col = idx - col};
 }
 
 path_t
@@ -155,12 +155,12 @@ dbf_align_bp
                        ['a'] = 0, ['c'] = 1, ['g'] = 2, ['t'] = 3,
                        ['A'] = 0, ['C'] = 1, ['G'] = 2, ['T'] = 3 };
 
-   if (qlen < 1 || rlen < 1) return (path_t){0,0,0,0};
+   if (qlen < 1 || rlen < 1) return (path_t){0,0,0};
    // TODO:
    // To align until align_max(qlen,rlen) the ends of qry must be padded with 'N'.
    int a_len = align_min(qlen,rlen);
    int align_w = (int)(a_len*opt.width_ratio);
-   if (align_w < (qlen > rlen ? qlen - rlen : rlen - qlen)) return (path_t){-1,0,0,0};
+   if (align_w < (qlen > rlen ? qlen - rlen : rlen - qlen)) return (path_t){-1,0,0};
    // Reduce width if align_w is bigger than the available query words.
    if (align_w > a_len) align_w = a_len;
    int awords = align_max(1,(align_w + WORD_SIZE - 1)/WORD_SIZE);
@@ -257,12 +257,9 @@ dbf_align_bp
 
       if (i%opt.bp_resolution == 0) {
          if (opt.bp_diagonal) {
-            bp_path[bp_pos] = (path_t) {score, i, i, 0};
+            bp_path[bp_pos] = (path_t) {score, i, i};
          } else {
             bp_path[bp_pos] = dbf_find_min(i,score,awords,Pr,Mr,Pb,Mb);
-            int indel = bp_path[bp_pos].col - bp_path[bp_pos].row;
-            indel = (indel >= 0 ? indel : -indel);
-            bp_path[bp_pos].max_indel = (bp_pos > 0 ? align_max(bp_path[bp_pos-1].max_indel, indel) : indel);
          }
          if ((period++)%opt.bp_period == 1 || opt.bp_period == opt.bp_resolution) {
             // Compute likelihood of current reference.
@@ -356,12 +353,12 @@ naive_align_bp
                        ['a'] = 0, ['c'] = 1, ['g'] = 2, ['t'] = 3,
                        ['A'] = 0, ['C'] = 1, ['G'] = 2, ['T'] = 3 };
 
-   if (qlen < 1 || rlen < 1) return (path_t){0,0,0,0};
+   if (qlen < 1 || rlen < 1) return (path_t){0,0,0};
    // TODO:
    // To align until align_max(qlen,rlen) the ends of qry must be padded with 'N'.
    int a_len = align_min(qlen,rlen);
    int w = align_max(opt.width_min, (int)(a_len*opt.width_ratio));
-   if (w < (qlen > rlen ? qlen - rlen : rlen - qlen)) return (path_t){-1,0,0,0};
+   if (w < (qlen > rlen ? qlen - rlen : rlen - qlen)) return (path_t){-1,0,0};
    // Reduce width if align_w is bigger than the available query words.
    if (w > a_len) w = a_len;
 
@@ -413,10 +410,7 @@ naive_align_bp
       }
       
       if (i%opt.bp_resolution == 0) {
-         bp_path[bp_pos] = (path_t) {score, row, col, 0};
-         int indel = bp_path[bp_pos].col - bp_path[bp_pos].row;
-         indel = (indel >= 0 ? indel : -indel);
-         bp_path[bp_pos].max_indel = (bp_pos > 0 ? align_max(bp_path[bp_pos-1].max_indel, indel) : indel);
+         bp_path[bp_pos] = (path_t) {score, row, col};
          if ((period++)%opt.bp_period == 1 || opt.bp_period == opt.bp_resolution) {
             // Compute likelihood of current reference.
             int Ee = bp_path[bp_pos].score - bp_path[bp_ref].score;
@@ -466,19 +460,19 @@ naive_align_bp
    int start = 0, end = bp_pos;
    if (bp_cnt >= opt.bp_repeats) {
       start = align_max(bp_ref - opt.bp_period + 1, 0);
-      end   = align_min(bp_ref + opt.bp_period, bp_pos);
+      end   = align_min(bp_ref + opt.bp_period + 1, bp_pos);
    }
    // Recompute highest likelihood.
    double maxJe = -INFINITY;
    if (BREAKPOINT_DEBUG) {
-      fprintf(stdout, "FINE ML (%d to %d):\n", start, end);
+      fprintf(stdout, "FINE ML (%d to %d):\n", start, end-1);
    }
-   for (int b = start; b <= end; b++) {
+   for (int b = start; b < end; b++) {
       int Ee = score - bp_path[b].score;
       int Me = bp_pos*opt.bp_resolution - b*opt.bp_resolution - Ee;
       double Je = Ee*logAe + Me*logBe;
       if (BREAKPOINT_DEBUG) {
-         fprintf(stdout, "\tJe(%d)=%.2f [score = %d, len = %d]\n", b*opt.bp_resolution, Je, bp_path[b].score, a_len-1);
+         fprintf(stdout, "\tJe(%d)=%.2f [score = %d, len = %d]\n", b*opt.bp_resolution, Je, bp_path[b].score, a_len);
       }
       if (Je > maxJe) { maxJe = Je; bp_ref = b; }
    }
@@ -541,7 +535,7 @@ dbf_align
                           ['A'] = 0, ['C'] = 1, ['G'] = 2, ['T'] = 3 };
 
    if (qlen < 1 || rlen < 1) {
-      *path = (path_t){0,0,0,0};
+      *path = (path_t){0,0,0};
       return 0;
    }
    int a_len = align_max(qlen,rlen);
@@ -638,7 +632,6 @@ dbf_align
 
    *path = dbf_find_min(i-1,score,awords,Pr,Mr,Pb,Mb);
    // TODO: this will not detect partial indels that compensate back to 0.
-   path->max_indel = path->col - path->row;
 
    // Free memory.
    free(Eqr);
@@ -674,7 +667,7 @@ naive_align
                           ['A'] = 0, ['C'] = 1, ['G'] = 2, ['T'] = 3 };
 
    if (qlen < 1 || rlen < 1) {
-      *path = (path_t){0,0,0,0};
+      *path = (path_t){0,0,0};
       return 0;
    }
    int a_len = align_max(qlen,rlen);
@@ -693,7 +686,7 @@ naive_align
    }
    c[0] = 0;
    // Iterate.
-   int score = a_len, col = 0, row = 0, indel = 0;
+   int score = a_len, col = 0, row = 0;
    for (int i = 0; i < a_len; i++) {
       score = a_len;
       // Horizontal.
@@ -714,14 +707,11 @@ naive_align
             row = i-j;
          }
       }
-      int p_id = col - row;
-      p_id = (p_id >= 0 ? p_id : -p_id);
-      indel = align_max(indel, p_id);
       if (score > max_score) return 1;
    }
 
    // Save path.
-   *path = (path_t){score, row, col, indel};
+   *path = (path_t){score, row, col};
    if (path->row >= qlen) path->row = qlen-1;
    if (path->col >= rlen) path->col = rlen-1;
 

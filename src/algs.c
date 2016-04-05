@@ -1,6 +1,32 @@
 #include "algs.h"
 
 int
+mem_intervals
+(
+ matchlist_t  * intv,
+ size_t         slen,
+ int            min_intv_size,
+ vstack_t    ** stack
+)
+{
+   int beg = 0;
+   for (int i = 0; i < intv->pos; i++) {
+      match_t m = intv->match[i];
+      if (m.read_s - beg >= min_intv_size) {
+         push(stack, beg);
+         push(stack, m.read_s-1);
+      }
+      beg = m.read_e + 1;
+   }
+   if (slen - beg >= min_intv_size) {
+      push(stack, beg);
+      push(stack, slen-1);
+   }
+   return 0;
+}
+
+
+int
 map_score
 (
  matchlist_t * matches,
@@ -16,7 +42,7 @@ map_score
       L = m.read_e - m.read_s + 1;
       b = L - (int)m.hits;
       a = m.annotation;
-      if (m.interval == 0) {
+      if (m.s_cnt == 0) {
          f = (a>>1) + (a&1);
          k = f + max(0,b - (a>>1));
       } else {
@@ -24,9 +50,9 @@ map_score
          a = min(a, k);
          f = (a+k-b)/2;
       }
-      if ((m.interval && k==b) || a == 0) {
+      if ((m.s_cnt && k==b) || a == 0) {
          matches->match[i].mapq = 0;         
-         return 0;
+         continue;
       }
       double ppos = 0;
       for (int t = f; t <= min(a,k); t++) {
@@ -39,7 +65,7 @@ map_score
       //matches->match[i].mapq = -10*log10(ppos);
       double idnt = m.hits*1.0/L;
       matches->match[i].mapq = min(40,max(0,idnt*idnt*(-10*log10(ppos*m.s_cnt))));
-      if (VERBOSE_DEBUG) fprintf(stdout, "second=%d, b=%d, k=%d (cnt=%d), a=%d, L=%d, f=%d, mapq=%.2f\n", m.interval, b, k, m.s_cnt, a, L, f, matches->match[i].mapq);
+      if (VERBOSE_DEBUG) fprintf(stdout, "second=%d, b=%d, k=%d (cnt=%d), a=%d, L=%d, f=%d, mapq=%.2f\n", m.s_cnt > 0, b, k, m.s_cnt, a, L, f, matches->match[i].mapq);
    }
    return 0;
 }

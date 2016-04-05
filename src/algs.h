@@ -48,9 +48,8 @@ struct match_t {
    int s_cnt;
    int interval;
    int annotation;
+   int path;
    double ident;
-   double second;
-   double e_exp[3];
    double mapq;
 };
 
@@ -127,6 +126,9 @@ int           htable_set       (htable_t *, uint64_t, uint8_t);
 // Matchlist functions.
 matchlist_t   * matchlist_new    (int elements);
 int             matchlist_add    (matchlist_t ** listp, match_t match);
+
+// Intervals.
+int             mem_intervals  (matchlist_t *, size_t, int, vstack_t **);
 
 
 #endif

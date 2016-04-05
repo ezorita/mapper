@@ -27,7 +27,7 @@ struct seedopt_t {
 };
 
 struct seed_t {
-   int32_t bulk;
+   int32_t errors;
    int32_t qry_pos;
    bwpos_t ref_pos;
 };
@@ -42,7 +42,7 @@ struct hit_t {
    uint64_t locus;
    uint32_t qrypos;
    uint16_t depth;
-   uint16_t bulk;
+   uint16_t errors;
 };
 
 // Annotated seed.
@@ -54,9 +54,9 @@ seed_t         longest_mem     (char *, index_t *);
 // Naive algorithms. (To compare with)
 seedstack_t  * naive_smem     (char *, seedopt_t, index_t *);
 // Seed functions.
-int            seed_mem       (uint8_t *, int, index_t *, seedstack_t **);
+int            seed_mem       (uint8_t *, int, int, index_t *, seedstack_t **);
 int            extend_lr      (uint8_t *, int, int, fmdpos_t *, index_t *);
-int            seed_mem_bp    (uint8_t *, int, int, index_t *, seedstack_t **);
+int            seed_mem_bp    (uint8_t *, int, int, int, index_t *, seedstack_t **);
 int            extend_lr_bp   (uint8_t *, int, int, int, fmdpos_t *, index_t *);
 int            seed_mismatch  (char *, size_t, int, seedstack_t **, index_t *);
 int            find_mismatch  (char *, size_t, int, seedstack_t **, index_t *);

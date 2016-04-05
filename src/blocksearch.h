@@ -39,5 +39,5 @@ pathstack_t * pathstack_new          (int);
 pstree_t    * alloc_stack_tree       (int);
 pstree_t    * alloc_stack_tree_rec   (int);
 void          free_stack_tree        (pstree_t *);
-
+int           compar_path_score      (const void *, const void *);
 #endif

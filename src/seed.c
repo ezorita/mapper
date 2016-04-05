@@ -96,7 +96,7 @@ find_uniq_seeds
             if (loc >= index->size/2) loc = index->size - 1 - loc - k;
              int ann_d = ann_read(ann, loc, NULL);
             if (ann_d > d) {
-               seed_t seed = (seed_t) {.bulk = 0, .qry_pos = i, .ref_pos = pos};
+               seed_t seed = (seed_t) {.errors = 0, .qry_pos = i, .ref_pos = pos};
                seedstack_push(seed, seeds);
             } else {
                values[i] = 2;
@@ -127,6 +127,8 @@ find_uniq_seed
    int     r = sht.repeat_thr;
    int     z = 0;
    int    zp = -k;
+   if (beg > slen-k)
+      return (hit_t) {.errors = 1};
    // Find annotation table with same k.
    ann_t ann;
    ann_find(k, index->ann, &ann);
@@ -140,30 +142,6 @@ find_uniq_seed
       uint64_t key = XXH64(q, k, 0);
       int value = htable_get(sht.htable, key);
       values[i] = value;
-      // DEBUG.
-      /*
-      if (VERBOSE_DEBUG) {
-         fprintf(stdout, "[%d] ", i);
-         for (int n = 0; n < k; n++) fprintf(stdout, "%c", bases[q[n]]);
-         fprintf(stdout, "\t%d", value);
-         pathstack_t * ps = pathstack_new(64);
-         blocksearch(q, k, d, index, &ps);
-         int count = 0;
-         for (int c = 0; c < ps->pos; c++) {
-            count += ps->path[c].pos.sz;
-         }
-         fprintf(stdout, "\t(%d)\t",count);
-         for (int c = 0; c < ps->pos; c++) {
-            uint64_t l = get_sa(ps->path[c].pos.fp, index->sar);
-            fprintf(stdout, "[p:%ld,s:%d]", l, ps->path[c].score);
-            for (int n = 0; n < k; n++)
-               fprintf(stdout, "%c", index->genome[l+n]);
-            fprintf(stdout, "\t");
-         }
-         fprintf(stdout, "\n");
-         free(ps);
-      }
-      */
       if (value > 0) {
          // Mask out mismatched seeds.
          if (i-zp < k) {
@@ -183,7 +161,7 @@ find_uniq_seed
             int ann_d = ann_read(ann, loc, NULL);
             if (ann_d > d) {
                free(q);
-               return (hit_t) {.locus = locus, .qrypos = i, .depth = k, .bulk = 0};
+               return (hit_t) {.locus = locus, .qrypos = i, .depth = k, .errors = 0};
             } else {
                values[i] = 2;
             }
@@ -196,7 +174,7 @@ find_uniq_seed
       } 
    }
    free(q);
-   return (hit_t) {.bulk = 1};
+   return (hit_t) {.errors = 1};
 }
 
 int
@@ -284,7 +262,7 @@ find_mismatch
                suffix_extend(translate[(uint8_t)seq[k]], tmp, &tmp, index->bwt);
             }
             if (tmp.ep >= tmp.sp) {
-               seed_t seed = (seed_t) {.bulk = 0, .qry_pos = qrypos, .ref_pos = tmp};
+               seed_t seed = (seed_t) {.errors = 1, .qry_pos = qrypos, .ref_pos = tmp};
                seedstack_push(seed, stack);
             }
          }
@@ -292,7 +270,7 @@ find_mismatch
       pos = next;
    }
    if (pos.ep >= pos.sp) {
-      seed_t seed = (seed_t) {.bulk = 0, .qry_pos = qrypos, .ref_pos = pos};
+      seed_t seed = (seed_t) {.errors = 0, .qry_pos = qrypos, .ref_pos = pos};
       seedstack_push(seed, stack);
    }
 
@@ -333,7 +311,7 @@ seed_mismatch
             if (newpos[j].sz) {
                // Save seed.
                bwpos_t refpos = {.sp = newpos[j].fp, .ep = newpos[j].fp + newpos[j].sz - 1, .depth = slen};
-               seed_t seed = (seed_t) {.bulk = 0, .qry_pos = qrypos, .ref_pos = refpos};
+               seed_t seed = (seed_t) {.errors = 1, .qry_pos = qrypos, .ref_pos = refpos};
                seedstack_push(seed, stack);
             }
          }
@@ -361,7 +339,7 @@ seed_mismatch
             if (newpos[j].sz) {
                // Save seed.
                bwpos_t refpos = {.sp = newpos[j].fp, .ep = newpos[j].fp + newpos[j].sz - 1, .depth = slen};
-               seed_t seed = (seed_t) {.bulk = 0, .qry_pos = qrypos, .ref_pos = refpos};
+               seed_t seed = (seed_t) {.errors = 1, .qry_pos = qrypos, .ref_pos = refpos};
                seedstack_push(seed, stack);
             }
          }
@@ -392,14 +370,14 @@ compute_hits
       seed_t seed = seeds->seed[i];
       for (size_t j = seed.ref_pos.sp; j <= seed.ref_pos.ep; j++) {
          int64_t loc = get_sa(j,index->sar);
-         hits[l++] = (hit_t) {.locus = loc, .qrypos = seed.qry_pos, .depth = seed.ref_pos.depth, .bulk = seed.ref_pos.ep - seed.ref_pos.sp + 1};
+         hits[l++] = (hit_t) {.locus=loc, .qrypos=seed.qry_pos, .depth=seed.ref_pos.depth, .errors=seed.errors};
       }
    }
    
    return hits;
 
 }
-
+/*
 int
 chain_seeds
 (
@@ -646,7 +624,7 @@ chain_seeds
 
    return 0;
 }
-
+*/
 int
 compar_hit_locus_qsort
 (
@@ -665,17 +643,18 @@ int
 seed_mem
 (
  uint8_t      * q,
+ int            beg,
  int            slen,
  index_t      * index,
  seedstack_t ** stack
 )
 {
-   int pos = 0;
+   int pos = beg;
    while (pos < slen) {
       fmdpos_t bwpos;
       pos = extend_lr(q, pos, slen, &bwpos, index);
       bwpos_t ref_pos = {.sp = bwpos.fp, .ep = bwpos.fp + bwpos.sz - 1, .depth = bwpos.dp};
-      seedstack_push((seed_t){.bulk = 0, .qry_pos = pos-bwpos.dp, .ref_pos = ref_pos},stack);
+      seedstack_push((seed_t){.errors = 0, .qry_pos = pos-bwpos.dp, .ref_pos = ref_pos},stack);
    }
    return 0;
 }
@@ -714,19 +693,20 @@ int
 seed_mem_bp
 (
  uint8_t      * q,
+ int            beg,
  int            slen,
  int            bp,
  index_t      * index,
  seedstack_t ** stack
 )
 {
-   int pos = 0;
+   int pos = beg;
    while (pos < slen) {
       fmdpos_t bwpos;
       pos = extend_lr_bp(q, pos, slen, bp, &bwpos, index);
       if (bwpos.dp) {
          bwpos_t ref_pos = {.sp = bwpos.fp, .ep = bwpos.fp + bwpos.sz - 1, .depth = bwpos.dp};
-         seedstack_push((seed_t){.bulk = 0, .qry_pos = pos-bwpos.dp, .ref_pos = ref_pos},stack);
+         seedstack_push((seed_t){.errors = 0, .qry_pos = pos-bwpos.dp, .ref_pos = ref_pos},stack);
       }
    }
    return 0;
