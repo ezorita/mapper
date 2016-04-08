@@ -9,9 +9,16 @@ mem_intervals
  vstack_t    ** stack
 )
 {
+   // CONDITIONS TO NOT RESEED:
+   // - Minimum identity (not implemented)
+   // - Already best and second best score.
+   // - Path 1 alignment.
    int beg = 0;
    for (int i = 0; i < intv->pos; i++) {
       match_t m = intv->match[i];
+      // Apply conditions.
+      if (m.path != 1 && m.s_cnt == 0) continue;
+      // Store gap for mem seeding.
       if (m.read_s - beg >= min_intv_size) {
          push(stack, beg);
          push(stack, m.read_s-1);
@@ -38,18 +45,36 @@ map_score
 
    for (size_t i = 0; i < matches->pos; i++) {
       match_t m = matches->match[i];
+
       int b,k,a,L,f;
       L = m.read_e - m.read_s + 1;
       b = L - (int)m.hits;
-      a = m.annotation;
+      a = m.ann_d;
+      /*
       if (m.s_cnt == 0) {
+         m.s_cnt = 1;
+         m.s_hits = m.hits - a;
+      }
+      k = L - (int)m.s_hits;
+      a = min(a, k);
+      f = (a+k-b)/2;
+      */
+      if (m.s_cnt == 0) {
+         m.s_hits = m.hits - m.ann_d;
+         m.s_cnt  = m.ann_cnt;
          f = (a>>1) + (a&1);
-         k = f + max(0,b - (a>>1));
+         // TODO:
+         // Improve k blind selection, based on the likelihood of k given b.
+         // For instance, if b = 2 and a = 2, k = 2, which is unlikely provided
+         // that such alignment would have been cached anyway... (Especially on path 1).
+         //         k = f + max(0,b - (a>>1));
+         k = max(b+1, f + max(0,b - (a>>1)));
       } else {
          k = L - (int)m.s_hits;
          a = min(a, k);
          f = (a+k-b)/2;
       }
+
       if ((m.s_cnt && k==b) || a == 0) {
          matches->match[i].mapq = 0;         
          continue;
@@ -65,7 +90,7 @@ map_score
       //matches->match[i].mapq = -10*log10(ppos);
       double idnt = m.hits*1.0/L;
       matches->match[i].mapq = min(40,max(0,idnt*idnt*(-10*log10(ppos*m.s_cnt))));
-      if (VERBOSE_DEBUG) fprintf(stdout, "second=%d, b=%d, k=%d (cnt=%d), a=%d, L=%d, f=%d, mapq=%.2f\n", m.s_cnt > 0, b, k, m.s_cnt, a, L, f, matches->match[i].mapq);
+      if (VERBOSE_DEBUG) fprintf(stdout, "second=%d, b=%d, k=%d (cnt=%d), a=%d, L=%d, f=%d, mapq=%.2f (-10*log10(%f)*%f^2)\n", m.s_cnt > 0, b, k, m.s_cnt, a, L, f, matches->match[i].mapq,ppos,idnt);
    }
    return 0;
 }

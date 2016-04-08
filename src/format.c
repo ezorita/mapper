@@ -55,7 +55,7 @@ print_and_free
                  match.read_e,
                  match.hits*1.0/span,
                  match.s_hits*1.0/span,
-                 match.annotation,
+                 match.ann_d,
                  (int)match.mapq);
       }
    }

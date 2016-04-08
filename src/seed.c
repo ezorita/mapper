@@ -644,15 +644,15 @@ seed_mem
 (
  uint8_t      * q,
  int            beg,
- int            slen,
+ int            end,
  index_t      * index,
  seedstack_t ** stack
 )
 {
    int pos = beg;
-   while (pos < slen) {
+   while (pos <= end) {
       fmdpos_t bwpos;
-      pos = extend_lr(q, pos, slen, &bwpos, index);
+      pos = extend_lr(q, pos, end, &bwpos, index);
       bwpos_t ref_pos = {.sp = bwpos.fp, .ep = bwpos.fp + bwpos.sz - 1, .depth = bwpos.dp};
       seedstack_push((seed_t){.errors = 0, .qry_pos = pos-bwpos.dp, .ref_pos = ref_pos},stack);
    }
@@ -663,15 +663,15 @@ int
 extend_lr
 (
  uint8_t  * q,
- int        p,
- int        qlen,
+ int        beg,
+ int        end,
  fmdpos_t * bwpos,
  index_t  * index
 )
 {
    fmdpos_t next = *bwpos = (fmdpos_t){.fp = 0, .rp = 0, .sz = index->size, .dp = 0};
    // Extend max to the left, starting from p.
-   int i = p;
+   int i = beg;
    while (i >= 0 && q[i] < 4) {
       next = extend_bw(q[i--], next, index->bwt);
       if (next.sz) *bwpos = next;
@@ -679,14 +679,14 @@ extend_lr
    }
    // Extend now max to the right.
    next = *bwpos;
-   i = p+1;
-   while (i < qlen && q[i] < 4) {
+   i = beg+1;
+   while (i <= end && q[i] < 4) {
       next = extend_fw(q[i++], next, index->bwt);
       if (next.sz) *bwpos = next;
       else { i--; break; }
    }
    // Return next R position.
-   return i + (i < qlen ? (q[i] > 3) : 0);
+   return i + (i <= end ? (q[i] > 3) : 0);
 }
 
 int
@@ -694,16 +694,16 @@ seed_mem_bp
 (
  uint8_t      * q,
  int            beg,
- int            slen,
+ int            end,
  int            bp,
  index_t      * index,
  seedstack_t ** stack
 )
 {
    int pos = beg;
-   while (pos < slen) {
+   while (pos <= end) {
       fmdpos_t bwpos;
-      pos = extend_lr_bp(q, pos, slen, bp, &bwpos, index);
+      pos = extend_lr_bp(q, pos, end, bp, &bwpos, index);
       if (bwpos.dp) {
          bwpos_t ref_pos = {.sp = bwpos.fp, .ep = bwpos.fp + bwpos.sz - 1, .depth = bwpos.dp};
          seedstack_push((seed_t){.errors = 0, .qry_pos = pos-bwpos.dp, .ref_pos = ref_pos},stack);

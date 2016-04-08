@@ -40,12 +40,15 @@ extend_align_bp
 
    // Extend right.
    if (aln->read_e < slen-1) {
+      // Alignment limits.
       int64_t q_len = slen - aln->read_e;
       int64_t r_len = align_min(q_len, index->size - 1 - aln->ref_e);
+      int seed_end_error = translate[(int)seq[aln->read_e]] != translate[(int)index->genome[aln->ref_e]];
       path_t r = align_bp(q_len, seq+aln->read_e, r_len, index->genome+aln->ref_e, 0, 1, 1, opt);
+      // Add hits, avoid counting twice the mismatches at the ends of the seed.
+      aln->hits += r.col - r.score + seed_end_error;
       aln->read_e += r.col;
       aln->ref_e += r.row;
-      aln->hits += r.col - r.score;
 
 #if VERBOSE_DEBUG == 1
       fprintf(stdout, "R: qry:%d, ref:%d, score:%d\n", r.col, r.row, r.score);
@@ -67,15 +70,16 @@ extend_align_bp
    if (aln->read_s > 0) {
       int64_t q_len = aln->read_s + 1;
       int64_t r_len = align_min(q_len, aln->ref_s + 1);
+      int seed_end_error = translate[(int)seq[aln->read_s]] != translate[(int)index->genome[aln->ref_s]];
       path_t l = align_bp(q_len, seq+aln->read_s, r_len, index->genome+aln->ref_s, 0, -1, -1, opt);
-
-#if VERBOSE_DEBUG == 1
-         fprintf(stdout, "L: qry:%d, ref:%d, score:%d\n", l.col, l.row, l.score);
-#endif
-
+      aln->hits += l.col -  l.score + seed_end_error;
       aln->read_s -= l.col;
       aln->ref_s -= l.row;
-      aln->hits += l.col -  l.score;
+
+#if VERBOSE_DEBUG == 1
+      fprintf(stdout, "L: qry:%d, ref:%d, score:%d\n", l.col, l.row, l.score);
+#endif
+      // Extend deletion gaps.
       if (l.row > l.col && l.row == r_len-1) {
          q_len -= l.col;
          l = align_bp(q_len, seq+aln->read_s, q_len, index->genome+aln->ref_s, 0, -1, -1, opt);
@@ -143,15 +147,16 @@ add_align_info
             // Set second alignment.
             if (m.hits > aln.s_hits) {
                aln.s_hits = m.hits;
-               aln.s_cnt  = m.s_cnt;
+               aln.s_cnt  = (m.hits == m.s_hits ? m.s_hits+1 : 1);
             } else if (m.hits == aln.s_hits) {
                aln.s_cnt += 1;
             }
          } else {
-            // Add as second best alignment if the alignment hits has at least
-            // 'min_best_to_second'*best_hits.
+            // Conditions to accept a second best hit:
+            // 1. s_hits >= best_hits - annotation
+            // 2. s_hits >= 'min_best_to_second'*best_hits.
             best = 0;
-            if (aln.hits > m.s_hits && aln.hits > m.hits*opt.min_best_to_second) {
+            if (aln.hits > m.s_hits && aln.hits >= m.hits-m.ann_d && aln.hits > m.hits*opt.min_best_to_second) {
                list->match[j].s_hits = aln.hits;
                list->match[j].s_cnt  = 1;
             } else if (aln.hits == m.s_hits) {
@@ -164,8 +169,9 @@ add_align_info
    if (best) {
       // Add sequence neighborhood info.
       check_neighbor_info(&aln,index);
+      // Double check second best alignment.
+      if (aln.s_hits < aln.hits - aln.ann_d) aln.s_hits = aln.s_cnt =  0;
       // Insert interval in empty gap.
-      
       if (ov_beg < 0) {
          // Insert position.
          int ins = 0;
@@ -235,9 +241,12 @@ check_neighbor_info
             last = n;
          }
       }
-      aln->annotation = (int)max_d*(span_d*1.0/ann.k);
+      aln->ann_d   = (int)max_d*(span_d*1.0/ann.k);
+      aln->ann_cnt = 1;
+      for (int n = 0; n < cnt_d; n++) aln->ann_cnt *= 10;
    } else {
-      aln->annotation = 0;
+      aln->ann_d   = 0;
+      aln->ann_cnt = 0;
    }
    
    return 0;
@@ -270,19 +279,27 @@ align_hits
             break;
          }
       }
-      if (done) continue;
+      if (done) {
+         // DEBUG.
+         if (VERBOSE_DEBUG) fprintf(stdout, "repeated alignment\n");
+         continue;
+      }
 
       match_t m = {
          .read_s = hits[i].qrypos,
-         .read_e = hits[i].qrypos + hits[i].depth,
+         .read_e = hits[i].qrypos + hits[i].depth - 1,
          .ref_s  = hits[i].locus,
-         .ref_e  = hits[i].locus + hits[i].depth,
+         .ref_e  = hits[i].locus + hits[i].depth - 1,
          .hits   = hits[i].depth - hits[i].errors,
          .s_hits = 0,
          .s_cnt  = 0
       };
       // Extend seed.
       extend_align_bp(&m,read,slen,index,alignopt);
+
+      // DEBUG.
+      if (VERBOSE_DEBUG) fprintf(stdout, "seed extend: ref_s: %ld, read_s: %d, read_e: %d, hits:%d\n", m.ref_s, m.read_s, m.read_e, m.hits);
+
       // Filter out non-significant alignments.
       if (m.hits < opt.min_interval_hits) continue;
 

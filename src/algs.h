@@ -47,7 +47,8 @@ struct match_t {
    int s_hits;
    int s_cnt;
    int interval;
-   int annotation;
+   int ann_d;
+   int ann_cnt;
    int path;
    double ident;
    double mapq;

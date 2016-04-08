@@ -333,18 +333,19 @@ mt_worker
          beg = hit.qrypos + 1;
       }
 
-      // DEBUG.
-      /*
-      fprintf(stdout, "** path 1 **\n");
-      for (int k = 0; k < map_matches->pos; k++) {
-         match_t m = map_matches->match[k];
-         fprintf(stdout, "match[%d]: read_s:%d, read_e:%d, ref_s:%ld\n", k, m.read_s, m.read_e, m.ref_s);
-      }
-      */
-
       // Flag path 1 alignments.
       for (int j = 0; j < map_matches->pos; j++)
          map_matches->match[j].path = 1;
+
+      // DEBUG.
+      if (VERBOSE_DEBUG) {
+         fprintf(stdout, "** path 1 **\n");
+         for (int k = 0; k < map_matches->pos; k++) {
+            match_t m = map_matches->match[k];
+            fprintf(stdout, "match[%d]: read_s:%d, read_e:%d, ref_s:%ld, hits:%d, s_hits:%d (%d), ann:%d, path:%d\n", k, m.read_s, m.read_e, m.ref_s, m.hits, m.s_hits, m.s_cnt, m.ann_d, m.path);
+         }
+      }
+
 
       /**
       *** NON-UNIQUE AND NOT FOUND
@@ -354,7 +355,7 @@ mt_worker
       // Align acceptable seeds (less than repeat_thr loci) then the not found ones.
       for (int l = 0; l < 2; l++) {
          // DEBUG.
-         //         fprintf(stdout, "** path %d **\n", v[l]);
+         if (VERBOSE_DEBUG) fprintf(stdout, "** path %d **\n", v[l]);
          int beg = 0;
          while (beg <= (int)(slen - k)) {
             // Do not seed path 1 intervals or alignments with second best score.
@@ -381,6 +382,8 @@ mt_worker
                   loci += pstack->path[h].pos.sz;
                // Continue if repeat_thr is exceeded.
                if (loci > r) {
+                  // DEBUG.
+                  if (VERBOSE_DEBUG) fprintf(stdout, "[beg:%d] too many loci (%ld)\n", beg, loci);
                   beg++;
                   continue;
                } else if (loci > max_align) {
@@ -405,16 +408,16 @@ mt_worker
                }
                if (seeds->pos) {
                   // DEBUG.
-                  //                  fprintf(stdout, "[beg:%d] aligning %ld seeds\n", beg, seeds->pos);
+                  if (VERBOSE_DEBUG) fprintf(stdout, "[beg:%d] aligning %ld seeds\n", beg, seeds->pos);
                   // Align non-unique seeds.
                   align_seeds(seq[i].seq, seeds, &map_matches, index, opt->filter, opt->align);
-                  /*
                   // DEBUG.
-                  for (int k = 0; k < map_matches->pos; k++) {
-                     match_t m = map_matches->match[k];
-                     fprintf(stdout, "match[%d]: read_s:%d, read_e:%d, ref_s:%ld\n", k, m.read_s, m.read_e, m.ref_s);
+                  if (VERBOSE_DEBUG) {
+                     for (int k = 0; k < map_matches->pos; k++) {
+                        match_t m = map_matches->match[k];
+                        fprintf(stdout, "match[%d]: read_s:%d, read_e:%d, ref_s:%ld, hits:%d, s_hits:%d (%d), ann:%d, path:%d\n", k, m.read_s, m.read_e, m.ref_s, m.hits, m.s_hits, m.s_cnt, m.ann_d, m.path);
+                     }
                   }
-                  */
                }
             } else if (value[beg] == -1) {
                // Check seed in seed table.
@@ -433,6 +436,7 @@ mt_worker
       **/
       mem_intv->pos = 0;
       mem_intervals(map_matches, slen, opt->filter.min_interval_size, &mem_intv);
+      seeds->pos = 0;
       if (opt->seed.sensitive_mem) {
          for (int s = 0; s < mem_intv->pos; s += 2) {
             int beg = mem_intv->val[s];
@@ -455,28 +459,29 @@ mt_worker
          for (int s = 0; s < mem_intv->pos; s += 2) {
             int beg = mem_intv->val[s];
             int end = mem_intv->val[s+1];
+            if (VERBOSE_DEBUG) fprintf(stdout, "MEM interval: beg:%d, end:%d\n", beg,end);
             // Find MEMS.
             mems->pos = 0;
             seed_mem(query, beg, end, index, &mems);
-            seeds->pos = 0;
+            // DEBUG.
             for (int j = 0; j < mems->pos; j++) {
                seed_t s = mems->seed[j];
                uint64_t loci = s.ref_pos.ep - s.ref_pos.sp + 1;
+               if (VERBOSE_DEBUG) fprintf(stdout, "MEM (%d/%ld): beg:%d, end:%d, loci:%ld.\n",j+1,mems->pos,s.qry_pos, s.qry_pos+s.ref_pos.depth-1, loci);
                if (loci > max_align) {
                   // Do maximum 'max_align' alignments per seed.
                   s.ref_pos.ep = s.ref_pos.sp + max_align - 1;
-                  seedstack_push(s, &seeds);
                }
                else if (loci == 1 && s.ref_pos.depth >= opt->seed.reseed_len) {
                   // Reseed.
                   seed_mem_bp(query, s.qry_pos, s.qry_pos + s.ref_pos.depth, loci + 1, index, &resd);
-               } else {
-                  seedstack_push(s, &seeds);
                }
+               seedstack_push(s, &seeds);
             }
             for (int j = 0; j < resd->pos; j++) {
                seed_t s = resd->seed[j];
                uint64_t loci = s.ref_pos.ep - s.ref_pos.sp + 1;
+               if (VERBOSE_DEBUG) fprintf(stdout, "RESEED-MEM (%d/%ld): beg:%d, end:%d, loci:%ld.\n",j+1,resd->pos,s.qry_pos, s.qry_pos+s.ref_pos.depth-1, loci);
                if (loci > max_align) {
                   // Do maximum 'max_align' alignments per seed.
                   s.ref_pos.ep = s.ref_pos.sp + max_align - 1;
@@ -488,6 +493,15 @@ mt_worker
       }
       if (seeds->pos) 
          align_seeds(seq[i].seq, seeds, &map_matches, index, opt->filter, opt->align);
+
+      // DEBUG.
+      if (VERBOSE_DEBUG) {
+         for (int k = 0; k < map_matches->pos; k++) {
+            match_t m = map_matches->match[k];
+            fprintf(stdout, "match[%d]: read_s:%d, read_e:%d, ref_s:%ld, hits:%d, s_hits:%d (%d), ann:%d, path:%d\n", k, m.read_s, m.read_e, m.ref_s, m.hits, m.s_hits, m.s_cnt, m.ann_d, m.path);
+         }
+      }
+
 
       // Score and output.
       map_score(map_matches,cumlog);
