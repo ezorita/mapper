@@ -136,7 +136,7 @@ find_uniq_seed
    uint8_t * q = malloc(k);
    for (int i = beg; i <= slen - k; i++) {
       if (check_kmer(query+i, q, k)) {
-         values[i] = -1;
+         values[i] = 4;
          continue;
       }
       uint64_t key = XXH64(q, k, 0);
@@ -377,23 +377,20 @@ compute_hits
    return hits;
 
 }
-/*
-int
+
+hit_t *
 chain_seeds
 (
  seedstack_t * seeds,
- seedstack_t * rseeds,
  int           seqlen,
- matchlist_t * matchlist,
  index_t     * index,
  int           dist_accept,
- double        read_ref_ratio
+ double        read_ref_ratio,
+ size_t      * hit_cnt
 )
 {
-   if (matchlist->size < 1) return -1;
-
    // Convert seeds to hits.
-   uint64_t hit_count, rev_count;
+   uint64_t hit_count;
    // Forward seeds.
    hit_t * hits = compute_hits(seeds, index, &hit_count);
 
@@ -422,34 +419,14 @@ chain_seeds
       }
    }
 
-   // Reverse seeds.
-   if (rseeds->pos > 0) {
-      hit_t * rhits = compute_hits(rseeds, index, &rev_count);
-      // Revert hits.
-      for (int i = 0; i < rev_count; i++) {
-         rhits[i].locus = (index->size - 1) - (rhits[i].locus + rhits[i].depth);
-         rhits[i].qrypos= seqlen - (rhits[i].qrypos + rhits[i].depth);
-      }
-      // Merge F/R hits.
-      hits = realloc(hits, (hit_count + rev_count)*sizeof(hit_t));
-      memcpy(hits+hit_count, rhits, rev_count*sizeof(hit_t));
-      hit_count += rev_count;
-      free(rhits);
-   }
-   
    // Merge-sort hits.
-   //   mergesort_mt(hits, hit_count, sizeof(hit_t), 0, 1, compar_hit_locus);
    qsort(hits, hit_count, sizeof(hit_t), compar_hit_locus_qsort);
 
    if (VERBOSE_DEBUG) fprintf(stdout, "** CHAIN SEEDS (total %ld)\n", hit_count);
 
-   // Reset matchlist.
-   matchlist->pos = 0;
-
    // Aux variables.
-   long minv = 0;
-   int  mini = 0;
    size_t i = 0;
+   size_t cnt = 0;
 
    while (i < hit_count) {
       // Match start.
@@ -458,9 +435,7 @@ chain_seeds
       int64_t lend_tmp = lbeg_tmp + span;
       int64_t rbeg_tmp = hits[i].qrypos;
       int64_t rend_tmp = rbeg_tmp + span;
-      int     bulk     = hits[i].bulk;
-      int64_t lbeg, lend, rbeg, rend;
-      lbeg = lend = rbeg = rend = 0;
+      int64_t lbeg = lbeg_tmp, rbeg = rbeg_tmp, rend = rend_tmp;
       i++;
 
       // Debug seeds...
@@ -477,12 +452,12 @@ chain_seeds
          // Search chromosome name.
          int   chrnum = bisect_search(0, index->chr->nchr-1, index->chr->start, g_start+1)-1;
          // Print results.
-         fprintf(stdout, "%s,%ld%c/%ld,%ld/%ld,%ld,%d",
+         fprintf(stdout, "%s,%ld%c/%ld,%ld/%ld,%ld",
                  index->chr->name[chrnum],
                  g_start - index->chr->start[chrnum]+1,
                  dir ? '-' : '+',
                  rbeg_tmp, rend_tmp-1,
-                 span, span, bulk
+                 span, span
                  );
       }
 
@@ -492,32 +467,26 @@ chain_seeds
          int64_t g_dist = (int64_t)(hits[i].locus) - (int64_t)(hits[i-1].locus);
          int64_t r_dist = (int64_t)(hits[i].qrypos) - (int64_t)(hits[i-1].qrypos);
          if (r_dist >= 0 && (g_dist <= (1+read_ref_ratio) * r_dist) && (g_dist >= (1-read_ref_ratio) * r_dist)) {
-            uint64_t new_lend = hits[i].locus + hits[i].depth;
             uint64_t new_rend = hits[i].qrypos + hits[i].depth;
             if (new_rend > rend_tmp) {
                // Update hits.
                if (hits[i].qrypos <= rend_tmp) {
                   span += new_rend - rend_tmp;
+                  rend_tmp = new_rend;
                }
                else {
                   span += hits[i].depth;
-                  // Check if this is the biggest stretch.
-                  if (rend_tmp - rbeg_tmp > rend - rbeg) {
-                     rbeg = rbeg_tmp;
-                     rend = rend_tmp;
-                     lbeg = lbeg_tmp;
-                     lend = lend_tmp;
-                  }
-                  // Follow new stretch.
                   rbeg_tmp = hits[i].qrypos;
+                  rend_tmp = new_rend;
                   lbeg_tmp = hits[i].locus;
                }
-               // Update ends.
-               rend_tmp = new_rend;
-               lend_tmp = new_lend;
-
+               // Check if this is the longest seed.
+               if (rend_tmp - rbeg_tmp > rend - rbeg) {
+                  rbeg = rbeg_tmp;
+                  rend = rend_tmp;
+                  lbeg = lbeg_tmp;
+               }
             }
-            bulk *= hits[i].bulk;
 
             // Debug seed chain...
             if (VERBOSE_DEBUG) {
@@ -533,98 +502,36 @@ chain_seeds
                // Search chromosome name.
                int   chrnum = bisect_search(0, index->chr->nchr-1, index->chr->start, g_start+1)-1;
                // Print results.
-               fprintf(stdout, "\t%s,%ld%c/%d,%d/%d,%ld,%d",
+               fprintf(stdout, "\t%s,%ld%c/%d,%d/%d,%ld",
                        index->chr->name[chrnum],
                        g_start - index->chr->start[chrnum]+1,
                        dir ? '-' : '+',
                        hits[i].qrypos, hits[i].qrypos + hits[i].depth-1,
-                       hits[i].depth, span, bulk
+                       hits[i].depth, span
                        );
             }
 
             i++;
          } else break;
       }
-      // Check if last was the biggest stretch.
-      if (rend_tmp - rbeg_tmp > rend - rbeg) {
-         rbeg = rbeg_tmp;
-         rend = rend_tmp;
-         lbeg = lbeg_tmp;
-         lend = lend_tmp;
-      }
 
+      hit_t h = (hit_t) {.locus = lbeg, .qrypos = rbeg, .depth = rend - rbeg, .errors = span};
+      hits[cnt++] = h;
 
       if (VERBOSE_DEBUG) fprintf(stdout, "\n");
-
-      // Store match.
-      // Non-significant streaks (bulk) will not be saved.
-      if (span > minv && bulk == 0) {
-         // Allocate match.
-         match_t match;
-         match.ref_e  = lend - 1;
-         match.read_e = rend - 1;
-         match.ref_s  = lbeg;
-         match.read_s = rbeg;
-         match.hits   = span;
-         match.s_hits = 0;
-         match.s_cnt  = 0;
-
-         // Debug match
-         if (VERBOSE_DEBUG) {
-            uint64_t g_start;
-            int dir = 0;
-            if (match.ref_s >= index->size/2) {
-               g_start = index->size - match.ref_e - 2;
-               dir = 1;
-            } else {
-               g_start = match.ref_s + 1;
-               dir = 0;
-            }
-            // Search chromosome name.
-            int   chrnum = bisect_search(0, index->chr->nchr-1, index->chr->start, g_start+1)-1;
-            // Print results.
-            fprintf(stdout, "[%d]\t%s,%ld%c\t%ld\t%d,%d\n",
-                    match.hits,
-                    index->chr->name[chrnum],
-                    g_start - index->chr->start[chrnum]+1,
-                    dir ? '-' : '+',
-                    match.ref_s,
-                    match.read_s, match.read_e
-                    );
-         }
-
-         // Append if list not yet full, replace the minimum value otherwise.
-         if (matchlist->pos < matchlist->size) {
-            matchlist->match[matchlist->pos++] = match;
-         }
-         else {
-            if(VERBOSE_DEBUG) {
-               match_t m = matchlist->match[mini];
-               fprintf(stdout, "replaces [%d]\t%ld\t%d,%d\n",m.hits,m.ref_s,m.read_s,m.read_e);
-            }
-            matchlist->match[mini] = match;
-         }
-               
-         // Find the minimum that will be substituted next.
-         if (matchlist->pos == matchlist->size) {
-            mini = 0;
-            minv = matchlist->match[mini].hits;
-            for (int j = 1 ; j < matchlist->size; j++) {
-               if (matchlist->match[j].hits < minv) {
-                  mini  = j;
-                  minv = matchlist->match[j].hits;
-               }
-            }
-         }
-      }
    }
+   
+   // Realloc hit array and set hit count.
+   hits = realloc(hits, cnt*sizeof(hit_t));
+   *hit_cnt = cnt;
 
-   // Free hits.
-   free(hits);
+   // Sort by hit.errors (hit count)
+   qsort(hits, cnt, sizeof(hit_t), compar_hit_errors_qsort);
 
-   return 0;
+   // Return hits.
+   return hits;
 }
-*/
+
 int
 compar_hit_locus_qsort
 (
@@ -637,6 +544,19 @@ compar_hit_locus_qsort
    if (ha->locus > hb->locus) return 1;
    else if (ha->locus < hb->locus) return -1;
    else return (ha->depth > hb->depth ? 1 : -1);
+}
+
+int
+compar_hit_errors_qsort
+(
+ const void * a,
+ const void * b
+)
+{
+   hit_t * ha = (hit_t *)a;
+   hit_t * hb = (hit_t *)b;
+   if (ha->errors < hb->errors) return 1;
+   else return -1;
 }
 
 int
@@ -688,6 +608,210 @@ extend_lr
    // Return next R position.
    return i + (i <= end ? (q[i] > 3) : 0);
 }
+
+/*
+** This version of the function uses suffix_extend attempting
+** to do forward search. Either use reverse complement and
+** then correct the locus (which requires querying the SA),
+** or start from the end (results may differ from BWA).
+int
+seed_interv
+(
+ uint8_t      * q,
+ int            beg,
+ int            end,
+ int            min_len,
+ int            max_loci,
+ index_t      * index,
+ seedstack_t ** stack
+)
+{
+   if (min_len < 1) min_len = 1;
+   while (beg <= end - min_len) {
+      bwpos_t pos = index->bwt->bwt_base;
+      while (pos.ep - pos.sp >= max_loci || pos.depth < min_len) {
+         if (beg >= end) return 0;
+         int c = q[beg++];
+         if (c > 3) {
+            if (beg > end - min_len) return 0;
+            pos = index->bwt->bwt_base;
+            continue;
+         }
+         suffix_extend(c,pos,&pos,index->bwt);
+         fprintf(stdout, "pos[%d]: depth=%d, loci=%ld\n", beg-1, pos.depth, pos.ep-pos.sp+1);
+      }
+      if (pos.ep >= pos.sp) 
+         seedstack_push((seed_t){.errors = 0, .qry_pos = beg-pos.depth, .ref_pos = pos}, stack);
+   }
+   return 0;
+} 
+*/ 
+
+int
+seed_interv
+(
+ uint8_t      * q,
+ int            beg,
+ int            end,
+ int            min_len,
+ int            max_loci,
+ index_t      * index,
+ seedstack_t ** stack
+)
+{
+   if (min_len < 2) min_len = 2;
+   while (beg <= end - min_len) {
+      fmdpos_t pos = index->bwt->fmd_base;
+      while (pos.sz > max_loci || pos.dp < min_len) {
+         if (beg >= end) return 0;
+         int c = q[beg++];
+         if (c > 3) {
+            pos = index->bwt->fmd_base;
+            continue;
+         }
+         pos = extend_fw(c,pos,index->bwt);
+      }
+      if (pos.sz) 
+         seedstack_push((seed_t){.errors = 0, .qry_pos = beg-pos.dp, .ref_pos = 
+                  (bwpos_t){.sp=pos.fp, .ep=pos.fp+pos.sz-1, .depth=pos.dp}}, stack);
+   }
+   if (beg <= end) {
+      fmdpos_t pos = index->bwt->fmd_base;
+      // Extend min_len nt from the end.
+      int i = end;
+      while (pos.sz > max_loci || pos.dp < min_len) {
+         pos = extend_bw(q[i--], pos, index->bwt);
+      }
+      if (pos.sz) {
+         seedstack_push((seed_t){.errors = 0, .qry_pos = end-pos.dp+1, .ref_pos = 
+                  (bwpos_t){.sp=pos.fp, .ep=pos.fp+pos.sz-1, .depth=pos.dp}}, stack);
+      }
+   }
+   return 0;
+} 
+
+
+
+int
+reseed_mem
+(
+ uint8_t      * q,
+ seed_t         mem,
+ int            slen,
+ int            min_len,
+ index_t      * index,
+ seedstack_t ** stack
+)
+{
+   /*
+   int beg = mem.qry_pos;
+   int end = mem.qry_pos + mem.ref_pos.depth;
+   int c = (beg + end) / 2;
+   */
+   int c = mem.qry_pos + mem.ref_pos.depth/2;
+   int mem_loc = mem.ref_pos.ep - mem.ref_pos.sp + 1;
+   int cnt = 0;
+   fmdpos_t * tmp = malloc((slen + 1)*sizeof(fmdpos_t));
+   fmdpos_t next, cur = (fmdpos_t){.fp = 0, .rp = 0, .sz = index->size, .dp = 0};
+   // Query 1st base.
+   cur = extend_fw(q[c],cur,index->bwt);
+   // Extend forward.
+   for (int i = c + 1; i < slen && cur.sz > mem_loc; i++) {
+      next = extend_fw(q[i],cur,index->bwt);
+      if (cur.sz > next.sz) {
+         tmp[cnt++] = cur;
+      }
+      cur = next;
+   }
+   if (cur.sz > mem_loc) tmp[cnt++] = cur;
+   // Resume and extend backward.
+   int last = c;
+   for (int t = cnt-1; t >= 0; t--) {
+      fmdpos_t cur = tmp[t];
+      if (cur.dp + c < min_len) break;
+      int i = c-1;
+      for (; i >= 0; i--) {
+         next = extend_bw(q[i], cur, index->bwt);
+         if (next.sz <= mem_loc) {
+            if (cur.dp >= min_len && i + 1 < last) {
+               last = i + 1;
+               seedstack_push((seed_t){.errors = 0, .qry_pos = i+1, .ref_pos = (bwpos_t){.sp = cur.fp, .ep = cur.fp + cur.sz - 1, .depth = cur.dp}}, stack);
+            }
+            break;
+         } else if (i == 0 && next.dp >= min_len && i < last) {
+            last = i;
+            seedstack_push((seed_t){.errors = 0, .qry_pos = i, .ref_pos = (bwpos_t){.sp = next.fp, .ep = next.fp + next.sz - 1, .depth = next.dp}}, stack);
+            break;
+         }
+         cur = next;
+      }
+   }
+   free(tmp);
+   return 0;
+}
+
+int
+seed_thr
+(
+ uint8_t      * q,
+ int            beg,
+ int            end,
+ int            thr,
+ index_t      * index,
+ seedstack_t ** stack
+)
+{
+   int pos = beg;
+   while (pos <= end) {
+      fmdpos_t bwpos;
+      if (extend_lr_thr(q, &pos, end, thr, &bwpos, index)) {
+         bwpos_t ref_pos = {.sp = bwpos.fp, .ep = bwpos.fp + bwpos.sz - 1, .depth = bwpos.dp};
+         seedstack_push((seed_t){.errors = 0, .qry_pos = pos-bwpos.dp, .ref_pos = ref_pos},stack);
+      }
+   }
+   return 0;
+}
+
+int
+extend_lr_thr
+(
+ uint8_t  * q,
+ int      * p,
+ int        qlen,
+ int        thr,
+ fmdpos_t * bwpos,
+ index_t  * index
+)
+{
+   fmdpos_t cur = (fmdpos_t){.fp = 0, .rp = 0, .sz = index->size, .dp = 0};
+   fmdpos_t next;
+   int unset = 1;
+   // Extend max to the left, starting from p.
+   int i = *p;
+   while (i >= 0 && q[i] < 4) {
+      next = extend_bw(q[i--], cur, index->bwt);
+      if (unset && cur.sz <= thr) {
+         unset = 0;
+         *bwpos = cur;
+      }
+      if (next.sz == 0) break;
+      cur = next;
+   }
+   // Extend now max to the right.
+   i = *p + 1;
+   while (i < qlen && q[i] < 4) {
+      next = extend_fw(q[i++], cur, index->bwt);
+      if (unset && cur.sz <= thr) {
+         unset = 0;
+         *bwpos = cur;
+      }
+      if (next.sz == 0) {i--; break;}
+      cur = next;
+   }
+   *p = i + (i < qlen ? (q[i] > 3) : 0);
+   // Return next R position.
+   return !unset;
+}   
 
 int
 seed_mem_bp
@@ -751,12 +875,12 @@ get_smem
 )
 {
    if (mem->pos == 0) return 0;
-   // Seeds are sorted by start position, descending.
-   seed_t cur = mem->seed[mem->pos-1];
+   // Seeds are sorted by start position, ascending.
+   seed_t cur = mem->seed[0];
    int    len = cur.ref_pos.depth;
    int    end = cur.qry_pos + cur.ref_pos.depth;
    // Find longest non-overlapping seeds.
-   for (int i = mem->pos-2; i >= 0; i--) {
+   for (int i = 1; i < mem->pos; i++) {
       seed_t s = mem->seed[i];
       if (s.qry_pos >= end) {
          seedstack_push(cur, smem);

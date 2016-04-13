@@ -21,7 +21,7 @@ struct seedopt_t {
    int32_t max_len;
    int32_t min_loci;
    int32_t max_loci;
-   int32_t aux_loci;
+   int32_t thr_loci;
    int16_t reseed_len;
    int16_t sensitive_mem;
 };
@@ -56,19 +56,20 @@ seedstack_t  * naive_smem     (char *, seedopt_t, index_t *);
 // Seed functions.
 int            seed_mem       (uint8_t *, int, int, index_t *, seedstack_t **);
 int            extend_lr      (uint8_t *, int, int, fmdpos_t *, index_t *);
+int            reseed_mem     (uint8_t *, seed_t, int, int, index_t *, seedstack_t **);
 int            seed_mem_bp    (uint8_t *, int, int, int, index_t *, seedstack_t **);
 int            extend_lr_bp   (uint8_t *, int, int, int, fmdpos_t *, index_t *);
+int            seed_thr       (uint8_t *, int, int, int, index_t *, seedstack_t **);
+int            extend_lr_thr  (uint8_t *, int *, int, int, fmdpos_t *, index_t *);
+int            seed_interv    (uint8_t *, int, int, int, int, index_t *, seedstack_t **);
 int            seed_mismatch  (char *, size_t, int, seedstack_t **, index_t *);
 int            find_mismatch  (char *, size_t, int, seedstack_t **, index_t *);
 int            seed_the_right_way (char *, seedstack_t **, index_t *);
 int            seed_block_all (char *, size_t, seedstack_t **, index_t *, int, int);
 int            seed_wings     (char *, int32_t, int32_t, seedstack_t **, seedopt_t, index_t *);
-int            reseed_mem     (char *, seedstack_t **, seedopt_t, index_t *);
-int            reseed_smem_rec     (char *, size_t, size_t, seedstack_t **, seedopt_t, index_t *);
 int            get_smem       (seedstack_t **, seedstack_t *);
-int            seed_thr       (char *, size_t, seedstack_t **, seedopt_t, index_t *);
 hit_t        * compute_hits   (seedstack_t * seeds, index_t * index, uint64_t * hit_cnt);
-int            chain_seeds    (seedstack_t *, seedstack_t *, int, matchlist_t *, index_t *, int, double);
+hit_t        * chain_seeds    (seedstack_t *, int, index_t *, int, double, size_t *);
 int            find_repeats   (seedstack_t * seeds, matchlist_t ** repeats, int32_t repeat_thr);
 // Seedstack functions.
 seedstack_t  * seedstack_new    (int);
@@ -78,6 +79,7 @@ int            seedstack_append (seedstack_t **, seedstack_t *);
 int            compar_hit_locus  (const void * a, const void * b, const int param);
 int            compar_seed_start (const void * a, const void * b, const int param);
 int            compar_hit_locus_qsort (const void * a, const void * b);
+int            compar_hit_errors_qsort (const void * a, const void * b);
 // Aux functions.
 char *         rev_comp         (char * seq);
 

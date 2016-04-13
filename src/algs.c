@@ -46,10 +46,11 @@ map_score
    for (size_t i = 0; i < matches->pos; i++) {
       match_t m = matches->match[i];
 
-      int b,k,a,L,f;
+      int b,k,a,L,f,cnt;
       L = m.read_e - m.read_s + 1;
       b = L - (int)m.hits;
       a = m.ann_d;
+      if (VERBOSE_DEBUG) fprintf(stdout, "mapq start: L:%d, hits:%d, a:%d, s_hits:%d, s_cnt:%d\n", L, m.hits, a, m.s_hits, m.s_cnt);
       /*
       if (m.s_cnt == 0) {
          m.s_cnt = 1;
@@ -59,21 +60,29 @@ map_score
       a = min(a, k);
       f = (a+k-b)/2;
       */
+      cnt = max(m.ann_cnt, m.s_cnt);
       if (m.s_cnt == 0) {
          m.s_hits = m.hits - m.ann_d;
-         m.s_cnt  = m.ann_cnt;
-         f = (a>>1) + (a&1);
-         // TODO:
+         // IMPORTANT TODO:
          // Improve k blind selection, based on the likelihood of k given b.
          // For instance, if b = 2 and a = 2, k = 2, which is unlikely provided
          // that such alignment would have been cached anyway... (Especially on path 1).
          //         k = f + max(0,b - (a>>1));
-         k = max(b+1, f + max(0,b - (a>>1)));
+         // Temporary workaround:
+         if (b*1.0/L < 0.05) { // unlikely that better alignment exists and we didn't find it.
+            f = a;
+            k = a;
+         } else { // old branch.
+            f = (a>>1) + (a&1);
+            k = max(b+1, f + max(0,b - (a>>1)));
+         }
       } else {
          k = L - (int)m.s_hits;
          a = min(a, k);
          f = (a+k-b)/2;
+         //         fprintf(stdout, "GOT second alignment: f=(a+k-b)/2=%d, a:%d, k:%d, b:%d\n", f, a, k, b);
       }
+      if (VERBOSE_DEBUG) fprintf(stdout, "D_rb:%d, D_rs:%d, D_bs:%d, f:%d\n", b, k, a, f);
 
       if ((m.s_cnt && k==b) || a == 0) {
          matches->match[i].mapq = 0;         
@@ -89,8 +98,9 @@ map_score
       }
       //matches->match[i].mapq = -10*log10(ppos);
       double idnt = m.hits*1.0/L;
-      matches->match[i].mapq = min(40,max(0,idnt*idnt*(-10*log10(ppos*m.s_cnt))));
-      if (VERBOSE_DEBUG) fprintf(stdout, "second=%d, b=%d, k=%d (cnt=%d), a=%d, L=%d, f=%d, mapq=%.2f (-10*log10(%f)*%f^2)\n", m.s_cnt > 0, b, k, m.s_cnt, a, L, f, matches->match[i].mapq,ppos,idnt);
+      matches->match[i].mapq = min(40,max(0,idnt*idnt*(-10*log10(ppos*cnt))));
+      if (VERBOSE_DEBUG) fprintf(stdout, "second=%d, b=%d, k=%d (cnt=%d), a=%d (cnt=%d), cnt=%d, L=%d, f=%d, mapq=%.2f (-10*log10(%f)*%f^2)\n", m.s_cnt > 0, b, k, m.s_cnt, a, m.ann_cnt, cnt, L, f, matches->match[i].mapq,ppos,idnt);
+      //      fprintf(stdout, "second=%d, b=%d, k=%d (cnt=%d), a=%d, L=%d, f=%d, mapq=%.2f (-10*log10(%f)*%f^2)\n", m.s_cnt > 0, b, k, m.s_cnt, a, L, f, matches->match[i].mapq,ppos,idnt);
    }
    return 0;
 }

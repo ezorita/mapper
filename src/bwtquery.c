@@ -140,6 +140,10 @@ extend_bw
  bwt_t    * bwt
 )
 {
+   if (pos.sz == 0) {
+      pos.dp += 1;
+      return pos;
+   }
    int64_t occ_sp[NUM_BASES];
    int64_t occ_ep[NUM_BASES];
    int64_t fp[NUM_BASES];
