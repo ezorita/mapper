@@ -17,7 +17,7 @@ mem_intervals
    for (int i = 0; i < intv->pos; i++) {
       match_t m = intv->match[i];
       // Apply conditions.
-      if (m.path != 1 && m.s_cnt == 0) continue;
+      if (m.s_hits_cnt == 0) continue;
       // Store gap for mem seeding.
       if (m.read_s - beg >= min_intv_size) {
          push(stack, beg);
@@ -45,23 +45,26 @@ map_score
 
    for (size_t i = 0; i < matches->pos; i++) {
       match_t m = matches->match[i];
-
+      if (m.score <= m.s_score) {
+         matches->match[i].mapq = 0;
+         continue;
+      }
       int b,k,a,L,f,cnt;
       L = m.read_e - m.read_s + 1;
       b = L - (int)m.hits;
       a = m.ann_d;
-      if (VERBOSE_DEBUG) fprintf(stdout, "mapq start: L:%d, hits:%d, a:%d, s_hits:%d, s_cnt:%d\n", L, m.hits, a, m.s_hits, m.s_cnt);
+      if (VERBOSE_DEBUG) fprintf(stdout, "mapq start: L:%d, hits:%d, a:%d, s_hits:%d, s_hits_cnt:%d\n", L, m.hits, a, m.s_hits, m.s_hits_cnt);
       /*
-      if (m.s_cnt == 0) {
-         m.s_cnt = 1;
+      if (m.s_hits_cnt == 0) {
+         m.s_hits_cnt = 1;
          m.s_hits = m.hits - a;
       }
       k = L - (int)m.s_hits;
       a = min(a, k);
       f = (a+k-b)/2;
       */
-      cnt = max(m.ann_cnt, m.s_cnt);
-      if (m.s_cnt == 0) {
+      cnt = max(m.ann_cnt, m.s_hits_cnt);
+      if (m.s_hits_cnt == 0) {
          m.s_hits = m.hits - m.ann_d;
          // IMPORTANT TODO:
          // Improve k blind selection, based on the likelihood of k given b.
@@ -84,7 +87,7 @@ map_score
       }
       if (VERBOSE_DEBUG) fprintf(stdout, "D_rb:%d, D_rs:%d, D_bs:%d, f:%d\n", b, k, a, f);
 
-      if ((m.s_cnt && k==b) || a == 0) {
+      if ((m.s_hits_cnt && k==b) || a == 0) {
          matches->match[i].mapq = 0;         
          continue;
       }
@@ -98,9 +101,16 @@ map_score
       }
       //matches->match[i].mapq = -10*log10(ppos);
       double idnt = m.hits*1.0/L;
-      matches->match[i].mapq = min(40,max(0,idnt*idnt*(-10*log10(ppos*cnt))));
-      if (VERBOSE_DEBUG) fprintf(stdout, "second=%d, b=%d, k=%d (cnt=%d), a=%d (cnt=%d), cnt=%d, L=%d, f=%d, mapq=%.2f (-10*log10(%f)*%f^2)\n", m.s_cnt > 0, b, k, m.s_cnt, a, m.ann_cnt, cnt, L, f, matches->match[i].mapq,ppos,idnt);
-      //      fprintf(stdout, "second=%d, b=%d, k=%d (cnt=%d), a=%d, L=%d, f=%d, mapq=%.2f (-10*log10(%f)*%f^2)\n", m.s_cnt > 0, b, k, m.s_cnt, a, L, f, matches->match[i].mapq,ppos,idnt);
+      //      matches->match[i].mapq = min(40,max(0,idnt*idnt*(-10*log10(ppos*cnt))));
+      // Include mapQ based on alignment score.
+      double score_mapq = 6*(m.score-m.s_score)-10*log10(m.s_score_cnt);
+      double neigh_mapq = -10*log10(ppos*cnt);
+      matches->match[i].mapq = min(60,max(0,idnt*idnt*min(score_mapq, neigh_mapq)));
+      if (VERBOSE_DEBUG) {
+         fprintf(stdout, "NEIGHBOR MODEL: second=%d, b=%d, k=%d (cnt=%d), a=%d (cnt=%d), cnt=%d, L=%d, f=%d, neigh_mapq=%d\n", m.s_hits_cnt > 0, b, k, m.s_hits_cnt, a, m.ann_cnt, cnt, L, f, (int)neigh_mapq);
+         fprintf(stdout, "ALIGN SCORE: best_score=%d, s_score=%d, s_score_cnt=%d, score_mapq=%d", m.score, m.s_score, m.s_score_cnt, (int)score_mapq);
+         fprintf(stdout, "mapq after ident penalty: %d\n", matches->match[i].mapq);
+      }
    }
    return 0;
 }

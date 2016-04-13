@@ -77,19 +77,21 @@ int main(int argc, char *argv[])
       .align_filter_eexp = 0.0,
       .mapq_evalue_ratio = 0.5,
       .min_best_to_second = 0.75,
-      .min_interval_size = 30,
+      .min_interval_size = 25,
+      .min_interval_score = 30,
       .min_interval_hits = 30
    };
    alignopt_t alignopt = {
-      .bp_diagonal  = 1,
-      .bp_thr       = 10,
-      .bp_max_thr   = 50,
-      .bp_resolution = 1,
-      .bp_period    = 5,
-      .bp_repeats   = 2,
-      .read_error   = 0.02,
-      .rand_error   = 0.50,
-      .width_ratio  = 0.05
+      .bp_diagonal      = 1,
+      .bp_thr           = 10,
+      .bp_max_thr       = 50,
+      .bp_resolution    = 1,
+      .bp_period        = 5,
+      .bp_repeats       = 2,
+      .read_error       = 0.02,
+      .rand_error       = 0.50,
+      .width_ratio      = 0.05,
+      .mismatch_penalty = 4
    };
 
    // Precompute logarithms.
@@ -333,18 +335,16 @@ mt_worker
          beg = hit.qrypos + 1;
       }
 
-      // Flag path 1 alignments.
-      for (int j = 0; j < map_matches->pos; j++)
-         map_matches->match[j].path = 1;
-
       // DEBUG.
       if (VERBOSE_DEBUG) {
          fprintf(stdout, "** path 1 **\n");
          for (int k = 0; k < map_matches->pos; k++) {
             match_t m = map_matches->match[k];
-            fprintf(stdout, "match[%d]: read_s:%d, read_e:%d, ref_s:%ld, hits:%d, s_hits:%d (%d), ann:%d, path:%d\n", k, m.read_s, m.read_e, m.ref_s, m.hits, m.s_hits, m.s_cnt, m.ann_d, m.path);
+            fprintf(stdout, "match[%d]: read_s:%d, read_e:%d, ref_s:%ld, hits:%d, s_hits:%d (%d), ann:%d\n", k, m.read_s, m.read_e, m.ref_s, m.hits, m.s_hits, m.s_hits_cnt, m.ann_d);
          }
       }
+
+      if (map_matches->pos) goto map_end;
 
       /**
       *** MEM SEEDING
@@ -500,7 +500,7 @@ mt_worker
                match_t m = map_matches->match[j];
                if (beg > m.read_e) continue;
                if (beg < m.read_s - k) break;
-               if (m.path == 1 || m.s_cnt > 0) {
+               if (m.s_hits_cnt > 0) {
                   beg = m.read_e + 1;
                   next = 1;
                   break;
@@ -551,7 +551,7 @@ mt_worker
                   if (VERBOSE_DEBUG) {
                      for (int k = 0; k < map_matches->pos; k++) {
                         match_t m = map_matches->match[k];
-                        fprintf(stdout, "match[%d]: read_s:%d, read_e:%d, ref_s:%ld, hits:%d, s_hits:%d (%d), ann:%d, path:%d\n", k, m.read_s, m.read_e, m.ref_s, m.hits, m.s_hits, m.s_cnt, m.ann_d, m.path);
+                        fprintf(stdout, "match[%d]: read_s:%d, read_e:%d, ref_s:%ld, hits:%d, s_hits:%d (%d), ann:%d\n", k, m.read_s, m.read_e, m.ref_s, m.hits, m.s_hits, m.s_hits_cnt, m.ann_d);
                      }
                   }
                }
@@ -572,7 +572,7 @@ mt_worker
       if (VERBOSE_DEBUG) {
          for (int k = 0; k < map_matches->pos; k++) {
             match_t m = map_matches->match[k];
-            fprintf(stdout, "match[%d]: read_s:%d, read_e:%d, ref_s:%ld, hits:%d, s_hits:%d (%d), ann:%d, path:%d\n", k, m.read_s, m.read_e, m.ref_s, m.hits, m.s_hits, m.s_cnt, m.ann_d, m.path);
+            fprintf(stdout, "match[%d]: read_s:%d, read_e:%d, ref_s:%ld, hits:%d, s_hits:%d (%d), ann:%d\n", k, m.read_s, m.read_e, m.ref_s, m.hits, m.s_hits, m.s_hits_cnt, m.ann_d);
          }
       }
 

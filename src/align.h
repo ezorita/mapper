@@ -60,6 +60,7 @@ struct alignopt_t {
    double rand_error;
    double width_ratio;
    int    width_min;
+   int    mismatch_penalty;
    double logAe;
    double logBe;
 };

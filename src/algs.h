@@ -45,13 +45,15 @@ struct match_t {
    int read_e;
    int hits;
    int s_hits;
-   int s_cnt;
+   int s_hits_cnt;
+   int score;
+   int s_score;
+   int s_score_cnt;
    int interval;
    int ann_d;
    int ann_cnt;
-   int path;
+   int mapq;
    double ident;
-   double mapq;
 };
 
 struct matchlist_t {

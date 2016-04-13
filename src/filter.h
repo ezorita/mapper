@@ -21,6 +21,7 @@ struct filteropt_t {
    double align_seed_filter_thr;
    int    align_seed_filter_dif;
    int    min_interval_size;
+   int    min_interval_score;
    int    min_interval_hits;
    double align_filter_ident;
    double align_filter_eexp;

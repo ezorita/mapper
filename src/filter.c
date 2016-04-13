@@ -11,32 +11,34 @@ extend_align_bp
 )
 {
 #if VERBOSE_DEBUG == 1
-      char * refseq = malloc(slen+1);
-      char * qryseq = malloc(slen+1);
-      // L extension.
-      int nts = aln->read_s+1;
-      memcpy(refseq, index->genome+aln->ref_s-aln->read_s, nts);
-      memcpy(qryseq, seq, nts);
-      refseq[nts] = 0;
-      qryseq[nts] = 0;
-      fprintf(stdout, "align L (%d nt):\nqry: %s\nref: %s\n", nts, qryseq, refseq);
-      // seed.
-      nts = aln->read_e - aln->read_s + 1;
-      memcpy(refseq, index->genome+aln->ref_s, nts);
-      memcpy(qryseq, seq + aln->read_s, nts);
-      refseq[nts] = 0;
-      qryseq[nts] = 0;
-      fprintf(stdout, "seed (%d nt):\nqry: %s\nref: %s\n", nts, qryseq, refseq);
-      // R extension.
-      nts = slen-aln->read_e;
-      memcpy(refseq, index->genome+aln->ref_e, nts);
-      memcpy(qryseq, seq + aln->read_e, nts);
-      refseq[nts] = 0;
-      qryseq[nts] = 0;
-      fprintf(stdout, "align R (%d nt):\nqry: %s\nref: %s\n", nts, qryseq, refseq);
-      free(refseq);
-      free(qryseq);
+   char * refseq = malloc(slen+1);
+   char * qryseq = malloc(slen+1);
+   // L extension.
+   int nts = aln->read_s+1;
+   memcpy(refseq, index->genome+aln->ref_s-aln->read_s, nts);
+   memcpy(qryseq, seq, nts);
+   refseq[nts] = 0;
+   qryseq[nts] = 0;
+   fprintf(stdout, "align L (%d nt):\nqry: %s\nref: %s\n", nts, qryseq, refseq);
+   // seed.
+   nts = aln->read_e - aln->read_s + 1;
+   memcpy(refseq, index->genome+aln->ref_s, nts);
+   memcpy(qryseq, seq + aln->read_s, nts);
+   refseq[nts] = 0;
+   qryseq[nts] = 0;
+   fprintf(stdout, "seed (%d nt):\nqry: %s\nref: %s\n", nts, qryseq, refseq);
+   // R extension.
+   nts = slen-aln->read_e;
+   memcpy(refseq, index->genome+aln->ref_e, nts);
+   memcpy(qryseq, seq + aln->read_e, nts);
+   refseq[nts] = 0;
+   qryseq[nts] = 0;
+   fprintf(stdout, "align R (%d nt):\nqry: %s\nref: %s\n", nts, qryseq, refseq);
+   free(refseq);
+   free(qryseq);
 #endif
+
+   aln->score = aln->read_e - aln->read_s + 1;
 
    // Extend right.
    if (aln->read_e < slen-1) {
@@ -46,12 +48,14 @@ extend_align_bp
       int seed_end_error = translate[(int)seq[aln->read_e]] != translate[(int)index->genome[aln->ref_e]];
       path_t r = align_bp(q_len, seq+aln->read_e, r_len, index->genome+aln->ref_e, 0, 1, 1, opt);
       // Add hits, avoid counting twice the mismatches at the ends of the seed.
-      aln->hits += r.col - r.score + seed_end_error;
+      r.score = max(0,r.score - seed_end_error);
+      aln->hits += r.col - r.score;
       aln->read_e += r.col;
       aln->ref_e += r.row;
+      aln->score += max(0, max(r.col,r.row) - opt.mismatch_penalty*r.score);
 
 #if VERBOSE_DEBUG == 1
-      fprintf(stdout, "R: qry:%d, ref:%d, score:%d\n", r.col, r.row, r.score);
+      fprintf(stdout, "R: qry:%d, ref:%d, mismatches:%d\n", r.col, r.row, r.score);
 #endif
 
       // Extend deletion gaps.
@@ -61,8 +65,9 @@ extend_align_bp
          aln->read_e += r.col;
          aln->ref_e += r.row;
          aln->hits += r.col - r.score;
+         aln->score += max(0, max(r.col,r.row) - opt.mismatch_penalty*r.score);
 #if VERBOSE_DEBUG == 1
-         fprintf(stdout, "R (del gap): qry:%d, ref:%d, score:%d\n", r.col, r.row, r.score);
+         fprintf(stdout, "R (del gap): qry:%d, ref:%d, mismatches:%d\n", r.col, r.row, r.score);
 #endif
       }
    }
@@ -72,25 +77,31 @@ extend_align_bp
       int64_t r_len = align_min(q_len, aln->ref_s + 1);
       int seed_end_error = translate[(int)seq[aln->read_s]] != translate[(int)index->genome[aln->ref_s]];
       path_t l = align_bp(q_len, seq+aln->read_s, r_len, index->genome+aln->ref_s, 0, -1, -1, opt);
-      aln->hits += l.col -  l.score + seed_end_error;
+      l.score = max(0, l.score - seed_end_error);
+      aln->hits += l.col -  l.score;
       aln->read_s -= l.col;
       aln->ref_s -= l.row;
+      aln->score += max(0, max(l.col,l.row) - opt.mismatch_penalty*l.score);
 
 #if VERBOSE_DEBUG == 1
-      fprintf(stdout, "L: qry:%d, ref:%d, score:%d\n", l.col, l.row, l.score);
+      fprintf(stdout, "L: qry:%d, ref:%d, mismatches:%d\n", l.col, l.row, l.score);
 #endif
       // Extend deletion gaps.
       if (l.row > l.col && l.row == r_len-1) {
          q_len -= l.col;
          l = align_bp(q_len, seq+aln->read_s, q_len, index->genome+aln->ref_s, 0, -1, -1, opt);
 #if VERBOSE_DEBUG == 1
-         fprintf(stdout, "L (del gap): qry:%d, ref:%d, score:%d\n", l.col, l.row, l.score);
+         fprintf(stdout, "L (del gap): qry:%d, ref:%d, mismatches:%d\n", l.col, l.row, l.score);
 #endif
          aln->read_s -= l.col;
          aln->ref_s -= l.row;
          aln->hits += l.col - l.score;
+         aln->score += max(0, max(l.col,l.row) - opt.mismatch_penalty*l.score);
       }
    }
+#if VERBOSE_DEBUG == 1
+   fprintf(stdout, "alignment: beg:%d, end:%d, hits:%d, score:%d\n", aln->read_s, aln->read_e, aln->hits, aln->score);
+#endif
 
    // Return.
    return 0;
@@ -147,9 +158,16 @@ add_align_info
             // Set second alignment.
             if (m.hits > aln.s_hits) {
                aln.s_hits = m.hits;
-               aln.s_cnt  = (m.hits == m.s_hits ? m.s_hits+1 : 1);
+               aln.s_hits_cnt  = (m.hits == m.s_hits ? m.s_hits+1 : 1);
             } else if (m.hits == aln.s_hits) {
-               aln.s_cnt += 1;
+               aln.s_hits_cnt += 1;
+            }
+            if (m.score >= m.s_score) {
+               aln.s_score = m.score;
+               aln.s_score_cnt = 1 + (m.s_score == m.score ? m.s_score_cnt : 0);
+            } else {
+               aln.s_score = m.s_score;
+               aln.s_score_cnt = m.s_score_cnt;
             }
          } else {
             // Conditions to accept a second best hit:
@@ -158,10 +176,16 @@ add_align_info
             best = 0;
             if (aln.hits > m.s_hits && aln.hits >= m.hits-m.ann_d && aln.hits > m.hits*opt.min_best_to_second) {
                list->match[j].s_hits = aln.hits;
-               list->match[j].s_cnt  = 1;
+               list->match[j].s_hits_cnt  = 1;
             } else if (aln.hits == m.s_hits) {
-               list->match[j].s_cnt += 1;
+               list->match[j].s_hits_cnt += 1;
             }
+         }
+         if (aln.score > m.s_score) {
+            list->match[j].s_score = aln.score;
+            list->match[j].s_score_cnt = 1;
+         } else if (aln.score == m.s_score) {
+            list->match[j].s_score_cnt += 1;
          }
       }
    }
@@ -170,7 +194,7 @@ add_align_info
       // Add sequence neighborhood info.
       check_neighbor_info(&aln,index);
       // Double check second best alignment.
-      if (aln.s_hits < aln.hits - aln.ann_d) aln.s_hits = aln.s_cnt =  0;
+      if (aln.s_hits < aln.hits - aln.ann_d) aln.s_hits = aln.s_hits_cnt =  0;
       // Insert interval in empty gap.
       if (ov_beg < 0) {
          // Insert position.
@@ -286,13 +310,16 @@ align_hits
       }
 
       match_t m = {
-         .read_s = hits[i].qrypos,
-         .read_e = hits[i].qrypos + hits[i].depth - 1,
-         .ref_s  = hits[i].locus,
-         .ref_e  = hits[i].locus + hits[i].depth - 1,
-         .hits   = hits[i].depth - hits[i].errors,
-         .s_hits = 0,
-         .s_cnt  = 0
+         .read_s      = hits[i].qrypos,
+         .read_e      = hits[i].qrypos + hits[i].depth - 1,
+         .ref_s       = hits[i].locus,
+         .ref_e       = hits[i].locus + hits[i].depth - 1,
+         .hits        = hits[i].depth - hits[i].errors,
+         .s_hits      = 0,
+         .s_hits_cnt  = 0,
+         .score       = 0,
+         .s_score     = 0,
+         .s_score_cnt = 0
       };
       // Extend seed.
       extend_align_bp(&m,read,slen,index,alignopt);
@@ -308,246 +335,6 @@ align_hits
    }
    return 0;
 }
-
-
-
-
-/*
-int
-align_seeds
-(
- char         * read,
- seedstack_t  * seeds,
- seedstack_t  * rseeds,
- matchlist_t ** seqmatches,
- index_t      * index,
- filteropt_t    opt,
- alignopt_t     alignopt
-)
-{
-   int slen = strlen(read);
-
-   // Convert seeds to hits.
-   uint64_t hit_count, rev_count;
-   // Forward seeds.
-   hit_t * hits = compute_hits(seeds, index, &hit_count);
-   // Reverse seeds.
-   if (rseeds != NULL && rseeds->pos > 0) {
-      hit_t * rhits = compute_hits(rseeds, index, &rev_count);
-      // Revert hits.
-      for (int i = 0; i < rev_count; i++) {
-         rhits[i].locus = (index->size - 1) - (rhits[i].locus + rhits[i].depth);
-         rhits[i].qrypos= slen - (rhits[i].qrypos + rhits[i].depth);
-      }
-      // Merge F/R hits.
-      hits = realloc(hits, (hit_count + rev_count)*sizeof(hit_t));
-      memcpy(hits+hit_count, rhits, rev_count*sizeof(hit_t));
-      hit_count += rev_count;
-      free(rhits);
-   }
-   int rval = align_hits(read,hits,hit_count,seqmatches,index,opt,alignopt);
-   free(hits);
-   return rval;
-}
-
-
-int
-align_hits
-(
- char * read,
- hit_t * hits,
- uint64_t hit_count,
- matchlist_t ** seqmatches,
- index_t * index,
- filteropt_t opt,
- alignopt_t alignopt
-)
-{
-   int slen = strlen(read);
-   int best = 0, s_hits = 0, s_cnt = 1;
-   if ((*seqmatches)->pos > 0) {
-      best = (*seqmatches)->match[0].hits;
-      s_hits = (*seqmatches)->match[0].s_hits;
-      s_cnt = (*seqmatches)->match[0].s_cnt;
-   }
-   for(int i = 0; i < hit_count; i++) {
-      // Compute alignment limits.
-      //long r_min  = seed.read_e - seed.read_s + 1;
-      long r_min  = hits[i].depth + 1;
-      long l_min  = 0;
-      //long r_qstart = seed.read_s + 1;
-      long r_qstart = hits[i].qrypos + 1;
-      long l_qstart = align_max(r_qstart - 1,0);
-      //long r_rstart = seed.ref_s + 1;
-      long r_rstart = hits[i].locus + 1; 
-      //long l_rstart = seed.ref_s;
-      long l_rstart = hits[i].locus; 
-      // DEBUG.
-#if VERBOSE_DEBUG == 1
-      char * rf = malloc(slen+1);
-      memcpy(rf, index->genome+hits[i].locus-hits[i].qrypos, slen);
-      rf[slen] = 0;
-      fprintf(stdout, "sequence alignment [qrypos:%d, locus:%ld]:\nq:%s\nr:%s\n",hits[i].qrypos, hits[i].locus,read,rf);
-      free(rf);
-#endif
-
-      long r_qlen = slen - r_qstart;
-      long l_qlen = l_qstart + 1;
-      if (!r_qlen && !l_qlen) continue;
-      long r_rlen = align_min((long)(r_qlen * (1 + alignopt.width_ratio)),
-            index->size - r_rstart);
-      long l_rlen = align_min((long)(l_qlen * (1 + alignopt.width_ratio)),
-            r_qstart);
-
-      // Added this line to avoid duplicate match when
-      // unique seed align is not safe (while reseeding).
-      if ((*seqmatches)->pos) {
-         int64_t d = ((int64_t)(*seqmatches)->match[0].ref_s) - ((int64_t)l_rstart - l_rlen);
-         if (d < slen && d > -slen) {
-#if VERBOSE_DEBUG == 1
-            fprintf(stdout, "repeated alignment, skipping\n");
-#endif
-            continue;
-         }
-      }
-
-      char * r_qry = read + r_qstart;
-      char * l_qry = read + l_qstart;
-      char * r_ref = index->genome + r_rstart;
-      char * l_ref = index->genome + l_rstart;
-
-      // Align forward and backward starting from (read_s, ref_s).
-      long read_s, read_e, ref_s, ref_e;
-      path_t align_r = (path_t){0,0,0}, align_l = (path_t){0,0,0};
-      // Forward alignment (right).
-      if(r_qlen) {
-         align_r = align_bp(r_qlen, r_qry, r_rlen, r_ref, r_min,
-               ALIGN_FORWARD, ALIGN_FORWARD, alignopt);
-         read_e = r_qstart + align_r.row;
-         ref_e = r_rstart + align_r.col;
-      }
-      else {
-         read_e = r_qstart - 1;
-         ref_e  = r_rstart - 1;
-      }
-      // Backward alignment (left).
-      if(l_qlen) {
-         align_l = align_bp(l_qlen, l_qry, l_rlen, l_ref, l_min,
-               ALIGN_BACKWARD, ALIGN_BACKWARD, alignopt);
-         read_s =  l_qstart - align_l.row;
-         ref_s = l_rstart - align_l.col;
-      }
-      else {
-         read_s = l_qstart + 1;
-         ref_s  = l_rstart + 1;
-      }
-      //      int align_span = align_r.row + align_l.row;
-      int align_span = read_e - read_s + 1;
-      int identities = align_span - align_r.score - align_l.score;
-      int ref_min = (*seqmatches)->match[0].ref_s - align_span;
-      int ref_max = ref_min + 2*align_span;
-
-      // DEBUG.
-#if VERBOSE_DEBUG == 1
-      fprintf(stdout, "alignment: [%ld<--<%ld,%d>--%ld][%ld--<%ld,%d>-->%ld]\n",read_s, l_qlen, align_l.score,l_qstart,r_qstart,r_qlen,align_r.score,read_e);
-#endif
-
-      // Filter out low indentity alignments.
-      //      if (identities*1.0/slen < 0.85) continue;
-      // Hit.
-      //      if (identities > best) {
-      if (identities > best && identities*1.0/slen >= 0.85) {
-         match_t hit;
-         // Update scores.
-         if (best > 0) hit.interval = 1;
-         if (s_hits != best) s_cnt = 1;
-         else s_cnt++;
-         
-         s_hits = best;
-         best = identities;
-         // Fill/Update hit.
-         hit.ref_e  = ref_e;
-         hit.ref_s  = ref_s;
-         hit.read_e = read_e;
-         hit.read_s = read_s;
-
-         // Undo reverse complement.
-         int64_t ref_start = ref_s;
-         if (ref_s >= index->size/2) {
-            ref_start = index->size - 2 - ref_e;
-         }
-         // TEST DEBUG FOR FEATURE ONLY.
-         hit.e_exp[0] = hit.e_exp[1] = hit.e_exp[2] = 0;
-         int max_dist = 0, max_cnt = 0;
-         // Gather annotation scores.
-         for (int a = 0; a < index->ann->count; a++) {
-            ann_t ann = index->ann->ann[a];
-            int kmers = ref_e - ref_s + 1 - ann.k + 1;
-            int dis = 0, cnt = 0, span = 0, last = -ann.k;
-            for (int n = 0; n < kmers; n++) {
-               int log10cnt;
-               int d = ann_read(ann, ref_start + n, &log10cnt); 
-               if (d > dis) {
-                  dis = d;
-                  cnt = log10cnt;
-                  span = ann.k;
-                  last = n;
-               } else if (d == dis) {
-                  span += min(n - last, ann.k);
-                  last = n;
-               }
-            }
-            hit.e_exp[a] = dis*(span*1.0/ann.k);
-            if (hit.e_exp[a] > max_dist) {
-               max_dist = hit.e_exp[a];
-               max_cnt = cnt;
-            }
-#if VERBOSE_DEBUG == 1
-            fprintf(stdout, "\nannotation (%d,%d): d=%d, cnt=%d, max_dist=(%d,%d)\n",ann.k, ann.d, dis, cnt,max_dist,max_cnt);
-#endif
-         }
-         // Best and second best identities.
-         if (s_hits < identities - max_dist) {
-            s_hits = identities-max_dist;
-            s_cnt = pow(10,max_cnt);
-            hit.interval = 0;
-         } else {
-            hit.interval = 1;
-         }
-         hit.hits = best;
-         hit.s_cnt = s_cnt;
-         hit.s_hits = s_hits;
-         hit.annotation = max_dist;
-#if VERBOSE_DEBUG == 1
-         fprintf(stdout, "set BEST=%d (%.2f) [second=%d (%.2f), cnt=%d]\n", best, best*1.0/slen, s_hits, s_hits*1.0/slen,s_cnt);
-#endif
-         // Alignment flag.
-         // Set best match.
-         (*seqmatches)->pos = 1;
-         (*seqmatches)->match[0] = hit;
-
-      } else if ((*seqmatches)->pos && identities >= s_hits && (ref_min >= ref_s || ref_max <= ref_s)) {
-         if (identities == s_hits && (*seqmatches)->match[0].interval) {
-            s_cnt++;
-            (*seqmatches)->match[0].s_cnt = s_cnt;
-         } else {
-            s_hits = identities;
-            s_cnt = 1;
-            (*seqmatches)->match[0].s_hits = identities;
-            (*seqmatches)->match[0].s_cnt = 1;
-            (*seqmatches)->match[0].interval = 1;
-         }
-#if VERBOSE_DEBUG == 1
-         fprintf(stdout, "SECOND=%d (%.2f) cnt=%d [best=%d (%.2f)]\n", (int)s_hits, s_hits*1.0/slen, s_cnt, (int)best, best*1.0/slen);
-#endif
-
-      }
-   }
-   return 0;
-}
-*/
-
-
 
 
 matchlist_t **
