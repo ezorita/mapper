@@ -1,10 +1,119 @@
 #include "algs.h"
 
-/*********************/
-/** seq_t functions **/
-/*********************/
+int
+mem_intervals
+(
+ matchlist_t  * intv,
+ size_t         slen,
+ int            min_intv_size,
+ vstack_t    ** stack
+)
+{
+   // CONDITIONS TO NOT RESEED:
+   // - Minimum identity (not implemented)
+   // - Already best and second best score.
+   // - Path 1 alignment.
+   int beg = 0;
+   for (int i = 0; i < intv->pos; i++) {
+      match_t m = intv->match[i];
+      // Apply conditions.
+      if (m.s_hits_cnt == 0) continue;
+      // Store gap for mem seeding.
+      if (m.read_s - beg >= min_intv_size) {
+         push(stack, beg);
+         push(stack, m.read_s-1);
+      }
+      beg = m.read_e + 1;
+   }
+   if (slen - beg >= min_intv_size) {
+      push(stack, beg);
+      push(stack, slen-1);
+   }
+   return 0;
+}
 
 
+int
+map_score
+(
+ matchlist_t * matches,
+ double      * cumlog
+)
+{
+   static const double logpm = -0.4771213;
+   static const double logpe = -0.1760913;
+
+   for (size_t i = 0; i < matches->pos; i++) {
+      match_t m = matches->match[i];
+      if (m.score <= m.s_score) {
+         matches->match[i].mapq = 0;
+         continue;
+      }
+      int b,k,a,L,f,cnt;
+      L = m.read_e - m.read_s + 1;
+      b = L - (int)m.hits;
+      a = m.ann_d;
+      if (VERBOSE_DEBUG) fprintf(stdout, "mapq start: L:%d, hits:%d, a:%d, s_hits:%d, s_hits_cnt:%d\n", L, m.hits, a, m.s_hits, m.s_hits_cnt);
+      /*
+      if (m.s_hits_cnt == 0) {
+         m.s_hits_cnt = 1;
+         m.s_hits = m.hits - a;
+      }
+      k = L - (int)m.s_hits;
+      a = min(a, k);
+      f = (a+k-b)/2;
+      */
+      cnt = max(m.ann_cnt, m.s_hits_cnt);
+      if (m.s_hits_cnt == 0) {
+         m.s_hits = m.hits - m.ann_d;
+         // IMPORTANT TODO:
+         // Improve k blind selection, based on the likelihood of k given b.
+         // For instance, if b = 2 and a = 2, k = 2, which is unlikely provided
+         // that such alignment would have been cached anyway... (Especially on path 1).
+         //         k = f + max(0,b - (a>>1));
+         // Temporary workaround:
+         if (b*1.0/L < 0.05) { // unlikely that better alignment exists and we didn't find it.
+            f = a;
+            k = a;
+         } else { // old branch.
+            f = (a>>1) + (a&1);
+            k = max(b+1, f + max(0,b - (a>>1)));
+         }
+      } else {
+         k = L - (int)m.s_hits;
+         a = min(a, k);
+         f = (a+k-b)/2;
+         //         fprintf(stdout, "GOT second alignment: f=(a+k-b)/2=%d, a:%d, k:%d, b:%d\n", f, a, k, b);
+      }
+      if (VERBOSE_DEBUG) fprintf(stdout, "D_rb:%d, D_rs:%d, D_bs:%d, f:%d\n", b, k, a, f);
+
+      if ((m.s_hits_cnt && k==b) || a == 0) {
+         matches->match[i].mapq = 0;         
+         continue;
+      }
+      double ppos = 0;
+      for (int t = f; t <= min(a,k); t++) {
+         double pnt = 0;
+         for (int j = f; j <= t; j++) {
+            pnt += pow(10,cumlog[t] - cumlog[t-j] - cumlog[j] + j*logpm + (t-j)*logpe);
+         }
+         ppos += pow(10,cumlog[a]-cumlog[a-t]+cumlog[k]-cumlog[k-t]-cumlog[L]+cumlog[L-a]+cumlog[L-k]-cumlog[L-k+t-a]-cumlog[t])*pnt;
+      }
+      //matches->match[i].mapq = -10*log10(ppos);
+      double idnt = m.hits*1.0/L;
+      //      matches->match[i].mapq = min(40,max(0,idnt*idnt*(-10*log10(ppos*cnt))));
+      // Include mapQ based on alignment score.
+      double score_mapq = 6*(m.score-m.s_score)-10*log10(m.s_score_cnt);
+      double neigh_mapq = -10*log10(ppos*cnt);
+      matches->match[i].mapq = min(60,max(0,idnt*idnt*min(score_mapq, neigh_mapq)));
+      if (VERBOSE_DEBUG) {
+         fprintf(stdout, "NEIGHBOR MODEL: second=%d, b=%d, k=%d (cnt=%d), a=%d (cnt=%d), cnt=%d, L=%d, f=%d, neigh_mapq=%d\n", m.s_hits_cnt > 0, b, k, m.s_hits_cnt, a, m.ann_cnt, cnt, L, f, (int)neigh_mapq);
+         fprintf(stdout, "ALIGN SCORE: best_score=%d, s_score=%d, s_score_cnt=%d, score_mapq=%d", m.score, m.s_score, m.s_score_cnt, (int)score_mapq);
+         fprintf(stdout, "mapq after ident penalty: %d\n", matches->match[i].mapq);
+      }
+   }
+   return 0;
+}
 
 long
 bisect_search
@@ -22,6 +131,18 @@ bisect_search
    long middle = (start + end) / 2;
    if (set[middle] >= value) return bisect_search(start, middle, set, value);
    else return bisect_search(middle, end, set, value);
+}
+
+double
+binom
+(
+ int l,
+ int k
+)
+{
+   double b = 1.0;
+   for (double i = 0; i < k; i++) b *= (l-i)/(i+1);
+   return b;
 }
 
 /*********************/
@@ -52,6 +173,7 @@ seq_push
    
    // Copy tag
    seqt->tag = strdup(tag);
+   //   seqt->tag = strtok(seqt->tag, " ");
    seqt->seq = strdup(seq);
    if (q) seqt->q = strdup(q);
    else seqt->q = calloc(strlen(seqt->seq),sizeof(char));
@@ -145,248 +267,53 @@ pushvec
    return 0;
 }
 
+/**************************/
+/*** htable  algorithms ***/
+/**************************/
 
-
-pstack_t *
-new_pstack
+htable_t *
+htable_new
 (
- long size
- )
+ uint8_t bits
+)
 {
-   if (size < 1) size = 1;
-   pstack_t * stack = malloc(sizeof(pstack_t) + size * sizeof(pebble_t));
-   if (stack == NULL) return NULL;
-   stack->pos  = 0;
-   stack->size = size;
-
-   return stack;
+   size_t sz = sizeof(htable_t) + (((uint64_t)1)<<(bits-2));
+   htable_t * table = calloc(sz,1);
+   if (table == NULL) return NULL;
+   table->bits = bits;
+   table->mask = 0xFFFFFFFFFFFFFFFF >> (64-bits);
+   return table;
 }
 
 int
-ppush
+htable_get
 (
- pstack_t ** stackp,
- pebble_t pebble
- )
-{
-   pstack_t * stack = *stackp;
-   if (stack->pos >= stack->size) {
-      long newsize = stack->size * 2;
-      *stackp = stack = realloc(stack, sizeof(pstack_t) + newsize * sizeof(pebble_t));
-      if (stack == NULL) {
-         fprintf(stderr, "error in 'ppush' (realloc): %s\n", strerror(errno));
-         return -1;
-      }
-      stack->size = newsize;
-   }
-
-   stack->pebble[stack->pos++] = pebble;
-   return 0;
-}
-
-/*********************/
-/** trie  functions **/
-/*********************/
-
-trie_t *
-trie_new
-(
- int initial_size
+ htable_t * ht,
+ uint64_t   key
 )
-// TODO: UPDATE.
-// SYNOPSIS:                                                              
-//   Creates and initializes a new NW-row trie preallocated with the specified
-//   number of nodes.
-//                                                                        
-// PARAMETERS:                                                            
-//   initial_size : the number of preallocated nodes.
-//   height       : height of the trie. It must be equal to the number of keys
-//                  as returned by parse.
-//                                                                        
-// RETURN:                                                                
-//   On success, the function returns a pointer to the new trie_t structure.
-//   A NULL pointer is returned in case of error.
-//
-// SIDE EFFECTS:
-//   The returned trie_t struct is allocated using malloc and must be manually freed.
 {
-
-   // Allocate at least one node.
-   if (initial_size < 1) initial_size = 1;
-
-   trie_t * trie = malloc(sizeof(trie_t) + initial_size*sizeof(node_t));
-   if (trie == NULL) {
-      fprintf(stderr, "error in 'trie_new' (malloc) trie_t: %s\n", strerror(errno));
-      return NULL;
-   }
-
-   // Initialize root node.
-   memset(&(trie->nodes[0]), 0, initial_size*sizeof(node_t));
-
-   // Initialize trie struct.
-   trie->pos = 1;
-   trie->size = initial_size;
-
-   return trie;
+   key &= ht->mask;
+   uint64_t ptr = key >> 2;
+   return (ht->table[ptr] >> ((key << 1) & 7)) & 3;
 }
-
 
 int
-trie_getrow
+htable_set
 (
- trie_t * trie,
- uint     nodeid,
- int      refval,
- int    * wingsz,
- uint   * nwrow
+ htable_t * ht,
+ uint64_t   key,
+ uint8_t    value
 )
-// TODO: UPDATE.
-// SYNOPSIS:                                                              
-//   Recomputes the NW row that terminates at nodeid.
-//                                                                        
-// PARAMETERS:                                                            
-//   trie   : Pointer to the trie.
-//   nodeid : Id of the leaf at which the NW row terminates.
-//   refval : The initial condition of the alignment. The score of
-//            the rightmost value (top of the inverted L).
-//                                                                        
-// RETURN:                                                                
-//   trie_getrow returns a pointer to the start of the NW row. If an
-//   error occurred during the row computation or nodeid did not point
-//   to a leaf node, a NULL pointer is returned.
-//
-// SIDE EFFECTS:
-//   An array containing the NW row is allocated using malloc and must be
-//   manually freed.
 {
-   // Return if path starts at root node.
-   if (nodeid == 0) {
-      *wingsz = 0;
-      *nwrow  = refval;
-      return 0;
-   }
-
-   node_t * nodes  = &(trie->nodes[0]);
-   uint     parent = nodeid;
-   int      height = 1;   
-   while ((parent = nodes[parent].parent) != 0) height++;
-   *wingsz = height/2;
-
-   // Match value.
-   int i = *wingsz;
-   nwrow[i] = refval;
-   uint id = nodeid;
-   while (id != 0 && i > -(*wingsz)) {
-      uint next_id = nodes[id].parent;
-      nwrow[i-1] = nwrow[i] + (nodes[next_id].child[0] == id) - (nodes[next_id].child[2] == id);
-      id = next_id;
-      i--;
-   } 
-
-   // Control.
-   if (i != -(*wingsz)) {
-      fprintf(stderr, "error in 'trie_getrow': final node != root.\n");
-      return -1;
-   }
-
+   key &= ht->mask;
+   uint64_t ptr = key >> 2;
+   int        s = (key << 1) & 7;
+   ht->table[ptr] &= ~(0x03 << s);
+   ht->table[ptr] |= (value & 3) << s;
    return 0;
 }
 
 
-uint
-trie_insert
-(
- trie_t ** triep,
- char   *  path,
- int       pathlen
-)
-// TODO: UPDATE.
-// SYNOPSIS:                                                              
-//   Inserts the specified path in the trie and stores the end value and
-//   the dfa state at the leaf (last node of the path). If the path already
-//   exists, its leaf values will be overwritten.
-//                                                                        
-// PARAMETERS:                                                            
-//   trie     : pointer to a memory space containing the address of the trie.
-//   path     : The path as an array of chars containing values {0,1,2}
-//   pathlen  : length of the path.
-//                                                                        
-// RETURN:                                                                
-//   On success, dfa_insert returns the id of the leaf where the values were
-//   stored, -1 is returned if an error occurred.
-//
-// SIDE EFFECTS:
-//   If the trie has reached its limit of allocated nodes, it will be reallocated
-//   doubling its size. The address of the trie may have changed after calling dfa_insert.
-{
-   trie_t * trie  = *triep;
-   node_t * nodes = &(trie->nodes[0]);
-   uint id = 0;
-   uint initial_pos = trie->pos;
-
-   int i;
-   for (i = 0; i < pathlen; i++) {
-      if (path[i] < 0 || path[i] >= TRIE_CHILDREN) {
-         // Bad path, revert trie and return.
-         trie->pos = initial_pos;
-         return -1;
-      }
-      // Walk the tree.
-      if (nodes[id].child[(int)path[i]] != 0) {
-         id = nodes[id].child[(int)path[i]];
-         continue;
-      }
-
-      // Create new node.
-      if (trie->pos >= trie->size) {
-         size_t newsize = trie->size * 2;
-         *triep = trie = realloc(trie, sizeof(trie_t) + newsize * sizeof(node_t));
-         if (trie == NULL) {
-            fprintf(stderr, "error in 'trie_insert' (realloc) trie_t: %s\n", strerror(errno));
-            return -1;
-         }
-         // Update pointers.
-         nodes = &(trie->nodes[0]);
-         // Initialize new nodes.
-         trie->size = newsize;
-      }
-      
-      // Consume one node of the trie.
-      uint newid = trie->pos;
-      nodes[newid].parent = id;
-      nodes[newid].child[0] = nodes[newid].child[1] = nodes[newid].child[2] = 0;
-      nodes[id].child[(int)path[i]] = newid;
-      trie->pos++;
-
-      // Go one level deeper.
-      id = newid;
-   }
-
-   return id;
-}
-
-
-void
-trie_reset
-(
- trie_t * trie
-)
-// SYNOPSIS:                                                              
-//   Resets the trie by pruning the root node. The size of the trie, in terms
-//   of preallocated nodes is maintained.
-//                                                                        
-// PARAMETERS:                                                            
-//   trie   : Pointer to the trie.
-//                                                                        
-// RETURN:                                                                
-//   void.
-//
-// SIDE EFFECTS:
-//   None.
-{
-   trie->pos = 1;
-   memset(&(trie->nodes[0]), 0, sizeof(node_t));
-}
 
 /**************************/
 /*** sorting algorithms ***/
@@ -567,4 +494,43 @@ radix_sort
    
    // Move data to a.
    if (ref == 1) memcpy(s[0], s[1], n*sizeof(long));
+}
+
+// Matchlist functions.
+
+matchlist_t *
+matchlist_new
+(
+ int elements
+)
+{
+   if (elements < 1) elements = 1;
+   matchlist_t * list = malloc(sizeof(matchlist_t) + elements*sizeof(match_t));
+   if (list == NULL) return NULL;
+   list->pos  = 0;
+   list->size = elements;
+   return list;
+}
+
+int
+matchlist_add
+(
+ matchlist_t ** listp,
+ match_t        match
+)
+{
+   matchlist_t * list = *listp;
+
+   // Check whether stack is full.
+   if (list->pos >= list->size) {
+      int newsize = list->size * 2;
+      *listp = list = realloc(list, sizeof(matchlist_t) + newsize * sizeof(match_t));
+      if (list == NULL) return -1;
+      list->size = newsize;
+   }
+
+   // Add new match to the stack.
+   list->match[list->pos++] = match;
+
+   return 0;
 }

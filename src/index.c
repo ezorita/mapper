@@ -1,854 +1,679 @@
 #include "index.h"
-#include <signal.h>
-#include <execinfo.h>
 
-void SIGSEGV_handler(int sig) {
-   void *array[10];
-   size_t size;
-
-   // get void*'s for all entries on the stack
-   size = backtrace(array, 10);
-
-   // print out all the frames to stderr
-   fprintf(stderr, "Error: signal %d:\n", sig);
-   backtrace_symbols_fd(array, size, STDERR_FILENO);
-   exit(1);
-}
-
-
-int main(int argc, char *argv[])
-{
-   //signal(SIGSEGV, SIGSEGV_handler);
-   if (argc != 2) {
-      fprintf(stderr, "usage: buildindex <genome file>\n");
-      exit(EXIT_FAILURE);
-   }
-
-   return write_index(argv[1]);
-}
-
-
-int
-write_index
+char *
+add_suffix
 (
- char * filename
+ const char * string,
+ const char * suffix
 )
 {
-   // Output files.
-   char * sarfile = malloc(strlen(filename)+5);
-   strcpy(sarfile, filename);
-   strcpy(sarfile + strlen(filename), ".sar");
-   char * occfile = malloc(strlen(filename)+5);
-   strcpy(occfile, filename);
-   strcpy(occfile + strlen(filename), ".occ");
-   char * genfile = malloc(strlen(filename)+5);
-   strcpy(genfile, filename);
-   strcpy(genfile + strlen(filename), ".gen");
-   //   char * lutfile = malloc(strlen(filename)+5);
-   //   strcpy(lutfile, filename);
-   //   strcpy(lutfile + strlen(filename), ".lut");
-   char * lcpfile = malloc(strlen(filename)+5);
-   strcpy(lcpfile, filename);
-   strcpy(lcpfile + strlen(filename), ".lcp");
+   char * new = malloc(strlen(string) + strlen(suffix) + 1);
+   if (new == NULL) return NULL;
+   strcpy(new,string);
+   strcpy(new+strlen(string),suffix);
+   return new;
+}
 
-   // Open files.
-   int fsa = open(sarfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-   int foc = open(occfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-   int fgn = open(genfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-   //   int flt = open(lutfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-   int flc = open(lcpfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-   // Error control.
-   if (fsa == -1) {
-      fprintf(stderr, "error in write_index (open %s): %s.\n", sarfile, strerror(errno));
-      exit(EXIT_FAILURE);
+int
+ann_index_write
+(
+ annlist_t * list,
+ char * index_file
+)
+{
+   // File name.
+   char * fname = add_suffix(index_file, ".ann");
+   if (fname == NULL) return -1;
+   // Open file to write.
+   int fd = open(fname,O_WRONLY | O_CREAT | O_TRUNC,0644);
+   free(fname);
+   if (fd == -1) {
+      fprintf(stderr, "error opening '%s': %s\n", fname, strerror(errno));
+      return -1;
    }
-   if (foc == -1) {
-      fprintf(stderr, "error in write_index (open %s): %s.\n", occfile, strerror(errno));
-      exit(EXIT_FAILURE);
+   // Write table.
+   if (write(fd, &(list->count), 1) < 1) {
+      fprintf(stderr,"[error] could not write annotation index.\n");
+      return -1;
    }
-   if (fgn == -1) {
-      fprintf(stderr, "error in write_index (open %s): %s.\n", genfile, strerror(errno));
-      exit(EXIT_FAILURE);
-   }
-   /*
-   if (flt == -1) {
-      fprintf(stderr, "error in write_index (open %s): %s.\n", lutfile, strerror(errno));
-      exit(EXIT_FAILURE);
-   }
-   */
-   if (flc == -1) {
-      fprintf(stderr, "error in write_index (open %s): %s.\n", lcpfile, strerror(errno));
-      exit(EXIT_FAILURE);
-   }
-   
-   free(sarfile);
-   free(occfile);
-   free(genfile);
-   //   free(lutfile);
-   free(lcpfile);
-
-   clock_t tstart;
-   size_t s = 0, stot = 0, bytes;
-   // Parse genome and reverse complement.
-   uint64_t gsize;
-   fprintf(stderr, "reading      genome file  ..."); tstart = clock();
-   char * genome = compact_genome(filename, &gsize);
-   fprintf(stderr, " done [%.3fs]\n", (clock()-tstart)*1.0/CLOCKS_PER_SEC);
-
-   // Compute suffix array.
-   fprintf(stderr, "computing    suffix array ..."); tstart = clock();
-   uint64_t * sa = (uint64_t *)compute_sa(genome, gsize);
-   fprintf(stderr, " done [%.3fs]\n", (clock()-tstart)*1.0/CLOCKS_PER_SEC);
-
-   // Compute OCC.
-   uint64_t occ_size;
-   fprintf(stderr, "computing    occ table    ..."); tstart = clock();
-   uint64_t * occ = compute_occ(genome, sa, gsize, &occ_size);
-   fprintf(stderr, " done [%.3fs]\n", (clock()-tstart)*1.0/CLOCKS_PER_SEC);
-
-   // Compress suffix array.
-   fprintf(stderr, "compressing  suffix array ..."); tstart = clock();
-   uint64_t sa_bits = 0;
-   while (gsize > ((uint64_t)1 << sa_bits)) sa_bits++;
-   uint64_t sa_size = compact_array(sa, gsize, sa_bits);
-   sa = realloc(sa, sa_size*sizeof(uint64_t));
-   fprintf(stderr, " done [%.3fs]\n", (clock()-tstart)*1.0/CLOCKS_PER_SEC);
-
-   // Compute C.
-   fprintf(stderr, "computing    C table      ..."); tstart = clock();
-   uint64_t * c = compute_c(occ + occ_size - NUM_BASES);
-   fprintf(stderr, " done [%.3fs]\n", (clock()-tstart)*1.0/CLOCKS_PER_SEC);
-
-   // Compute LUT
-   /*
-   fprintf(stderr, "computing    lookup table ..."); tstart = clock();
-   uint64_t * lut = compute_lut(c, occ, LUT_KMER_SIZE);
-   fprintf(stderr, " done [%.3fs]\n", (clock()-tstart)*1.0/CLOCKS_PER_SEC);
-
-   // Compress LUT.
-   fprintf(stderr, "compressing  lookup table ..."); tstart = clock();
-   uint64_t lut_kmers = 1 << (2*LUT_KMER_SIZE);
-   uint64_t lut_size = compact_array(lut, lut_kmers, sa_bits);
-   lut = realloc(lut, lut_size*sizeof(uint64_t));
-   fprintf(stderr, " done [%.3fs]\n", (clock()-tstart)*1.0/CLOCKS_PER_SEC);
-
-   // Write .LUT file
-   fprintf(stderr, "writing lut...");
-   bytes = s = 0;
-   uint64_t kmer_size = LUT_KMER_SIZE;
-   while (s < sizeof(uint64_t)) s += write(flt, &kmer_size, sizeof(uint64_t));
-   bytes += s;
-   s = 0;
-   while (s < lut_size*sizeof(uint64_t)) s += write(flt, lut + s/sizeof(uint64_t), lut_size*sizeof(uint64_t) - s);
-   bytes += s;
-   stot += bytes;
-   fprintf(stderr, " %ld bytes written.\n",bytes);
-   free(lut);
-   */
-   // Write .OCC file
-   fprintf(stderr, "writing occ...");
-   // mark interval
-   s = 0;
-   uint64_t mark_int = OCC_MARK_INTERVAL;
-   while (s < sizeof(uint64_t)) s += write(foc, &mark_int, sizeof(uint64_t));
-   stot += s;
-   // Write C
-   s  = 0;
-   while (s < (NUM_BASES+1)*sizeof(uint64_t)) s += write(foc, c + s/sizeof(uint64_t), (NUM_BASES+1)*sizeof(uint64_t) - s);
-   stot += s;
-   // Write OCC.
-   s = 0;
-   while (s < occ_size * sizeof(uint64_t)) s += write(foc,occ + s/sizeof(uint64_t), occ_size*sizeof(uint64_t) - s);
-   stot += s;
-   fprintf(stderr, " %ld bytes written.\n",stot);
-   free(c); free(occ);
-   // Compute LCP.
-   fprintf(stderr, "computing    LCP intervals..."); tstart = clock();
-   lcp_t lcp = compute_lcp(gsize, LCP_MIN_DEPTH, sa_bits, sa, genome);
-   fprintf(stderr, " done [%.3fs]\n", (clock()-tstart)*1.0/CLOCKS_PER_SEC);
-   // Write .GEN FILE
-   fprintf(stderr, "writing gen...");
-   // Write genome bases (forward and reverse strand).
-   s = 0;
-   while (s < gsize*sizeof(char)) s += write(fgn, genome + s/sizeof(char), gsize*sizeof(char) - s);
-   stot += s;
-   fprintf(stderr, " %ld bytes written.\n",s);
-   // .SAR FILE
-   fprintf(stderr, "writing sar...");
-   // Write sa word width.
-   bytes = s = 0;
-   while (s < sizeof(uint64_t)) s += write(fsa, &sa_bits, sizeof(uint64_t));
-   bytes += s;
-   s = 0;
-   while (s < sa_size*sizeof(uint64_t)) s += write(fsa, sa + s/sizeof(uint64_t), sa_size*sizeof(uint64_t) - s);
-   bytes += s;
-   stot += bytes;
-   fprintf(stderr, " %ld bytes written.\n",bytes);
-   // .LCP FILE
-   fprintf(stderr, "writing lcp...");
-   // LCP index.
-   bytes = s = 0;
-   mark_int = LCP_MARK_INTERVAL;
-   while (s < sizeof(uint64_t)) s += write(flc, &mark_int, sizeof(uint64_t));
-   bytes += s;
-   s = 0;
-   uint64_t min_depth = LCP_MIN_DEPTH;
-   while (s < sizeof(uint64_t)) s += write(flc, &min_depth, sizeof(uint64_t));
-   bytes += s;
-   // Write sample index szie.
-   s = 0;
-   while(s < sizeof(uint64_t)) s += write(flc, &(lcp.lcpidx_size), sizeof(uint64_t));
-   bytes += s;
-   // Write sample index.
-   s = 0;
-   while(s < lcp.lcpidx_size*sizeof(uint64_t)) s += write(flc, lcp.idx_sample + s/sizeof(uint64_t), lcp.lcpidx_size*sizeof(uint64_t) - s);
-   bytes += s;
-   // Write extended index size.
-   s = 0;
-   while(s < sizeof(uint64_t)) s += write(flc, &(lcp.extidx_size), sizeof(uint64_t));
-   bytes += s;
-   // Write extended index.
-   s = 0;
-   while(s < lcp.extidx_size*sizeof(uint64_t)) s += write(flc, lcp.idx_extend + s/sizeof(uint64_t), lcp.extidx_size*sizeof(uint64_t) - s);
-   bytes += s;
-   // Write LCP samples.
-   s = 0;
-   uint64_t nsamples = (lcp.lcp_sample)->pos;
-   while(s < sizeof(uint64_t)) s+= write(flc, &nsamples, sizeof(uint64_t));
-   bytes += s;
-   s = 0;
-   while(s < nsamples*sizeof(int8_t)) s += write(flc, (lcp.lcp_sample)->val + s/sizeof(int8_t), nsamples * sizeof(int8_t) - s);
-   bytes += s;
-   // Write ext samples.
-   s = 0;
-   nsamples = (lcp.lcp_extend)->pos;
-   while(s < sizeof(uint64_t)) s+= write(flc, &nsamples, sizeof(uint64_t));
-   bytes += s;
-   s = 0;
-   while(s < nsamples*sizeof(int64_t)) s += write(flc, (lcp.lcp_extend)->val + s/sizeof(int64_t), nsamples * sizeof(int64_t) - s);
-   bytes += s;
-   stot += bytes;
-   fprintf(stderr, " %ld bytes written.\n",bytes);
-
-   fprintf(stderr, "done. %ld bytes written.\n", stot);
+   size_t bytes = 0, total = list->count*sizeof(ann_t);
+   while ((bytes += write(fd, ((uint8_t *)list->ann) + bytes, total-bytes)) < total);
 
    return 0;
 }
 
-int64_t *
-compute_sa
+annlist_t *
+ann_index_read
 (
- char    * genome,
- uint64_t  gsize
+ char * index_file
 )
 {
-   char * data = malloc(gsize);
-   for (uint64_t i = 0; i < gsize; i++) data[i] = uppercase[(int)genome[i]];
-   int64_t * sa = malloc(gsize*sizeof(int64_t));
-   if (sa == NULL) return NULL;
-   divsufsort((unsigned char *) data, sa, gsize);
-   free(data);
-   return sa;
+   // File name.
+   char * fname = add_suffix(index_file, ".ann");
+
+   if (fname == NULL) return NULL;
+   // Open file.
+   int fd = open(fname, O_RDONLY);
+   free(fname);
+   if (fd == -1) {
+      fprintf(stderr, "error opening '%s': %s\n", fname, strerror(errno));
+      return NULL;
+   }
+   // Read table size.
+   uint8_t count = 0;
+   if (read(fd, &count, sizeof(uint8_t)) < 1) {
+      fprintf(stderr, "[error] could not read data from annotation index.\n");
+      return NULL;
+   }
+   // Alloc structure.
+   annlist_t * list = malloc(sizeof(annlist_t) + count * sizeof(ann_t));
+   if (list == NULL) return NULL;
+   // Read headers.
+   list->count = count;
+   size_t bytes = 0, total = count*sizeof(ann_t);
+   while ((bytes += read(fd,((uint8_t*)list->ann)+bytes,total-bytes)) < total);
+
+   return list;
 }
 
-uint64_t *
-compute_occ
+int
+ann_index_load
 (
- char     * genome,
- uint64_t * sa,
- uint64_t   gsize,
- uint64_t * occ_size
+ annlist_t * index,
+ char      * index_file
 )
 {
-   // Words, marks and intervals.
-   uint64_t occ_intervals = (gsize+OCC_MARK_BITS-1)/OCC_MARK_BITS;
-   uint64_t occ_words = occ_intervals * OCC_MARK_INTERVAL;
-   uint64_t occ_marks = occ_intervals + 1;
-
-   // Alloc variables.
-   uint64_t * occ = malloc((occ_words+occ_marks)*NUM_BASES*sizeof(uint64_t));
-   if (occ == NULL) return NULL;
-   uint64_t occ_abs[NUM_BASES+1];
-   uint64_t occ_tmp[NUM_BASES+1];
-
-   // Initial values.
-   for (int i = 0; i < NUM_BASES; i++) {
-      occ_abs[i] = 0;
-      occ_tmp[i] = 0;
-      occ[i] = 0;
-   }
-
-   // Compute OCC. (MSB FIRST encoding)
-   uint64_t word = NUM_BASES, interval = 0;
-
-   for (uint64_t i = 0; i < gsize; i++) {
-      // Set occ bit.
-      int base = translate[(uint8_t)genome[(sa[i] > 0 ? sa[i] - 1 : gsize - 1)]];
-      occ_tmp[base] |= 1;
-      occ_abs[base]++;
-      // Next word.
-      if (i % OCC_WORD_SIZE == OCC_WORD_SIZE-1) {
-         for (int j = 0; j < NUM_BASES; j++) {
-            occ[word++] = occ_tmp[j];
-            occ_tmp[j] = 0;
-         }
-         interval++;
-         // Write Mark.
-         if (interval == OCC_MARK_INTERVAL) {
-            for (int j = 0; j < NUM_BASES; j++) occ[word++] = occ_abs[j];
-            interval = 0;
-         }
+   for (int i = 0; i < index->count; i++) {
+      // Generate file names.
+      char * suffix = malloc(9);
+      if (suffix == NULL)
+         return -1;
+      sprintf(suffix, ".ann.%d", index->ann[i].id);
+      char * fname = add_suffix(index_file, suffix);
+      if (fname == NULL)
+         return -1;
+      // Open file.
+      int fd = open(fname, O_RDONLY);
+      if (fd == -1) {
+         fprintf(stderr, "[error] opening '%s': %s\n", fname, strerror(errno));
+         return -1;
       }
-      // Shift words.
-      for (int j = 0; j < NUM_BASES; j++) occ_tmp[j] <<= 1;
+      // mmap.
+      size_t f_len = lseek(fd, 0, SEEK_END);
+      lseek(fd, 0, SEEK_SET);
+      index->ann[i].data = mmap(NULL, f_len, PROT_READ, MMAP_FLAGS, fd, 0);
+      if (index->ann[i].data == NULL) {
+         fprintf(stderr, "[error] mmaping '%s' index file: %s.\n", fname, strerror(errno));
+         return -1;
+      }
+      close(fd);
+      free(fname);
+      free(suffix);
    }
-   // Shift last word.
-   if (gsize%OCC_WORD_SIZE) {
-      interval++;
-      for (int j = 0; j < NUM_BASES; j++)
-         occ[word++] = occ_tmp[j] << (OCC_WORD_SIZE - 1 - gsize%OCC_WORD_SIZE);
-   }
-   // Add last mark.
-   if (interval > 0) {
-      // Fill the last interval with 0.
-      for (int i = interval; i < OCC_MARK_INTERVAL; i++)
-         for (int j = 0; j < NUM_BASES; j++) occ[word++] = 0;
-      // Add mark.
-      for (int j = 0; j < NUM_BASES; j++) occ[word++] = occ_abs[j];
-   }
-   // Set occ size.
-   *occ_size = word;
-
-   return occ;
-}
-
-uint64_t *
-compute_c
-(
- uint64_t * occ
-)
-{
-   // Fill C.
-   uint64_t * C = malloc((NUM_BASES+1)*sizeof(uint64_t));
-   if (C == NULL) return NULL;
-   // Count the wildcard before 'A'.
-   C[0] = 1;
-   for (int i = 1; i <= NUM_BASES; i++) C[i] = C[i-1] + occ[i-1];
-   return C;
+   return 0;
 }
 
 int
-stack_push_lcp
+ann_find_slot
 (
- stack8_t **  stackp,
- uint8_t      lcp,
- int64_t      offset
+ annlist_t * list
 )
 {
-   stack8_t * stack = *stackp;
-   // Realloc stack if full.
-   if (stack->pos + sizeof(uint8_t) + sizeof(int64_t) >= stack->size) {
-      uint64_t newsize = (stack->size*2 < stack->pos+sizeof(int64_t)+sizeof(int8_t) ? stack->pos+sizeof(int64_t)+sizeof(int8_t) : stack->size * 2);
-      *stackp = stack = realloc(stack, sizeof(stack8_t) + newsize);
-      if (stack == NULL) return -1;
-      stack->size = newsize;
-   }
-   // Save LCP value.
-   stack->val[stack->pos++] = lcp;
-   // Save extended offset to parent as int32.
-   memcpy(stack->val + stack->pos, &offset, sizeof(int64_t));
-   stack->pos += sizeof(int64_t);
-
-   return 0;
+   uint8_t * idlist = calloc(257,1);
+   for (int i = 0; i < list->count; i++)
+      idlist[list->ann[i].id] = 1;
+   int id = 0;
+   while (idlist[id]) id++;
+   return id;
 }
 
 void
-lcp_index_set
+ann_print_index
 (
- uint64_t * lcp_index,
- uint64_t   pos
+ annlist_t * list
 )
 {
-   // Count number of marks.
-   uint64_t marks = pos / LCP_MARK_BITS + 1;
-   uint64_t word  = pos / LCP_WORD_SIZE;
-   int      bit   = pos % LCP_WORD_SIZE;
-   // LSB index 0
-   // ...
-   // MSB index 63
-   // Set bit.
-   lcp_index[word + marks] |= ((uint64_t)(1) << bit);
-}
-
-int
-seq_lcp
-(
- char * seq_a,
- char * seq_b
-)
-{
-   int lcp = 0;
-   while (translate[(int)seq_a[lcp]] == translate[(int)seq_b[lcp]] && lcp < 255) lcp++;
-   return lcp;
-}
-
-lcpcorner_t
-corner_pop
-(
- cstack_t * stack
-)
-{
-   if (stack->pos > 0)
-      return stack->c[--stack->pos];
-   else
-      return (lcpcorner_t){-1,-1,-1};
-}
-
-int
-corner_push
-(
- cstack_t    ** stackp,
- lcpcorner_t    c
-)
-{
-   cstack_t * stack = *stackp;
-   // Realloc if needed.
-   if (stack->pos >= stack->size) {
-      uint64_t newsize = stack->size * 2;
-      *stackp = stack = realloc(stack, sizeof(cstack_t) + newsize*sizeof(lcpcorner_t));
-      if (stack == NULL) return -1;
-      stack->size = newsize;
+   fprintf(stderr,"[info] annotation index content:\n");
+   for (int i = 0; i < list->count; i++) {
+      fprintf(stderr, "[info] {%d} k:%d, d:%d\n", list->ann[i].id, list->ann[i].k, list->ann[i].d);
    }
-   // Save corner.
-   stack->c[stack->pos++] = c;
+   fprintf(stderr, "[info] %d annotations.\n", list->count);
+}
+
+int
+sht_index_write
+(
+ shtlist_t * list,
+ char * index_file
+)
+{
+   // File name.
+   char * fname = add_suffix(index_file, ".sht");
+   if (fname == NULL) return -1;
+   // Open file to write.
+   int fd = open(fname,O_WRONLY | O_CREAT | O_TRUNC,0644);
+   free(fname);
+   if (fd == -1) {
+      fprintf(stderr, "error opening '%s': %s\n", fname, strerror(errno));
+      return -1;
+   }
+   // Write table.
+   if (write(fd, &(list->count), 1) < 1) {
+      fprintf(stderr,"[error] could not write seed table index.\n");
+      return -1;
+   }
+   size_t bytes = 0, total = list->count*sizeof(sht_t);
+   while ((bytes += write(fd, ((uint8_t *)list->sht) + bytes, total-bytes)) < total);
 
    return 0;
 }
 
-cstack_t *
-cstack_new
+shtlist_t *
+sht_index_read
 (
- int size
+ char * index_file
 )
 {
-   cstack_t * stack = malloc(sizeof(cstack_t) + size*sizeof(lcpcorner_t));
-   if (stack == NULL) return NULL;
-   stack->size = size;
-   stack->pos  = 0;
-   return stack;
+   // File name.
+   char * fname = add_suffix(index_file, ".sht");
+   if (fname == NULL) return NULL;
+   // Open file.
+   int fd = open(fname, O_RDONLY);
+   free(fname);
+   if (fd == -1) {
+      fprintf(stderr, "error opening '%s': %s\n", fname, strerror(errno));
+      return NULL;
+   }
+   // Read table size.
+   uint8_t count = 0;
+   if (read(fd, &count, sizeof(uint8_t)) < 1) {
+      fprintf(stderr, "[error] could not read data from seed table index.\n");
+      return NULL;
+   }
+   // Alloc structure.
+   shtlist_t * list = malloc(sizeof(shtlist_t) + count * sizeof(sht_t));
+   if (list == NULL) return NULL;
+   list->count = count;
+   // Read headers.
+   size_t bytes = 0, total = count*sizeof(sht_t);
+   while ((bytes += read(fd,((uint8_t*)list->sht)+bytes,total-bytes)) < total);
+
+   return list;
 }
 
 int
-sample_compar
+sht_index_load
 (
- const void * a,
- const void * b,
- const int c
+ shtlist_t * index,
+ char      * index_file
 )
 {
-   lcpcorner_t * ca = (lcpcorner_t *)a;
-   lcpcorner_t * cb = (lcpcorner_t *)b;
-   return (ca->pos > cb->pos ? 1 : -1);
-}
-
-stack8_t *
-stack8_new
-(
- size_t size
-)
-{
-   stack8_t * stack = malloc(sizeof(stack8_t) + size);
-   if (stack == NULL) return NULL;
-   stack->pos = 0;
-   stack->size = size;
-   return stack;
-}
-
-stack64_t *
-stack64_new
-(
- size_t size
-)
-{
-   stack64_t * stack = malloc(sizeof(stack64_t) + size * sizeof(int64_t));
-   if (stack == NULL) return NULL;
-   stack->pos = 0;
-   stack->size = size;
-   return stack;
-}
-
-int64_t
-stack64_push
-(
- stack64_t ** stackp,
- int64_t      val
-)
-{
-   stack64_t * stack = *stackp;
-   if (stack->pos >= stack->size) {
-      uint64_t newsize = stack->size * 2;
-      *stackp = stack = realloc(stack, sizeof(stack64_t) + newsize * sizeof(int64_t));
-      if (stack == NULL) return -1;
-      stack->size = newsize;
-   }
-   stack->val[stack->pos++] = val;
-   return 0;
-}
-
-int64_t
-stack64_pop
-(
- stack64_t * stack
-)
-{
-   return stack->val[--stack->pos];
-}
-
-
-int64_t
-naive_lcp
-(
- int           min_depth,
- uint64_t      idxsize,
- uint64_t    * lcpsample,
- uint64_t    * lcpext,
- stack8_t   ** lcp,
- stack64_t  ** ext,
- uint64_t    * sar,
- int           sar_bits,
- char        * genome
-)
-{
-   cstack_t * top = cstack_new(STACK_LCP_INITIAL_SIZE);
-   cstack_t * bottom = cstack_new(STACK_LCP_INITIAL_SIZE);
-   // Push topmost corner.
-   corner_push(&top, (lcpcorner_t){-1, 0, 0, 0});
-   if (min_depth == 0) {
-      lcp_index_set(lcpsample, 0);
-      if (stack_push_lcp(lcp, 0, -1)) return -1;
-   }
-   // Compute LCP of i=1, store in previous.
-   uint64_t cp = get_sa(0,sar,sar_bits);
-   int cl = 0;
-   uint64_t pp = get_sa(1,sar,sar_bits);
-   int pl = seq_lcp(genome+pp, genome+cp);
-   for (uint64_t i = 2; i < idxsize; i++) {
-      // Current position and lcp.
-      cp = get_sa(i,sar,sar_bits);
-      cl = seq_lcp(genome+pp, genome+cp);
-      // If current LCP > previous LCP -> Previous was top corner.
-      if (cl > pl) {
-         // Top corner - save sample.
-         lcpcorner_t tcorner = top->c[top->pos-1];
-         int64_t offset = tcorner.pos - (i-1);
-         if (cl >= min_depth) {
-            lcp_index_set(lcpsample, i-1);
-            if (stack_push_lcp(lcp, pl, offset)) return -1;
-         }
-         // Push corner to the stack.
-         corner_push(&top, (lcpcorner_t){pl, cl, i-1, 0});
+   for (int i = 0; i < index->count; i++) {
+      // Generate file names.
+      char * suffix = malloc(9);
+      if (suffix == NULL)
+         return -1;
+      sprintf(suffix, ".sht.%d", index->sht[i].id);
+      char * fname = add_suffix(index_file, suffix);
+      if (fname == NULL)
+         return -1;
+      // Open file.
+      int fd = open(fname, O_RDONLY);
+      if (fd == -1) {
+         fprintf(stderr, "[error] opening '%s': %s\n", fname, strerror(errno));
+         return -1;
       }
-      // If current LCP < previous LCP -> Previous was bottom corner.
-      else if (cl < pl) {
-         // Bottom corner - save sample.
-         if (pl >= min_depth) {
-            if (stack_push_lcp(lcp, pl, 0xFFFFFFFF)) return -1;
-         }
-         while (bottom->pos > 0) {
-            if (bottom->c[bottom->pos-1].lcp_next <= cl) break;
-            // Pop sample from bottom stack and save.
-            lcpcorner_t bcorner = corner_pop(bottom);
-            // Bottom corner - update sample.
-            if (bcorner.lcp >= min_depth) {
-               int64_t offset = i-1 - bcorner.pos;
-               memcpy((*lcp)->val + bcorner.ptr, &offset, sizeof(int64_t));
-               lcp_index_set(lcpsample, bcorner.pos);
+      // mmap.
+      size_t f_len = lseek(fd, 0, SEEK_END);
+      lseek(fd, 0, SEEK_SET);
+      index->sht[i].htable = mmap(NULL, f_len, PROT_READ, MMAP_FLAGS, fd, 0);
+      if (index->sht[i].htable == NULL) {
+         fprintf(stderr, "[error] mmaping '%s' index file: %s.\n", fname, strerror(errno));
+         return -1;
+      }
+      close(fd);
+      free(fname);
+      free(suffix);
+   }
+   return 0;
+}
+
+int
+sht_find_slot
+(
+ shtlist_t * list
+)
+{
+   uint8_t * idlist = calloc(257,1);
+   for (int i = 0; i < list->count; i++)
+      idlist[list->sht[i].id] = 1;
+   int id = 0;
+   while (idlist[id]) id++;
+   return id;
+}
+
+void
+sht_print_index
+(
+ shtlist_t * list
+)
+{
+   fprintf(stderr,"[info] seed table content:\n");
+   for (int i = 0; i < list->count; i++) {
+      fprintf(stderr, "[info] {%d} k:%d, d:%d, repeat_thr:%d\n", list->sht[i].id, list->sht[i].k, list->sht[i].d, list->sht[i].repeat_thr);
+   }
+   fprintf(stderr, "[info] %d seed tables.\n", list->count);
+}
+
+int
+index_add_annotation
+(
+ int       kmer,
+ int       tau,
+ int       seed_tau,
+ int       repeat_thr,
+ int       mode,
+ int       threads,
+ index_t * index,
+ char    * index_file
+ )
+{
+   int ann_slot = -1, ann_pos = -1, sht_slot = 0;
+   annlist_t * annlist = NULL;
+   shtlist_t * shtlist = NULL;
+   // Check current annotations.
+   if (mode & STORE_ANNOTATION) {
+      annlist = ann_index_read(index_file);
+      ann_print_index(annlist);
+      if (annlist == NULL)
+         return EXIT_FAILURE;
+      for (int i = 0; i < annlist->count; i++) {
+         if (kmer == annlist->ann[i].k) {
+            if (tau <= annlist->ann[i].d) {
+               fprintf(stderr, "[warning] the index already has a (%d,%d) annotation.\n",kmer,tau);
+               mode &= 2;
+               break;
+            } else {
+               ann_slot = annlist->ann[i].id;
+               ann_pos  = i;
+               fprintf(stderr, "[warning] the existing (%d,%d) annotation will be overwritten (id=%d).\n",kmer,annlist->ann[i].d,ann_slot);
+               break;
             }
          }
-         // Save current bottom corner.
-         corner_push(&bottom, (lcpcorner_t){pl, cl, i-1, (*lcp)->pos - sizeof(int64_t)});
-         // Remove top corners from stack.
-         while (top->pos > 0) {
-            if (top->c[top->pos-1].lcp < cl) break;
-            top->pos--;
+      }
+      // Find slot to store annotation.
+      if (ann_slot < 0) ann_slot = ann_find_slot(annlist);
+   }
+
+   // Check current seed tables.
+   if (mode & STORE_SEEDTABLE) {
+      shtlist = sht_index_read(index_file);
+      if (shtlist == NULL)
+         return EXIT_FAILURE;
+      for (int i = 0; i < shtlist->count; i++) {
+         if (kmer == shtlist->sht[i].k && tau == shtlist->sht[i].d && repeat_thr == shtlist->sht[i].repeat_thr) {
+            fprintf(stderr, "[warning] the index already has a (%d,%d) seed table with repeat_thr=%d.\n",kmer,tau,repeat_thr);
+            mode &= 1;
+            break;
          }
       }
-
-
-      // Assign previous.
-      pp = cp;
-      pl = cl;
+      // Find slot to store seed table.
+      sht_slot = sht_find_slot(shtlist);
    }
 
-   // Add remaining bottom nodes.
-   while (bottom->pos > 0) {
-      // Pop sample from bottom stack and save.
-      lcpcorner_t bcorner = corner_pop(bottom);
-      // Bottom corner - update sample.
-      if (bcorner.lcp >= min_depth) {
-         int offset = idxsize-1 - bcorner.pos;
-         memcpy((*lcp)->val + bcorner.ptr, &offset, sizeof(int64_t));
-         lcp_index_set(lcpsample, bcorner.pos);
-      }
+   if (!(mode & 3)) {
+      fprintf(stderr,"[warning] nothing will be computed.\n");
+      return EXIT_SUCCESS;
    }
 
-   if (min_depth == 0) {
-      lcp_index_set(lcpsample, idxsize-1);
-      if (stack_push_lcp(lcp, pl, 0)) return -1;
+   fprintf(stderr, "[info] computing (%d,%d) genomic hits using %d threads.\n", kmer, tau, threads);
+   annotation_t ann = annotate(kmer,tau,seed_tau,repeat_thr,index,threads,mode);
+
+   // Write output file.
+   if (mode & STORE_ANNOTATION) {
+      // Generate file name.
+      char * suffix = malloc(9);
+      if (suffix == NULL)
+         return EXIT_FAILURE;
+      sprintf(suffix, ".ann.%d", ann_slot);
+      char * fname = add_suffix(index_file, suffix);
+      if (fname == NULL)
+         return EXIT_FAILURE;
+      free(suffix);
+      // Open file.
+      int fd = open(fname,O_WRONLY | O_CREAT | O_TRUNC,0644);
+      free(fname);
+      size_t bytes = 0;
+      // Write annotation.
+      int bits = 0;
+      while ((tau >> bits) > 0) bits++;
+      size_t struct_size = ((index->size >> 4) + 1)*(bits+2);
+      fprintf(stderr,"[info] writing annotation (%ld bytes)... ",struct_size);
+      while ((bytes += write(fd,ann.bitfield+bytes,struct_size-bytes)) < struct_size);
+      fprintf(stderr,"%ld bytes written.\n",bytes);
+      // Close file descriptor.
+      close(fd);
+      // Update table.
+      fprintf(stderr,"[info] updating annotation index... ");
+      annlist = realloc(annlist, sizeof(annlist_t) + (annlist->count + 1)*sizeof(ann_t));
+      if (ann_pos < 0) ann_pos = annlist->count++;
+      annlist->ann[ann_pos] = (ann_t) {
+         .id = ann_slot,
+         .k = kmer,
+         .d = tau,
+         .size = ann.ann_size,
+         .unique = ann.ann_set,
+         .data = NULL
+      };
+      ann_index_write(annlist, index_file);
+      free(annlist);
+      fprintf(stderr,"done.\n");
+   }
+   if (mode & STORE_SEEDTABLE) {
+      // Generate file name.
+      char * suffix = malloc(9);
+      if (suffix == NULL)
+         return EXIT_FAILURE;
+      sprintf(suffix, ".sht.%d", sht_slot);
+      char * fname = add_suffix(index_file, suffix);
+      if (fname == NULL)
+         return EXIT_FAILURE;
+      free(suffix);
+      // Open file.
+      int fd = open(fname,O_WRONLY | O_CREAT | O_TRUNC,0644);
+      free(fname);
+      size_t bytes = 0;
+      // Write seed hash table.
+      size_t struct_size = sizeof(htable_t) + (((uint64_t)1)<<(ann.htable->bits-2));
+      fprintf(stderr,"[info] writing seed table (%ld bytes)... ",struct_size);
+      while ((bytes += write(fd,((uint8_t *)ann.htable)+bytes,struct_size-bytes)) < struct_size);
+      fprintf(stderr,"%ld bytes written.\n",bytes);
+      // Close file descriptor.
+      close(fd);
+      // Update table.
+      fprintf(stderr,"[info] updating seed table index... ");
+      shtlist = realloc(shtlist, sizeof(shtlist_t) + (shtlist->count + 1)*sizeof(sht_t));
+      shtlist->sht[shtlist->count++] = (sht_t) {
+         .id = sht_slot,
+         .k = kmer,
+         .d = tau,
+         .bits = ann.htable->bits,
+         .repeat_thr = repeat_thr,
+         .set_count = ann.sht_set,
+         .collision = ann.sht_coll,
+         .htable = NULL
+      };
+      sht_index_write(shtlist, index_file);
+      free(shtlist);
+      fprintf(stderr,"done.\n");
    }
 
-   free(top);
-   free(bottom);
-
-   // Compact LCP.
-   stack8_t * stack = *lcp;
-   int64_t  val = 0;
-   uint64_t p = 0, i = 0;
-   while (i < stack->pos) {
-      // Save LCP value.
-      stack->val[p++] = stack->val[i++];
-      // Compress offset.
-      memcpy(&val, stack->val + i, sizeof(int64_t));
-      if (val < -127) {
-         lcp_index_set(lcpext,p/2);
-         stack->val[p++] = (int8_t)-128;
-         stack64_push(ext, val);
-      } else if (val > 127) {
-         lcp_index_set(lcpext,p/2);
-         stack->val[p++] = (int8_t)127;
-         stack64_push(ext, val);
-      } else {
-         stack->val[p++] = (int8_t)val - (val > 0);
-      }
-      i += sizeof(int64_t);
-   }
-
-   stack->pos = p;
-   *lcp = realloc(*lcp, sizeof(stack8_t) + stack->pos*sizeof(int8_t));
-   if (*lcp == NULL) return -1;
-   (*lcp)->size = p;
-
-   *ext = realloc(*ext, sizeof(stack64_t) + (*ext)->pos*sizeof(int64_t));
-   if (*ext == NULL) return -1;
-   (*ext)->size = (*ext)->pos;
-   return 0;
+   return EXIT_SUCCESS;
 }
 
-
-lcp_t
-compute_lcp
+index_t *
+index_load_base
 (
- uint64_t    idxsize,
- int         min_depth,
- int         sar_bits,
- uint64_t  * sar,
- char      * genome
+ char * index_file
 )
 {
-   // Allocate LCP stack.
-   stack8_t * stack = stack8_new(STACK_LCP_INITIAL_SIZE);
-   stack64_t * ext  = stack64_new(STACK_LCP_INITIAL_SIZE);
-   // Allocate LCP index.
-   uint64_t words = (idxsize + LCP_WORD_SIZE - 1)/LCP_WORD_SIZE;
-   uint64_t intervals = (words + LCP_MARK_INTERVAL - 1) / LCP_MARK_INTERVAL;
-   uint64_t marks = intervals + 1;
-   uint64_t index_size = intervals*LCP_MARK_INTERVAL + marks;
-   uint64_t * lcp_sample = calloc(index_size,sizeof(uint64_t));
-   uint64_t * lcp_extend = calloc(index_size,sizeof(uint64_t));
+   // Alloc index struct.
+   index_t * index = malloc(sizeof(index_t));
+   if (index == NULL) return NULL;
+   // Load genome bases.
+   index->genome = index_load_gen(index_file);
+   if (index->genome == NULL) return NULL;
+   // Load bwt table.
+   index->bwt = index_load_bwt(index_file);
+   if (index->bwt == NULL) return NULL;
+   // Load sar.
+   index->sar = index_load_sar(index_file);
+   if (index->sar == NULL) return NULL;
+   // Load chr list.
+   index->chr = index_load_chr(index_file);
+   if (index->chr == NULL) return NULL;
+   // Set genome size.
+   index->size = index->bwt->c[NUM_BASES];
 
-   naive_lcp(min_depth, idxsize, lcp_sample, lcp_extend, &stack, &ext, sar, sar_bits, genome);
-
-   // Resize lcp_extend index.
-   uint64_t lcpext_words = (stack->pos + LCP_WORD_SIZE - 1)/LCP_WORD_SIZE;
-   uint64_t lcpext_ints  = (lcpext_words + LCP_MARK_INTERVAL - 1)/LCP_MARK_INTERVAL;
-   uint64_t lcpext_marks = lcpext_ints + 1;
-   uint64_t lcpext_size = lcpext_ints*LCP_MARK_INTERVAL + lcpext_marks;
-   lcp_extend = realloc(lcp_extend, lcpext_size * sizeof(uint64_t));
-
-   // LCP sample marks.
-   uint64_t abs_pos = 0;
-   for (uint64_t i = 0, w = 0; i < words; i++) {
-      if (i%LCP_MARK_INTERVAL == 0) lcp_sample[w++] = abs_pos;
-      abs_pos += __builtin_popcountl(lcp_sample[w++]);
-   }
-   lcp_sample[index_size - 1] = abs_pos;
-
-   // LCP ext marks.
-   abs_pos = 0;
-   for (uint64_t i = 0, w = 0; i < lcpext_words; i++) {
-      if (i%LCP_MARK_INTERVAL == 0) lcp_extend[w++] = abs_pos;
-      abs_pos += __builtin_popcountl(lcp_extend[w++]);
-   }
-   lcp_extend[lcpext_size - 1] = abs_pos;
-
-   lcp_t lcp = {.lcpidx_size = index_size, .extidx_size = lcpext_size, .idx_sample = lcp_sample, .idx_extend = lcp_extend, .lcp_sample = stack, .lcp_extend = ext};
-
-   // Return stack.
-   return lcp;
+   return index;
 }
 
 char *
-compact_genome
+index_load_gen
 (
- char     * filename,
- uint64_t * genomesize
+ char * index_file
 )
 {
-   char * fileindex = malloc(strlen(filename)+5);
-   strcpy(fileindex, filename);
-   strcpy(fileindex + strlen(filename), ".chr");
+   // Open GEN file.
+   char * gen_file = add_suffix(index_file, ".gen");
+   int fd_gen = open(gen_file, O_RDONLY);
+   if (fd_gen == -1) {
+      fprintf(stderr, "error opening '%s': %s\n", gen_file, strerror(errno));
+      return NULL;
+   }
+   free(gen_file);
 
+   // Load GEN index.
+   size_t gen_len = lseek(fd_gen, 0, SEEK_END);
+   lseek(fd_gen, 0, SEEK_SET);
+   void * gen_map = mmap(NULL, gen_len, PROT_READ, MMAP_FLAGS, fd_gen, 0);
+   close(fd_gen);
+   if (gen_file == NULL) {
+      fprintf(stderr, "error mmaping .gen index file: %s.\n", strerror(errno));
+      return NULL;
+   }
+
+   return (char *) gen_map;
+}
+
+bwt_t *
+index_load_bwt
+(
+ char * index_file
+)
+{
+   bwt_t * bwt = malloc(sizeof(bwt_t));
+   if (bwt == NULL) return NULL;
+   // Open OCC file.
+   char * bwt_file = add_suffix(index_file, ".bwt");
+   if (bwt_file == NULL) return NULL;
+   int fd_bwt = open(bwt_file, O_RDONLY);
+   if (fd_bwt == -1) {
+      fprintf(stderr, "error opening '%s': %s\n", bwt_file, strerror(errno));
+      return NULL;
+   }
+   free(bwt_file);
+
+   // Load BWT index.
+   size_t bwt_len = lseek(fd_bwt, 0, SEEK_END);
+   lseek(fd_bwt, 0, SEEK_SET);
+   void * bwt_map = mmap(NULL, bwt_len, PROT_READ, MMAP_FLAGS, fd_bwt, 0);
+   close(fd_bwt);
+   if (bwt_map == NULL) {
+      fprintf(stderr, "error mmaping .bwt index file: %s.\n", strerror(errno));
+      return NULL;
+   }
+
+   // Fill OCC struct.
+   bwt->occ_mark_int = *(uint64_t *) bwt_map;
+   bwt->c = ((uint64_t *) bwt_map + 1);
+   bwt->occ = bwt->c + NUM_BASES + 1;
+
+   // Base positions.
+   bwt->fmd_base = (fmdpos_t){.fp = 0, .rp = 0, .sz = bwt->c[NUM_BASES], .dp = 0};
+   bwt->bwt_base = (bwpos_t){.sp = 0, .ep = bwt->c[NUM_BASES] - 1, .depth = 0};
+
+   return bwt;
+}
+
+sar_t *
+index_load_sar
+(
+ char * index_file
+)
+{
+   sar_t * sar = malloc(sizeof(sar_t));
+   if (sar == NULL) return NULL;
+   // Open SAR file.
+   char * sa_file = add_suffix(index_file,".sar");
+   if (sa_file == NULL) return NULL;
+   int fd_sa = open(sa_file, O_RDONLY);
+   if (fd_sa == -1) {
+      fprintf(stderr, "error opening '%s': %s\n", sa_file, strerror(errno));
+      return NULL;
+   }
+   free(sa_file);
+ 
+   // Load SAR index.
+   size_t sa_len = lseek(fd_sa, 0, SEEK_END);
+   lseek(fd_sa, 0, SEEK_SET);
+   void * sa_map = mmap(NULL, sa_len, PROT_READ, MMAP_FLAGS, fd_sa, 0);
+   close(fd_sa);
+   if (sa_map == NULL) {
+      fprintf(stderr, "error mmaping .sar index file: %s.\n", strerror(errno));
+      return NULL;
+   }
+
+   // Fill SAR struct.
+   sar->bits = *((uint64_t *) sa_map);
+   sar->sa   =  ((uint64_t *) sa_map) + 1;
+
+   return sar;
+}
+
+chr_t *
+index_load_chr
+(
+ char * index_file
+)
+{
+
+   // Read chromosome index.
+   char * chr_file = add_suffix(index_file,".chr");
+   if (chr_file == NULL) return NULL;
    // Files
-   FILE * input = fopen(filename,"r");
-   FILE * output = fopen(fileindex, "w");
-
+   FILE * input = fopen(chr_file,"r");
    if (input == NULL) {
-      fprintf(stderr, "error in 'compact_genome' (fopen): %s\n", strerror(errno));
+      fprintf(stderr, "error in 'read_CHRindex' (fopen): %s\n", strerror(errno));
       exit(EXIT_FAILURE);
    }
+   free(chr_file);
+
+   int chrcount = 0;
+   int structsize = CHRSTR_SIZE;
+
+   long  * start = malloc(structsize*sizeof(long));
+   char ** names = malloc(structsize*sizeof(char*));
+   char  * buffer = malloc(BUFFER_SIZE);
+   if (start == NULL || names == NULL || buffer == NULL) return NULL;
 
    // File read vars
    ssize_t rlen;
    size_t  sz = BUFFER_SIZE;
-   char * buffer = malloc(BUFFER_SIZE);
+   int lineno = 0;
 
-   // Genome storage vars
-   char * genome = malloc(GENOME_SIZE);
-   uint64_t gbufsize = GENOME_SIZE;
-
-   // Initialize size
-   *genomesize = 0;
-
+   // Read chromosome entries.
    while ((rlen = getline(&buffer, &sz, input)) != -1) {
-      if (buffer[0] == '>') {
-         buffer[rlen-1] = 0;
-         int k = 0;
-         while (buffer[k] != ' ' && buffer[k] != 0) k++;
-         buffer[k] = 0;
-         fprintf(output,"%ld\t%s\n",*genomesize,buffer+1);
+      lineno++;
+      char *name;
+      int i = 0;
+      while (buffer[i] != '\t' && buffer[i] != '\n') i++;
+      if (buffer[i] == '\n') {
+         fprintf(stderr, "illegal format in %s (line %d) - ignoring chromosome: %s\n", index_file, lineno, buffer);
+         continue;
       }
-      else {
-         if (gbufsize < *genomesize + rlen) {
-            while (gbufsize < *genomesize + rlen) gbufsize *= 2;
-            genome = realloc(genome, gbufsize);
-            if (genome == NULL) {
-               fprintf(stderr, "error in 'compact_genome' (realloc): %s\n", strerror(errno));
-               exit(EXIT_FAILURE);
-            }
+      
+      if (buffer[rlen-1] == '\n') buffer[rlen-1] = 0;
+
+      // Realloc stacks if necessary.
+      if (chrcount >= structsize) {
+         structsize *= 2;
+         start = realloc(start, structsize*sizeof(long));
+         names = realloc(names, structsize*sizeof(char*));
+         if (start == NULL || names == NULL) {
+            fprintf(stderr, "error in 'read_CHRindex' (realloc): %s\n", strerror(errno));
+            exit(EXIT_FAILURE);
          }
-         int newline = buffer[rlen-1] == '\n';
-         strncpy(genome + *genomesize, buffer, rlen-newline);
-         *genomesize += rlen-newline;
       }
+
+      // Save chromosome start position.
+      buffer[i] = 0;
+      start[chrcount] = atol(buffer);
+      // Save chromosome name.
+      name = buffer + i + 1;
+      names[chrcount] = malloc(strlen(name)+1);
+      if (names[chrcount] == NULL) return NULL;
+      strcpy(names[chrcount], name);
+      // Inc.
+      chrcount++;
    }
 
-   // Realloc buffer.
-   genome = realloc(genome, 2*(*genomesize)+2);
-   if (genome == NULL) {
-      fprintf(stderr, "error in 'compact_genome' (realloc): %s\n", strerror(errno));
-      exit(EXIT_FAILURE);
-   }
+   // Return chromosome index structure.
+   chr_t * chrindex = malloc(sizeof(chr_t));
+   if (chrindex == NULL) return NULL;
+   chrindex->nchr = chrcount;
+   chrindex->start= start;
+   chrindex->name = names;
 
-   // Reverse complement.
-   uint64_t div = *genomesize;
-   for (int i = 0 ; i < div; i++)
-      genome[div + i] = revcomp[(int)genome[div-i-1]];
-
-   *genomesize = *genomesize * 2 + 1;
-
-   // Insert wildcard at the end.
-   genome[2*div] = '$';
-   genome[2*div+1] = 0;
-
+   // Close files.
    fclose(input);
-   fclose(output);
 
    // Free memory.
    free(buffer);
-   free(fileindex);
-   
-   return genome;
+
+   return chrindex;
 }
 
-uint64_t
-compact_array
+
+int
+ann_read
 (
- uint64_t * array,
- uint64_t     len,
- int         bits
+ ann_t      ann,
+ uint64_t   locus,
+ int      * cnt
 )
 {
-   uint64_t mask = ((uint64_t)0xFFFFFFFFFFFFFFFF) >> (64-bits);
-   uint64_t word = 0;
-   int   lastbit = 0;
-   
-   // Clear upper bits of array[0].
-   array[0] &= mask;
+   int bits = 0;
+   while ((ann.d >> bits) > 0) bits++;
+   bits += 2;
+   uint16_t mask = 0xFFFF;
+   mask >>= (16-bits);
+   uint64_t bit = bits*locus;
+   uint64_t word = bit >> 3;
+   uint8_t shift = bit & 7;
+   uint16_t w = (((uint16_t)ann.data[word]) >> shift) | (((uint16_t)ann.data[word+1]) << (8-shift));
+   int d        = w & (mask >> 2);
+   int log10cnt = (w >> (bits-2)) & 3;
+   if (d == 0 && log10cnt == 3) {
+      log10cnt = 0;
+      d = ann.d+1;
+   }
+   if (cnt != NULL) *cnt = log10cnt;
+   return d;
+}
 
-   for (uint64_t i = 0, current; i < len; i++) {
-      // Save the current value.
-      current = array[i];
-      // Store the compact version.
-      array[word] |= (current & mask) << lastbit;
-      // Update bit offset.
-      lastbit += bits;
-      // Word is full.
-      if (lastbit >= 64) {
-         lastbit = lastbit - 64;
-         // Complete with remainder or set to 0 (if lastbit = 0).
-         // This will clear the upper bits of array.
-         array[++word] = (current & mask) >> (bits - lastbit);
+int
+ann_find
+(
+ int         k,
+ annlist_t * list,
+ ann_t     * ann
+)
+{
+   if (list->count == 0) return -1;
+   uint32_t dist = 0xFFFFFFFF;
+   ann_t best;
+   for (int i = 0; i < list->count; i++) {
+      if (list->ann[i].k == k) {
+         *ann = list->ann[i];
+         return 0;
+      } else {
+         int d = list->ann[i].k - k;
+         d = (d < 0 ? -d : d);
+         if (d < dist)
+            best = list->ann[i];
       }
    }
-
-   return word + (lastbit > 0);
+   *ann = best;
+   return 1;
 }
-
-/*
-uint64_t *
-compute_lut
-(
- uint64_t * c,
- uint64_t * occ,
- int        depth
-)
-{
-   // Alloc LUT table.
-   uint64_t * lut = malloc((1 << (2*depth))*sizeof(uint64_t));
-   if (lut == NULL) return NULL;
-   // Recursively compute k-mer start-end indices.
-   int path[depth];
-   recursive_lut(c,occ,lut,0,0,depth,path);
-
-   return lut;
-}
-
-void
-recursive_lut
-(
- uint64_t * c,
- uint64_t * occ,
- uint64_t * lut,
- uint64_t   ptr,
- int        d,
- int        maxd,
- int      * path
-)
-{
-   if (d == maxd) {
-      // Compute position from path.
-      uint64_t idx = 0;
-      for (int i = 0; i < maxd; i++) {
-         idx += path[i] * (1 << (2*i));
-      }
-      lut[idx] = ptr;
-      return;
-   }
-   // 'N' is not included.
-   for (int i = 0; i < NUM_BASES - 1; i++) {
-      uint64_t newptr = c[i] + get_occ_nt(ptr-1,occ,i);
-      path[d] = i;
-      recursive_lut(c,occ,lut,newptr,d+1,maxd,path);
-   }
-}
-*/

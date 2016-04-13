@@ -5,39 +5,62 @@
 #include <errno.h>
 #include <pthread.h>
 #include <stdint.h>
+#include <math.h>
 #include "definitions.h"
+#include "xxhash.h"
 
-#ifndef _BWM_ALGS_H
-#define _BWM_ALGS_H
+#ifndef _MAPPER_ALGS_H
+#define _MAPPER_ALGS_H
 
-typedef struct index_t    index_t;
-typedef struct seq_t      seq_t;
-typedef struct list_t     list_t;
-typedef struct chr_t      chr_t;
-typedef struct pebble_t   pebble_t;
-typedef struct node_t     node_t;
-typedef struct trie_t     trie_t;
-typedef struct arg_t      arg_t;
-typedef struct sortargs_t sortargs_t;
-typedef struct seqstack_t seqstack_t;
-typedef struct vstack_t   vstack_t;
-typedef struct pstack_t   pstack_t;
+// Flags definition.
+#define WARNING_OVERLAP 0x00000001
+#define FLAG_REPEAT     0x00000002
 
-typedef struct bwarg_t    bwarg_t;
-typedef struct bwpos_t    bwpos_t;
-typedef struct fmdpos_t   fmdpos_t;
 
-// Definitions
-#define TRIE_SIZE     1024
-#define TRIE_CHILDREN  3
+// Structure typedef.
+typedef struct index_t     index_t;
+typedef struct seq_t       seq_t;
+typedef struct list_t      list_t;
+typedef struct chr_t       chr_t;
+typedef struct node_t      node_t;
+typedef struct sortargs_t  sortargs_t;
+typedef struct seqstack_t  seqstack_t;
+typedef struct vstack_t    vstack_t;
+typedef struct match_t     match_t;
+typedef struct matchlist_t matchlist_t;
 
-// Function definitions.
-#define get_val(p,k,b)  ((64-((k)*(b)%64) >= b ? (p[(k)*(b)/64] >> ((k)*(b))%64) : (p[(k)*(b)/64] >> ((k)*(b)%64) | p[(k)*(b)/64+1] << (64-((k)*(b)%64)))) & (0xFFFFFFFFFFFFFFFF >> 64-b))
+// Macros
+#define min(x,y) ((x) < (y) ? (x) : (y))
+#define max(x,y) ((x) > (y) ? (x) : (y))
 
 // Data types
 typedef unsigned int uint;
 
 // Data structures
+
+struct match_t {
+   long ref_s;
+   long ref_e;
+   int read_s;
+   int read_e;
+   int hits;
+   int s_hits;
+   int s_hits_cnt;
+   int score;
+   int s_score;
+   int s_score_cnt;
+   int interval;
+   int ann_d;
+   int ann_cnt;
+   int mapq;
+   double ident;
+};
+
+struct matchlist_t {
+   int       size;
+   int       pos;
+   match_t   match[];
+};
 
 struct seq_t {
    char * tag;
@@ -45,27 +68,9 @@ struct seq_t {
    char * q;
 };
 
-
 struct list_t {
    long   max;
    long * val;
-};
-
-struct pebble_t {
-   long sp;
-   long ep;
-   char nwrow[2*MAXTAU+3];
-};
-
-struct node_t {
-   uint child[TRIE_CHILDREN];
-   uint parent;
-}; 
-
-struct trie_t {
-   uint          pos;
-   uint          size;
-   struct node_t nodes[];
 };
 
 // Stacks
@@ -82,29 +87,7 @@ struct vstack_t {
    long val[];
 };
 
-struct pstack_t {
-   long            pos;
-   long            size;
-   struct pebble_t pebble[];
-};
-
 // Parameter structs.
-
-struct bwarg_t {
-   struct index_t * index;
-   struct bwpos_t * pebbles;
-   struct bwpos_t * hits;
-};
-
-struct arg_t {
-   char             * query;
-   int                tau;
-   int                trail;
-   int                qlen;
-   struct index_t   * index;
-   struct pstack_t ** pebbles;
-   struct pstack_t ** hits;
-};
 
 struct sortargs_t {
    void * buf0;
@@ -120,6 +103,8 @@ struct sortargs_t {
 
 // Function headers.
 
+// Map score.
+int           map_score        (matchlist_t *, double *);
 // Sorting algorithms.
 int           mergesort_mt     (void * data, int numels, size_t elmsize, int param, int thrmax, int (*compar)(const void*, const void*, const int));
 void        * _mergesort       (void * args);
@@ -127,20 +112,26 @@ void          radix_sort       (long * a, long * b, long n, long maxval);
 
 // General algorithms.
 long          bisect_search    (long start, long end, long* set, long value);
+double        binom            (int l, int k);
 
 // Stack functions.
 vstack_t    * new_stack        (long size);
 int           push             (vstack_t ** stackp, long value);
 int           pushvec          (vstack_t ** stackp, long * vector, int vecsize);
-pstack_t    * new_pstack       (long size);
-int           ppush            (pstack_t ** stackp, pebble_t pebble);
 seqstack_t  * new_seqstack     (int size);
 int           seq_push         (seqstack_t ** stackp, const char* tag, const char* seq, const char* q);
 
-// Trie functions.
-trie_t      * trie_new         (int initial_size);
-int           trie_getrow      (trie_t * trie, uint nodeid, int refval, int* wingsz, uint *nwrow);
-uint          trie_insert      (trie_t ** triep, char * path, int pathlen);
-void          trie_reset       (trie_t * trie);
+// 2-bit Hash table.
+htable_t    * htable_new       (uint8_t);
+int           htable_get       (htable_t *, uint64_t);
+int           htable_set       (htable_t *, uint64_t, uint8_t);
+
+// Matchlist functions.
+matchlist_t   * matchlist_new    (int elements);
+int             matchlist_add    (matchlist_t ** listp, match_t match);
+
+// Intervals.
+int             mem_intervals  (matchlist_t *, size_t, int, vstack_t **);
+
 
 #endif

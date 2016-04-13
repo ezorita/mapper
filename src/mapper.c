@@ -1,828 +1,606 @@
 #include "mapper.h"
-
+#include <assert.h>
 #include <time.h>
 
 int main(int argc, char *argv[])
 {
    int opt_verbose = 1;
+   size_t seqs_per_thread = 10000;
 
-   if (argc != 3) {
-      fprintf(stderr, "usage: bwmapper <query file> <genome index>\n");
-      exit(EXIT_FAILURE);
+   // Without params, print help.
+   if (argc == 1) {
+      say_map_usage();
+      return EXIT_SUCCESS;
    }
 
+   if (strcmp(argv[1],"index") == 0) {
+      // Without params, print help.    
+      if (argc == 2) {
+         say_index_usage();
+         return EXIT_SUCCESS;
+      } else if (strcmp(argv[2], "add") == 0) {
+         if (argc == 3) {
+            say_add_usage();
+            return EXIT_SUCCESS;
+         }
+         // Parse params.
+         char * index_file;
+         opt_add_t opt;
+         int rval;
+         if ((rval = parse_opt_add(argc, argv, &opt, &index_file))) {
+            return (rval == -1 ? EXIT_FAILURE : EXIT_SUCCESS);
+         }
+         // Load index.
+         index_t * index = index_load_base(index_file);
+         if (index == NULL)
+            return EXIT_FAILURE;
+         // Compute annotation.
+         return index_add_annotation(opt.k, opt.d, opt.sd, opt.repeat_thr, opt.mode,
+                                     opt.threads, index, index_file);
+      } else if (strcmp(argv[2], "build") == 0) {
+         if (argc == 3) {
+            say_build_usage();
+            return EXIT_SUCCESS;
+         }
+         // Parse params.
+         char * genome_file;
+         opt_add_t opt;
+         int rval;
+         if ((rval = parse_opt_build(argc, argv, &opt, &genome_file))) {
+            return (rval == -1 ? EXIT_FAILURE : EXIT_SUCCESS);
+         }
+
+         return write_index(genome_file, opt.k, opt.d, opt.repeat_thr, opt.threads);
+      }
+   }
+
+   // DEFAULT Options.
+   seedopt_t seedopt = { // MEM
+      .min_len = 19,
+      .max_len = 1000,
+      .min_loci = 0,
+      .max_loci = 50,
+      .thr_loci = 20,
+      .reseed_len = 28,
+      .sensitive_mem = 0
+   };
+   filteropt_t filteropt = {
+      .dist_accept = 10,
+      .max_align_per_read = 200,
+      .read_ref_ratio = 0.05,
+      .align_accept_eexp = -100.0,
+      .overlap_max_tolerance = 0.5,
+      .align_seed_filter_thr = 0.5,
+      .align_seed_filter_dif = 19,//38,
+//      .align_filter_ident = 0.85,
+      .align_filter_ident = 0.0,
+      .align_filter_eexp = 0.0,
+      .mapq_evalue_ratio = 0.5,
+      .min_best_to_second = 0.75,
+      .min_interval_size = 25,
+      .min_interval_score = 30,
+      .min_interval_hits = 30
+   };
+   alignopt_t alignopt = {
+      .bp_diagonal      = 1,
+      .bp_thr           = 10,
+      .bp_max_thr       = 50,
+      .bp_resolution    = 1,
+      .bp_period        = 5,
+      .bp_repeats       = 2,
+      .read_error       = 0.02,
+      .rand_error       = 0.50,
+      .width_ratio      = 0.05,
+      .mismatch_penalty = 4
+   };
+
+   // Precompute logarithms.
+   alignopt.logAe = log(alignopt.rand_error) - log(alignopt.read_error);
+   alignopt.logBe = log(1-alignopt.rand_error) - log(1-alignopt.read_error);
+
+   formatopt_t formatopt = {
+      .print_first = 2, // 2 for first_only
+      .mapq_thr = 0,
+      .eval_thr = 0
+   };
+   param_map_t mapopt = {
+      .seed = seedopt,
+      .align = alignopt,
+      .filter = filteropt,
+      .format = formatopt,
+      .threads = 1
+   };
+
+   // Parse input parameters.
+   if (argc == 1) {
+      say_map_usage();
+      exit(EXIT_SUCCESS);
+   }
+   opt_map_t in_params = {0,0,0,0};
+   char * qfile, *ifile;
+   parse_opt_map(argc, argv, &in_params, &qfile, &ifile);
+   if (in_params.threads) mapopt.threads = in_params.threads;
+   
+
    // Parse query filename.
-   FILE * queryfile = fopen(argv[1], "r");
+   FILE * queryfile = fopen(qfile, "r");
    if (queryfile == NULL) {
       fprintf(stderr, "error: could not open file: %s (%s).\n", argv[1],strerror(errno));
       return EXIT_FAILURE;
    }
 
-   // Read FM index format.
+   // Read index.
    if (opt_verbose) fprintf(stderr, "loading index...\n");
-   index_t * index = index_format(index_open(argv[2]));
-   if(index == NULL) return EXIT_FAILURE;
+   index_t * index = index_load_base(ifile);
+   if (index == NULL)
+      return EXIT_FAILURE;
+
+   // Read annotations and seed tables.
+   annlist_t * ann = ann_index_read(ifile);
+   if (ann == NULL)
+      return EXIT_FAILURE;
+   if (ann->count == 0) {
+      fprintf(stderr, "[error] no annotations found.\n");
+      return EXIT_FAILURE;
+   }
+   if (ann_index_load(ann, ifile))
+      return EXIT_FAILURE;
+   ann_print_index(ann);
+
+   shtlist_t * sht = sht_index_read(ifile);
+   if (sht == NULL)
+      return EXIT_FAILURE;
+   if (sht->count == 0) {
+      fprintf(stderr, "[error] no seed tables found.\n");
+      return EXIT_FAILURE;
+   }
+   if (sht_index_load(sht, ifile))
+      return EXIT_FAILURE;
+   sht_print_index(sht);
+
+   index->ann = ann;
+   index->sht = sht;
 
    // Read file.
    if (opt_verbose) fprintf(stderr, "reading query file...\n");
-   seqstack_t * seqs = read_file(queryfile); // TODO: set reverse and verbose options.
+   seqstack_t * seqs = read_file(queryfile);
    if (seqs == NULL) {
       return EXIT_FAILURE;
    }
+   fclose(queryfile);
 
-   // Options.
-   seedopt_t seedopt = {.min_len = 1, .max_len = 1000, .min_loci = 1, .max_loci = 100, .aux_loci = 500}; // SMEM
-   alignopt_t alignopt = {
-      .bp_diagonal  = 1,
-      .bp_thr       = 10,
-      .bp_max_thr   = 50,
-      .bp_resolution = 1,
-      .bp_period    = 5,
-      .bp_repeats   = 2,
-      .read_error   = 0.02,
-      .rand_error   = 0.50,
-      .width_ratio  = 0.05
-   };
-   mapopt_t mapopt = {
-      .dist_accept = 10,
-      .max_align_per_read = 200,
-      .read_ref_ratio = 1.05,
-      .align_accept_eexp = -100.0,
-      .overlap_max_tolerance = 0.5,
-      .align_seed_filter_thr = 0.0,
-      .align_filter_ident = 0.9,
-      .align_filter_eexp = 0.0,
-      .align = alignopt,
-      .seed = seedopt
-   };
+   // Run thread scheduler.
+   mt_scheduler(seqs, &mapopt, index, mapopt.threads, seqs_per_thread);
 
-   int dist_accept = 10;
-   // Data structures.
-   matchlist_t * seed_matches = matchlist_new(mapopt.max_align_per_read);
-   matchlist_t * map_matches = matchlist_new(64);
-   fprintf(stderr, "mapping...");
-   clock_t t = clock();   
+   // Free memory.
+   free(seqs);
+   free(index);
+
+   return EXIT_SUCCESS;
+}
+
+int
+mt_scheduler
+(
+ seqstack_t * seqs,
+ param_map_t* options,
+ index_t    * index,
+ int          threads,
+ size_t       thread_seq_count
+)
+{
+   // Create control struct.
+   mtcontrol_t * control = malloc(sizeof(mtcontrol_t));
+   control->mapped = 0;
+   control->active = 0;
+
+   // Create mutex and monitor.
+   pthread_mutex_t * mutex = malloc(sizeof(pthread_mutex_t));
+   pthread_mutex_init(mutex,NULL);
+   pthread_cond_t  * monitor = malloc(sizeof(pthread_cond_t));
+   pthread_cond_init(monitor,NULL);
+
    // Process reads.
-   for (size_t i = 0; i < seqs->pos; i++) {
+   clock_t t = clock();
 
-      //      fprintf(stderr, "%ld/%ld\r",i, seqs->pos);
-      // Seed.
-      seedstack_t * seeds = seed(seqs->seq[i].seq, mapopt.seed, index);
-      // Match seeds.
-      int slen = strlen(seqs->seq[i].seq);
-      seed_matches->pos = 0;
-      match_seeds(seeds, slen, seed_matches, index, dist_accept, mapopt.read_ref_ratio);
-      // Smith-Waterman alignment.
-      map_matches->pos = 0;
-      align_seeds(seqs->seq[i].seq, seed_matches, &map_matches, index, mapopt);
-      // Merge intervals.
-      int32_t n_ints;
-      matchlist_t ** intervals = merge_intervals(map_matches, 0.8, &n_ints);
-      // Print matches.
-      for (int32_t k = 0; k < n_ints; k++) {
-         int itv = (k+1)%n_ints;
-         matchlist_t * matches = intervals[itv];
-         for (size_t j = 0; j < matches->pos; j++) {
-            match_t match = matches->match[j];
-            int dir;
-            uint64_t g_start, g_end;
-            if (match.ref_s >= index->size/2) {
-               g_start = index->size - match.ref_e - 2;
-               g_end   = index->size - match.ref_s - 2;
-               dir = 1;
-            } else {
-               g_start = match.ref_s + 1;
-               g_end   = match.ref_e + 1;
-               dir = 0;
-            }
+   // Lock mutex.
+   for (size_t i = 0; i < seqs->pos; i += thread_seq_count) {
+      pthread_mutex_lock(mutex);
+      // Verbose.
+      if(i%1000 == 0) fprintf(stderr, "progress: %.2f%%\r",i*100.0/seqs->pos);
+      // Alloc job (will be freed by thread).
+      mtjob_t * job = malloc(sizeof(mtjob_t));
+      // Set job.
+      job->count   = min(seqs->pos-i,thread_seq_count);
+      job->seq     = seqs->seq + i;
+      job->index   = index;
+      job->opt     = options;
+      job->mutex   = mutex;
+      job->monitor = monitor;
+      job->control = control;
+      // Increase thread count.
+      control->active += 1;
+      // Create thread.
 
-            int   chrnum = bisect_search(0, index->chr->nchr-1, index->chr->start, g_start+1)-1;
-            // Print results.
-            fprintf(stdout, "%s \t%d\t%d\t%d\t%s:%ld-%ld:%c\t%.2f\t%.1f%%\t%c%c\n",
-                    seqs->seq[i].tag, itv,
-                    match.read_s+1, match.read_e+1,
-                    index->chr->name[chrnum],
-                    g_start - index->chr->start[chrnum]+1,
-                    g_end - index->chr->start[chrnum]+1,
-                    dir ? '-' : '+',
-                    match.e_exp,
-                    match.ident*100.0,
-                    (match.flags & WARNING_OVERLAP ? 'o' : '-'),
-                    (match.flags & FLAG_FUSED ? 'f' : '-'));
-         }
-         free(matches);
+      pthread_t thread;
+      if (pthread_create(&thread, NULL, mt_worker, job)) {
+         fprintf(stderr, "error 'pthread_create'\n");
+         return 1;
       }
-      fprintf(stdout, "\n");
-      //fprintf(stdout, "%.4f\t%ld\t%ld\t%ld\n", (clock()-t)*1000000.0/CLOCKS_PER_SEC,seeds->pos, seed_matches->pos, map_matches->pos);
-      free(seeds);
-      free(intervals);
-   }
-   fprintf(stderr, "%.3fs\n",(clock()-t)*1.0/CLOCKS_PER_SEC);
-
-   return 0;
-}
-
-matchlist_t **
-merge_intervals
-(
- matchlist_t * matches,
- double        overlap_ratio,
- int32_t     * nintervals
-)
-{
-   // Sort candidate matches by size.
-   mergesort_mt(matches->match, matches->pos, sizeof(match_t), 0, 1, compar_matcheexp);
-
-   // Allocate interval list.
-   int32_t n = 0;
-   matchlist_t ** intervals = malloc((matches->pos+1)*sizeof(matchlist_t *));
-
-   // Interval 0 is for overlapping matches.
-   intervals[n++] = matchlist_new(matches->pos);
-
-   // Compute intervals.
-   for (int i = 0; i < matches->pos; i++) {
-      match_t match = matches->match[i];
-      int new = 1, total_overlap = 0;
-      for (int j = 1; j < n; j++) {
-         // Compare with the heads of other intervals.
-         match_t ref = intervals[j]->match[0];
-         // Continue if there is no overlap.
-         if (ref.read_e <= match.read_s || match.read_e <= ref.read_s) continue;
-         // Match is contained in ref.
-         else if (ref.read_s <= match.read_s && match.read_e <= ref.read_e) {
-            new = 0;
-            matchlist_add(intervals+j, match);
-            matches->match[i].interval = j;
-            break;
-         }
-         // Match is partially contained in ref.
-         else {
-            int overlap = map_min(match.read_e - ref.read_s, ref.read_e - match.read_s);
-            int    span = map_min(match.read_e - match.read_s, ref.read_e - ref.read_s);
-            if (overlap*1.0/span >= overlap_ratio) {
-               new = 0;
-               matchlist_add(intervals+j, match);
-               matches->match[i].interval = j;
-               break;
-            }
-            total_overlap += overlap;
-         }
+      // Deatch thread.
+      pthread_detach(thread);
+      // Sleep.
+      while (control->active >= threads) {
+         pthread_cond_wait(monitor, mutex);
       }
-      if (new) {
-         if (total_overlap*1.0/(match.read_e - match.read_s) > (1 - overlap_ratio)) {
-            // Overlapped interval.
-            matchlist_add(intervals, match);
-            matches->match[i].interval = 0;
-         } else {
-            // New interval.
-            intervals[n] = matchlist_new(matches->pos-i);
-            matchlist_add(intervals + n, match);
-            matches->match[i].interval = n;
-            n++;
-         }
-      }
+      pthread_mutex_unlock(mutex);
    }
 
-   *nintervals = n;
-   // Sort intervals by start position.
-   mergesort_mt(intervals+1, n-1, sizeof(matchlist_t *), 0, 1, compar_intvstart);
-
-   return intervals;
-}
-
-double
-e_value
-(
- int L,
- int m,
- long gsize
-)
-{
-   double E = log10(gsize) + log10(2) * L * (m*3.0/L-2);
-   for (int i = 0; i < m; i++) E += log10((L-i)/(double)(m-i));
-   return E;
-}
-
-int
-align_simple
-(
- char         * read,
- matchlist_t  * seeds,
- matchlist_t ** seqmatches,
- index_t      * index,
- mapopt_t       opt
-)
-{
-   if (seeds->pos == 0) return 0;
-   for (size_t i = 0; i < seeds->pos; i++) {
-      match_t seed = seeds->match[i];
-      // Find the start point (center of seed).
-      uint64_t r_start = (seed.read_s + seed.read_e)/2;
-      uint64_t g_start = (seed.ref_s + seed.ref_e)/2;
-      // Extend right.
-      int alen = strlen(read) - r_start;
-      path_t align_r = dbf_align_bp(alen, read+r_start, alen, index->genome+g_start, 0, ALIGN_FORWARD, ALIGN_FORWARD, opt.align);
-      uint64_t read_e = r_start + align_r.row;
-      uint64_t ref_e = g_start + align_r.col;
-      // Extend left.
-      r_start--; g_start--;      
-      alen = r_start;
-      path_t align_l = dbf_align_bp(alen, read+r_start, alen, index->genome+g_start, 0, ALIGN_BACKWARD, ALIGN_BACKWARD, opt.align);
-      uint64_t read_s = r_start - align_r.row;
-      uint64_t ref_s = g_start - align_r.col;
-
-      long score = align_l.score + align_r.score;
-      double ident = 1.0 - (score*1.0)/(align_max(read_e-read_s+1,ref_e-ref_s+1));
-
-      match_t hit;
-      hit.repeats = matchlist_new(REPEATS_SIZE);
-      hit.flags  = 0;
-      hit.hits   = seed.hits;
-      // Fill/Update hit.
-      hit.score  = score;
-      hit.ident  = ident;
-      hit.ref_e  = ref_e;
-      hit.ref_s  = ref_s;
-      hit.read_e = read_e;
-      hit.read_s = read_s;
-      hit.interval = 0;
-      hit.e_exp  = e_value(ref_e - ref_s + 1, align_l.score + align_r.score, index->size);
-
-      // Add to significant matchlist.
-      matchlist_add(seqmatches, hit);
+   // Wait for remaining threads.
+   pthread_mutex_lock(mutex);
+   while (control->active > 0) {
+      pthread_cond_wait(monitor, mutex);
    }
+   pthread_mutex_unlock(mutex);
 
-   return 0;
-}
+   // Verbose.
+   fprintf(stderr, "progress: 100%% (%.2f%% mapped) in %.3fs\n",control->mapped*100.0/seqs->pos,(clock()-t)*1.0/CLOCKS_PER_SEC);   
 
-int
-align_seeds
-(
- char         * read,
- matchlist_t  * seeds,
- matchlist_t ** seqmatches,
- index_t      * index,
- mapopt_t       hmargs
-)
-{
-   if (seeds->pos == 0) return 0;
-   int significant = 0;
-   int slen = strlen(read);
-   matchlist_t * matches = *seqmatches;
-
-   // Sort by seeded nucleotides.
-   mergesort_mt(seeds->match, seeds->pos, sizeof(match_t), 0, 1, compar_seedhits);
-
-   for(long k = 0; k < seeds->pos; k++) {
-      // Get next seed.
-      match_t seed = seeds->match[k];
-
-      // Compute alignment limits.
-      long r_min  = seed.read_e - seed.read_s + 1;
-      long l_min  = 0;
-      long r_qstart = seed.read_s + 1;
-      long l_qstart = align_max(r_qstart - 1,0);
-      long r_rstart = seed.ref_s + 1;
-      long l_rstart = seed.ref_s;
-     
-      // Extend existing mapping.
-      double last_eexp = INFINITY;
-      int extend = 0;
-      int extend_score = 0;
-      int cancel_align = 0;
-      for (int i = 0; i < matches->pos; i++) {
-         match_t match = matches->match[i];
-         if (match.e_exp > last_eexp) continue;
-         // Check whether the seed is contiguous.
-         long r_distr = seed.read_e - match.read_e;
-         long g_distr = match.ref_e - seed.ref_e;
-         long r_distl = match.read_s - seed.read_s;
-         long g_distl = seed.ref_s - match.ref_s;
-         long d_accept = hmargs.dist_accept;
-         double rg_ratio = hmargs.read_ref_ratio;
-         int ext_r = g_distr > -d_accept && r_distr > -d_accept && ((g_distr < (r_distr * rg_ratio)) || (g_distr < d_accept && r_distr < d_accept));
-         int ext_l = g_distl > -d_accept && r_distl > -d_accept && ((g_distl < (r_distl * rg_ratio)) || (g_distl < d_accept && r_distl < d_accept));
-         if (ext_r || ext_l) {
-            r_min  = (ext_r ? r_distr : 0);
-            l_min  = (ext_l ? r_distl : 0);
-            r_qstart = match.read_e + 1;
-            r_rstart = match.ref_e + 1;
-            l_qstart = match.read_s - 1;
-            l_rstart = match.ref_s - 1;
-            last_eexp = match.e_exp;
-            extend = i;
-            extend_score = match.score;
-         } else if (match.e_exp < hmargs.align_accept_eexp) {
-            // Check overlap
-            int span = align_min(seed.read_e - seed.read_s, match.read_e - match.read_s);
-            int overlap = align_max(0, align_min(seed.read_e, match.read_e) - align_max(seed.read_s, match.read_s));
-            overlap = overlap > span*hmargs.overlap_max_tolerance;
-            int seed_ratio = seed.hits < match.hits*hmargs.align_seed_filter_thr;
-            // If overlap is higher than the maximum overlap tolerance, cancel the alignment.
-            if (overlap && seed_ratio) {
-               cancel_align = 1;
-               break;
-            }
-         } else {
-            if (r_distr < 0) {r_distr = -r_distr; g_distr = -g_distr;}
-            if (r_distl < 0) {r_distl = -r_distl; g_distl = -g_distl;}
-            int same_align = (g_distr > -d_accept && (g_distr < (r_distr*rg_ratio) || g_distr < d_accept)) || (g_distl > -d_accept && (g_distl < (r_distl*rg_ratio) || g_distl < d_accept));
-            if (same_align) {
-               cancel_align = 1;
-               break;
-            }
-         }
-      }
-      long r_qlen = slen - r_qstart;
-      long l_qlen = l_qstart + 1;
-      if (cancel_align || (!r_qlen && !l_qlen)) continue;
-      long r_rlen = align_min((long)(r_qlen * (1 + hmargs.align.width_ratio)), index->size - r_rstart);
-      long l_rlen = align_min((long)(l_qlen * (1 + hmargs.align.width_ratio)), r_qstart);
-      char * r_qry = read + r_qstart;
-      char * l_qry = read + l_qstart;
-      char * r_ref = index->genome + r_rstart;
-      char * l_ref = index->genome + l_rstart;
-      
-      // Align forward and backward starting from (read_s, ref_s).
-      long read_s, read_e, ref_s, ref_e;
-      path_t align_r = (path_t){0,0,0}, align_l = (path_t){0,0,0};
-      // Forward alignment (right).
-      if(r_qlen) {
-         align_r = dbf_align_bp(r_qlen, r_qry, r_rlen, r_ref, r_min, ALIGN_FORWARD, ALIGN_FORWARD, hmargs.align);
-         read_e = r_qstart + align_r.row;
-         ref_e = r_rstart + align_r.col;
-      }
-      else {
-         read_e = r_qstart - 1;
-         ref_e  = r_rstart - 1;
-      }
-      // Backward alignment (left).
-      if(l_qlen) {
-         align_l = dbf_align_bp(l_qlen, l_qry, l_rlen, l_ref, l_min, ALIGN_BACKWARD, ALIGN_BACKWARD, hmargs.align);
-         read_s =  l_qstart - align_l.row;
-         ref_s = l_rstart - align_l.col;
-      }
-      else {
-         read_s = l_qstart + 1;
-         ref_s  = l_rstart + 1;
-      }
-      
-      // Compute significance.
-      long score = extend_score + align_l.score + align_r.score;
-      double ident = 1.0 - (score*1.0)/(align_max(read_e-read_s+1,ref_e-ref_s+1));
-      double e_exp = INFINITY;
-      if (ident > hmargs.align_filter_ident) 
-         e_exp = e_value(ref_e - ref_s + 1, extend_score + align_l.score + align_r.score, index->size);
-
-      // If significant, store.
-      if (e_exp < hmargs.align_filter_eexp) {
-         match_t hit;
-         if (extend) {
-            hit = matches->match[extend];
-            hit.hits += seed.hits;
-         }
-         else {
-            hit.repeats = matchlist_new(REPEATS_SIZE);
-            hit.flags  = 0;
-            hit.hits   = seed.hits;
-         }
-
-         // Fill/Update hit.
-         hit.score  = score;
-         hit.ident  = ident;
-         hit.ref_e  = ref_e;
-         hit.ref_s  = ref_s;
-         hit.read_e = read_e;
-         hit.read_s = read_s;
-         hit.e_exp  = e_exp;
-
-         // Add to significant matchlist.
-         significant = 1;
-         if (extend) {
-            matches->match[extend] = hit;
-         } else {
-            matchlist_add(seqmatches, hit);
-            matches = *seqmatches;
-         }
-      }
-   }
-
-   return significant;
-}
-
-matchlist_t *
-matchlist_new
-(
- int elements
-)
-{
-   if (elements < 1) elements = 1;
-   matchlist_t * list = malloc(sizeof(matchlist_t) + elements*sizeof(match_t));
-   if (list == NULL) return NULL;
-   list->pos  = 0;
-   list->size = elements;
-   return list;
-}
-
-int
-matchlist_add
-(
- matchlist_t ** listp,
- match_t        match
-)
-{
-   matchlist_t * list = *listp;
-
-   // Check whether stack is full.
-   if (list->pos >= list->size) {
-      int newsize = list->size * 2;
-      *listp = list = realloc(list, sizeof(matchlist_t) + newsize * sizeof(match_t));
-      if (list == NULL) return -1;
-      list->size = newsize;
-   }
-
-   // Add new match to the stack.
-   list->match[list->pos++] = match;
-
+   // Free structs.
+   free(control);
+   free(mutex);
+   free(monitor);
    return 0;
 }
 
 
-hit_t *
-compute_hits
+void *
+mt_worker
 (
- seedstack_t * seeds,
- index_t     * index,
- uint64_t    * hit_cnt
+ void * args
 )
 {
-   // Count loci.
-   uint64_t cnt = 0;
-   for (size_t i = 0; i < seeds->pos; i++) cnt += seeds->seed[i].ref_pos.ep - seeds->seed[i].ref_pos.sp + 1;
-   *hit_cnt = cnt;
+   mtjob_t * job = (mtjob_t *) args;
+   // Get params.
+   seq_t       * seq   = job->seq;
+   param_map_t * opt   = job->opt;
+   index_t     * index = job->index;
 
-   // Find loci in Suffix Array.
-   hit_t * hits = malloc(cnt * sizeof(hit_t));
-   size_t l = 0;
-   for (size_t i = 0; i < seeds->pos; i++) {
-      seed_t seed = seeds->seed[i];
-      for (size_t j = seed.ref_pos.sp; j <= seed.ref_pos.ep; j++) {
-         hits[l++] = (hit_t) {.locus = get_sa(j,index->sa,index->sa_bits), .qrypos = seed.qry_pos, .depth = seed.ref_pos.depth, .bulk = seed.bulk};
-      }
-   }
+   // Alloc data structures.
+   matchlist_t * map_matches = matchlist_new(64);
+   seedstack_t * seeds    = seedstack_new(SEEDSTACK_SIZE);
+   seedstack_t * reseeds  = seedstack_new(SEEDSTACK_SIZE);
+   seedstack_t * mems     = seedstack_new(SEEDSTACK_SIZE);
+   vstack_t    * mem_intv = new_stack(SEEDSTACK_SIZE);
+   pathstack_t * pstack   = pathstack_new(PATHSTACK_DEF_SIZE);
+   int k = index->sht->sht[0].k;
+   int d = index->sht->sht[0].d;
+   int r = index->sht->sht[0].repeat_thr;
+   int max_align = 20;
+
+   // Precompute log table.
+   int cumlog_max = 0;
+   double * cumlog = malloc(sizeof(double));
+   *cumlog = 0;
    
-   return hits;
-}
 
-int
-match_seeds
-(
- seedstack_t * seeds,
- int           seqlen,
- matchlist_t * matchlist,
- index_t     * index,
- int           dist_accept,
- double        read_ref_ratio
-)
-{
-   if (matchlist->size < 1) return -1;
+   size_t mapped = 0;
+   
+   for (size_t i = 0; i < job->count; i++) {
+      if (VERBOSE_DEBUG) fprintf(stdout, "%s\t%s\n", seq[i].tag, seq[i].seq);
 
-   // Convert seeds to hits.
-   uint64_t hit_count;
-   hit_t * hits = compute_hits(seeds, index, &hit_count);
+      // Read length and alloc memory.
+      size_t slen = strlen(seq[i].seq);
+      uint8_t * query = malloc(slen);
+      uint8_t * value = malloc(slen);
+      for (int n = 0; n < slen; n++) value[n] = 255;
 
-   // Merge-sort hits.
-   mergesort_mt(hits, hit_count, sizeof(hit_t), 0, 1, compar_hit_locus);
-
-   // Reset matchlist.
-   matchlist->pos = 0;
-
-   // Aux variables.
-   long minv = 0;
-   int  min  = 0;
-   size_t i = 0;
-
-   while (i < hit_count) {
-      // Match start.
-      int64_t span   = hits[i].depth;
-      int64_t lstart = hits[i].locus;
-      int64_t lend   = lstart + span;
-      int64_t rstart = hits[i].qrypos;
-      int64_t rend   = rstart + span;
-      int     bulk   = hits[i].bulk;
-      i++;
-      // Extend match.
-      while (i < hit_count) {
-         // Compare genome and read distances.
-         int64_t g_dist = (int64_t)hits[i].locus - (int64_t)hits[i-1].locus;
-         int64_t r_dist = (int64_t)hits[i].qrypos - (int64_t)hits[i-1].qrypos;
-         if (r_dist > 0 && (g_dist < (read_ref_ratio * r_dist) || (g_dist < dist_accept && r_dist < dist_accept))) {
-            span += hits[i].depth - (lend - (int64_t)hits[i].locus > 0 ? lend - (int64_t)hits[i].locus : 0);
-            lend = hits[i].locus + hits[i].depth;
-            rend = hits[i].qrypos + hits[i].depth;
-            bulk *= hits[i].bulk;
-            i++;
-         } else break;
+      // Extend cumlog table.
+      if (slen > cumlog_max) {
+         cumlog = realloc(cumlog, (slen+1)*sizeof(double));
+         for (int c = cumlog_max+1; c <= slen; c++)
+            cumlog[c] = cumlog[c-1] + log10(c);
+         cumlog_max = slen;
       }
-      // Store match.
-      // Non-significant streaks (bulk) will not be saved.
-      if (span > minv && bulk == 0) {
-         // Allocate match.
-         match_t match;
-         match.ref_e  = lend;
-         match.read_e = rend;
-         match.ref_s  = lstart;
-         match.read_s = rstart;
-         match.hits   = span;
-         match.flags  = 0;
-         match.score  = -1;
 
-         // Append if list not yet full, replace the minimum value otherwise.
-         if (matchlist->pos < matchlist->size) {
-            matchlist->match[matchlist->pos++] = match;
+      // Translate query.
+      for (int j = 0; j < slen; j++) query[j] = translate[(int)seq[i].seq[j]];
+      // Reset matches.
+      map_matches->pos = 0;
+
+      /**
+      *** UNIQUE SEEDS
+      **/
+
+      int beg = 0;
+      while (1) {
+         // Do not seed intervals.
+         if (map_matches->pos) {
+            for (int j = 0; j < map_matches->pos; j++) {
+               match_t m = map_matches->match[j];
+               if (beg > m.read_e) continue;
+               if (beg < m.read_s) break;
+               beg = m.read_e + 1;
+               break;
+            }
          }
-         else {
-            matchlist->match[min] = match;
+         // Find first unique seed.
+         hit_t hit = find_uniq_seed(beg,slen,query,value,index);
+         if (hit.errors) {
+            // No seed found.
+            break;
+         } else {
+            align_hits(seq[i].seq, &hit, 1, &map_matches, index, opt->filter, opt->align);
          }
-               
-         // Find the minimum that will be substituted next.
-         if (matchlist->pos == matchlist->size) {
-            minv = matchlist->match[0].hits;
-            for (int j = 1 ; j < matchlist->pos; j++) {
-               if (minv > matchlist->match[j].hits) {
-                  min  = j;
-                  minv = matchlist->match[j].hits;
+         beg = hit.qrypos + 1;
+      }
+
+      // DEBUG.
+      if (VERBOSE_DEBUG) {
+         fprintf(stdout, "** path 1 **\n");
+         for (int k = 0; k < map_matches->pos; k++) {
+            match_t m = map_matches->match[k];
+            fprintf(stdout, "match[%d]: read_s:%d, read_e:%d, ref_s:%ld, hits:%d, s_hits:%d (%d), ann:%d\n", k, m.read_s, m.read_e, m.ref_s, m.hits, m.s_hits, m.s_hits_cnt, m.ann_d);
+         }
+      }
+
+      if (map_matches->pos) goto map_end;
+
+      /**
+      *** MEM SEEDING
+      **/
+      mem_intv->pos = 0;
+      mem_intervals(map_matches, slen, opt->filter.min_interval_size, &mem_intv);
+      seeds->pos = 0;
+      for (int s = 0; s < mem_intv->pos; s += 2) {
+         int beg = mem_intv->val[s];
+         int end = mem_intv->val[s+1];
+         mems->pos = 0;
+         /*
+         seed_mem(query, beg, end, index, &seeds);
+         get_smem(&mems, seeds);
+         */
+         seed_mem(query, beg, end, index, &mems);
+         // SMEM and SMEM reseeding.
+         // TODO:
+         // - Add repeat control and threshold number of alingments per seed.
+         if (VERBOSE_DEBUG) fprintf(stdout, "SMEMS:\n");
+         seeds->pos = 0;
+         for (int j = 0; j < mems->pos; j++) {
+            seed_t s = mems->seed[j];
+            if (VERBOSE_DEBUG) fprintf(stdout, "beg: %d, end: %d, loci: %ld\n", s.qry_pos, s.qry_pos + s.ref_pos.depth, s.ref_pos.ep - s.ref_pos.sp + 1);
+            if (s.ref_pos.depth < opt->seed.min_len) continue;
+            // Simple thresholding. Will do this only on super-repeated seeds,
+            // because the seed content will be used to chain in MEM mode...
+            if (s.ref_pos.ep - s.ref_pos.sp > opt->seed.max_loci) {
+               s.ref_pos.ep = s.ref_pos.sp + opt->seed.max_loci - 1;
+               seedstack_push(s, &seeds);
+               continue;
+            }
+            seedstack_push(s, &seeds);
+            if (s.ref_pos.depth >= opt->seed.reseed_len) {
+               reseeds->pos = 0;
+               reseed_mem(query, s, slen, opt->seed.min_len, index, &reseeds);
+               for (int k = 0; k < reseeds->pos; k++) {
+                     seed_t s = reseeds->seed[k];
+                     if (VERBOSE_DEBUG) fprintf(stdout, "'-> beg: %d, end: %d, loci: %ld\n", s.qry_pos, s.qry_pos + s.ref_pos.depth, s.ref_pos.ep - s.ref_pos.sp + 1);
+                     if (s.ref_pos.ep - s.ref_pos.sp > opt->seed.max_loci)
+                        s.ref_pos.ep = s.ref_pos.sp + opt->seed.max_loci - 1;
+                     seedstack_push(s, &seeds);
                }
             }
          }
+         
+        int nsd = seeds->pos;
+
+         // Threshold seeding.
+         seed_interv(query, beg, end, opt->seed.min_len+1, opt->seed.thr_loci, index, &seeds);
+         if (VERBOSE_DEBUG) {
+            fprintf(stdout, "LAST:\n");
+            for (int j = nsd; j < seeds->pos; j++) {
+               seed_t s = seeds->seed[j];
+               fprintf(stdout, "beg: %d, end: %d, loci: %ld\n", s.qry_pos, s.qry_pos + s.ref_pos.depth, s.ref_pos.ep - s.ref_pos.sp + 1);
+            }
+         }
+
       }
-   }
-   return 0;
-}
 
-int
-compar_hit_locus
-(
- const void * a,
- const void * b,
- const int param
-)
-{
-   hit_t * ha = (hit_t *)a;
-   hit_t * hb = (hit_t *)b;
-   if (ha->locus > hb->locus) return 1;
-   else if (ha->locus < hb->locus) return -1;
-   else return (ha->qrypos > hb->qrypos ? 1 : -1);
-}
-
-idxfiles_t *
-index_open
-(
- char * file
-)
-{
-   // Alloc index struct.
-   idxfiles_t * files = malloc(sizeof(idxfiles_t));
-   
-   // Read chromosome index.
-   char * chr_file = malloc(strlen(file)+5);
-   strcpy(chr_file, file);
-   strcpy(chr_file+strlen(file), ".chr");
-   files->chr = read_CHRindex(chr_file);
-   if (files->chr == NULL) {
-      fprintf(stderr, "error opening '%s': %s\n", chr_file, strerror(errno));      
-      return NULL;
-   }
-   free(chr_file);
-
-   // Open OCC file.
-   char * occ_file = malloc(strlen(file)+5);
-   strcpy(occ_file, file);
-   strcpy(occ_file+strlen(file), ".occ");
-   int fd_occ = open(occ_file, O_RDONLY);
-   if (fd_occ == -1) {
-      fprintf(stderr, "error opening '%s': %s\n", occ_file, strerror(errno));
-      return NULL;
-   }
-   free(occ_file);
-
-   // Open SA file.
-   char * sa_file = malloc(strlen(file)+5);
-   strcpy(sa_file, file);
-   strcpy(sa_file+strlen(file), ".sar");
-   int fd_sa = open(sa_file, O_RDONLY);
-   if (fd_sa == -1) {
-      fprintf(stderr, "error opening '%s': %s\n", sa_file, strerror(errno));
-      return NULL;
-   }
-   free(sa_file);
-
-   // Open GEN file.
-   char * gen_file = malloc(strlen(file)+5);
-   strcpy(gen_file, file);
-   strcpy(gen_file+strlen(file), ".gen");
-   int fd_gen = open(gen_file, O_RDONLY);
-   if (fd_gen == -1) {
-      fprintf(stderr, "error opening '%s': %s\n", gen_file, strerror(errno));
-      return NULL;
-   }
-   free(gen_file);
-
-   // Open LCP file.
-   char * lcp_file = malloc(strlen(file)+5);
-   strcpy(lcp_file, file);
-   strcpy(lcp_file+strlen(file), ".lcp");
-   int fd_lcp = open(lcp_file, O_RDONLY);
-   if (fd_lcp == -1) {
-      fprintf(stderr, "error opening '%s': %s\n", lcp_file, strerror(errno));
-      return NULL;
-   }
-   free(lcp_file);
-
-   // Open LUT file.
-   /*
-   char * lut_file = malloc(strlen(file)+5);
-   strcpy(lut_file, file);
-   strcpy(lut_file+strlen(file), ".lut");
-   int fd_lut = open(lut_file, O_RDONLY);
-   if (fd_lut == -1) {
-      fprintf(stderr, "error opening '%s': %s\n", lut_file, strerror(errno));
-      return NULL;
-   }
-   free(lut_file);
-   */
-   // Load OCC index.
-   long idxsize = lseek(fd_occ, 0, SEEK_END);
-   lseek(fd_occ, 0, SEEK_SET);
-   files->occ_file = mmap(NULL, idxsize, PROT_READ, MMAP_FLAGS, fd_occ, 0);
-   close(fd_occ);
-   if (files->occ_file == NULL) {
-      fprintf(stderr, "error mmaping .occ index file: %s.\n", strerror(errno));
-      return NULL;
-   }
-   // Load SA index.
-   idxsize = lseek(fd_sa, 0, SEEK_END);
-   lseek(fd_sa, 0, SEEK_SET);
-   files->sa_file = mmap(NULL, idxsize, PROT_READ, MMAP_FLAGS, fd_sa, 0);
-   close(fd_sa);
-   if (files->sa_file == NULL) {
-      fprintf(stderr, "error mmaping .sar index file: %s.\n", strerror(errno));
-      return NULL;
-   }
-   // Load GEN index.
-   idxsize = lseek(fd_gen, 0, SEEK_END);
-   lseek(fd_gen, 0, SEEK_SET);
-   files->gen_file = mmap(NULL, idxsize, PROT_READ, MMAP_FLAGS, fd_gen, 0);
-   close(fd_gen);
-   if (files->gen_file == NULL) {
-      fprintf(stderr, "error mmaping .gen index file: %s.\n", strerror(errno));
-      return NULL;
-   }
-   // Load LCP index.
-   idxsize = lseek(fd_lcp, 0, SEEK_END);
-   lseek(fd_lcp, 0, SEEK_SET);
-   files->lcp_file = mmap(NULL, idxsize, PROT_READ, MMAP_FLAGS, fd_lcp, 0);
-   close(fd_lcp);
-   if (files->lcp_file == NULL) {
-      fprintf(stderr, "error mmaping .lcp index file: %s.\n", strerror(errno));
-      return NULL;
-   }
-   // Load LUT index.
-   /*
-   idxsize = lseek(fd_lut, 0, SEEK_END);
-   lseek(fd_lut, 0, SEEK_SET);
-   files->lut_file = mmap(NULL, idxsize, PROT_READ, MMAP_FLAGS, fd_lut, 0);
-   close(fd_lut);
-   if (files->lut_file == NULL) {
-      fprintf(stderr, "error mmaping .lut index file: %s.\n", strerror(errno));
-      return NULL;
-   }
-   */
-   return files;
-
-}
-
-index_t *
-index_format
-(
- idxfiles_t * files
-)
-{
-   if (files == NULL) return NULL;
-   // Alloc index struct.
-   index_t * index = malloc(sizeof(index_t));
-   // GEN.
-   index->genome = (char *) files->gen_file;
-   // OCC.
-   index->occ_mark_int = *(uint64_t *) files->occ_file;
-   index->c = ((uint64_t *) files->occ_file + 1);
-   index->occ = index->c + NUM_BASES + 1;
-   // Genome size.
-   index->size = index->c[NUM_BASES]; // Count forward strand only.
-   // SAR.
-   index->sa_bits = *((uint64_t *) files->sa_file);
-   index->sa      = ((uint64_t *) files->sa_file) + 1;
-   // LUT.
-   //   index->lut_kmer = *((uint64_t *) files->lut_file);
-   //   index->lut = ((uint64_t *) files->lut_file) + 1;
-   // LCP.
-   // params
-   index->lcp_mark_int = *((uint64_t *)files->lcp_file);
-   index->lcp_min_depth =  *((uint64_t *)files->lcp_file + 1);
-   uint64_t lcp_idx_size = *((uint64_t *)files->lcp_file + 2);//((2*index->size + LCP_WORD_SIZE - 1)/LCP_WORD_SIZE + index->lcp_mark_int - 1)/index->lcp_mark_int * (index->lcp_mark_int + 1) + 1;
-   // index
-   index->lcp_sample_idx = ((uint64_t *) files->lcp_file + 3);
-   uint64_t ext_idx_size = *(index->lcp_sample_idx + lcp_idx_size);
-   index->lcp_extend_idx = index->lcp_sample_idx + lcp_idx_size + 1;
-   // alloc structures
-   index->lcp_sample = malloc(sizeof(lcpdata_t));
-   if (index->lcp_sample == NULL) return NULL;
-   index->lcp_extend = malloc(sizeof(list64_t));
-   if (index->lcp_extend == NULL) return NULL;
-   // data
-   index->lcp_sample->size = *(index->lcp_extend_idx + ext_idx_size)/2;
-   index->lcp_sample->lcp = (lcpval_t *)(index->lcp_extend_idx + ext_idx_size + 1);
-   uint64_t * lcpext_size = (uint64_t *)(index->lcp_sample->lcp + index->lcp_sample->size);
-   index->lcp_extend->size = *lcpext_size;
-   index->lcp_extend->val = (int64_t *)(lcpext_size + 1);
-   //CHR.
-   index->chr = files->chr;
-   
-
-   return index;
-}
-
-chr_t *
-read_CHRindex
-(
- char * filename
-)
-{
-   // Files
-   FILE * input = fopen(filename,"r");
-   if (input == NULL) {
-      fprintf(stderr, "error in 'read_CHRindex' (fopen): %s\n", strerror(errno));
-      exit(EXIT_FAILURE);
-   }
-
-   int chrcount = 0;
-   int structsize = CHRSTR_SIZE;
-
-   long *  start = malloc(structsize*sizeof(long));
-   char ** names = malloc(structsize*sizeof(char*));
-
-   // File read vars
-   ssize_t rlen;
-   size_t  sz = BUFFER_SIZE;
-   char  * buffer = malloc(BUFFER_SIZE);
-   int lineno = 0;
-
-   // Read chromosome entries.
-   while ((rlen = getline(&buffer, &sz, input)) != -1) {
-      lineno++;
-      char *name;
-      int i = 0;
-      while (buffer[i] != '\t' && buffer[i] != '\n') i++;
-      if (buffer[i] == '\n') {
-         fprintf(stderr, "illegal format in %s (line %d) - ignoring chromosome: %s\n", filename, lineno, buffer);
-         continue;
+      // Chain seeds.
+      if (seeds->pos) {
+         size_t hit_cnt = 0;
+         hit_t * hits = chain_seeds(seeds, slen, index, opt->filter.dist_accept, opt->filter.read_ref_ratio, &hit_cnt);
+         hit_cnt = min(opt->filter.max_align_per_read, hit_cnt);
+         for (int j = 0; j < hit_cnt; j++)
+            hits[j].errors = 0;
+         // Sort and align up to max_align.
+         if (hit_cnt) {
+            align_hits(seq[i].seq, hits, hit_cnt, &map_matches, index, opt->filter, opt->align);
+         }
+         free(hits);
       }
-      
-      if (buffer[rlen-1] == '\n') buffer[rlen-1] = 0;
 
-      // Realloc stacks if necessary.
-      if (chrcount >= structsize) {
-         structsize *= 2;
-         start = realloc(start, structsize*sizeof(long));
-         names = realloc(names, structsize*sizeof(char*));
-         if (start == NULL || names == NULL) {
-            fprintf(stderr, "error in 'read_CHRindex' (realloc): %s\n", strerror(errno));
-            exit(EXIT_FAILURE);
+
+      /*
+      if (opt->seed.sensitive_mem) {
+         for (int s = 0; s < mem_intv->pos; s += 2) {
+            int beg = mem_intv->val[s];
+            int end = mem_intv->val[s+1];
+            // Find MEMs with more than 2 hits.
+            mems->pos = 0;
+            seed_mem_bp(query, beg, end, 2, index, &mems);
+            for (int j = 0; j < mems->pos; j++) {
+               seed_t s = mems->seed[j];
+               uint64_t loci = s.ref_pos.ep - s.ref_pos.sp + 1;
+               // Save MEMS with loci <= r.
+               if (loci > r) {
+                  s.ref_pos.ep = s.ref_pos.sp + r - 1;
+               }
+               seedstack_push(s, &seeds);
+            }
+         }
+      } else {
+         seedstack_t * resd = seedstack_new(64);
+         for (int s = 0; s < mem_intv->pos; s += 2) {
+            int beg = mem_intv->val[s];
+            int end = mem_intv->val[s+1];
+            if (VERBOSE_DEBUG) fprintf(stdout, "MEM interval: beg:%d, end:%d\n", beg,end);
+            // Find MEMS.
+            mems->pos = 0;
+            //            seed_mem(query, beg, end, index, &seeds);
+            //            get_smem(&mems, seeds);
+            seed_thr(query, beg, end, max_align, index, &mems);
+            seeds->pos = 0;
+            // DEBUG.
+            for (int j = 0; j < mems->pos; j++) {
+               seed_t s = mems->seed[j];
+               if (s.ref_pos.depth < opt->seed.min_len) continue;
+               uint64_t loci = s.ref_pos.ep - s.ref_pos.sp + 1;
+               if (VERBOSE_DEBUG) fprintf(stdout, "MEM (%d/%ld): beg:%d, end:%d, loci:%ld.\n",j+1,mems->pos,s.qry_pos, s.qry_pos+s.ref_pos.depth-1, loci);
+               if (loci > max_align) {
+                  // Do maximum 'max_align' alignments per seed.
+                  s.ref_pos.ep = s.ref_pos.sp + max_align - 1;
+               }
+               else if (loci == 1 && s.ref_pos.depth >= opt->seed.reseed_len) {
+                  // Reseed.
+                  seed_mem_bp(query, s.qry_pos, s.qry_pos + s.ref_pos.depth, loci + 1, index, &resd);
+               }
+               seedstack_push(s, &seeds);
+            }
+            mems->pos = 0;
+            get_smem(&mems, resd);
+            for (int j = 0; j < mems->pos; j++) {
+               seed_t s = mems->seed[j];
+               uint64_t loci = s.ref_pos.ep - s.ref_pos.sp + 1;
+               if (VERBOSE_DEBUG) fprintf(stdout, "RESEED-MEM (%d/%ld): beg:%d, end:%d, loci:%ld.\n",j+1,resd->pos,s.qry_pos, s.qry_pos+s.ref_pos.depth-1, loci);
+               if (loci > max_align) {
+                  // Do maximum 'max_align' alignments per seed.
+                  s.ref_pos.ep = s.ref_pos.sp + max_align - 1;
+               }
+               seedstack_push(s, &seeds);
+            }
+         }
+         free(resd);
+      }
+      */
+
+      /**
+      *** NON-UNIQUE AND NOT FOUND
+      **/
+
+      int v[2] = {2,0};
+      // Align acceptable seeds (less than repeat_thr loci) then the not found ones.
+      for (int l = 0; l < 2; l++) {
+         // DEBUG.
+         if (VERBOSE_DEBUG) fprintf(stdout, "** path %d **\n", v[l]);
+         int beg = 0;
+         while (beg <= (int)(slen - k)) {
+            // Do not seed path 1 intervals or alignments with second best score.
+            int next = 0;
+            for (int j = 0; j < map_matches->pos; j++) {
+               match_t m = map_matches->match[j];
+               if (beg > m.read_e) continue;
+               if (beg < m.read_s - k) break;
+               if (m.s_hits_cnt > 0) {
+                  beg = m.read_e + 1;
+                  next = 1;
+                  break;
+               }
+            }
+            if (next) continue;
+            // Check seed type            
+            if (value[beg] == v[l]) {
+               // Compute (k,d) matches.
+               pstack->pos = 0;
+               seeds->pos = 0;
+               blocksearch(query + beg, k, d, index, &pstack);
+               int64_t loci = 0;
+               for (int h = 0; h < pstack->pos; h++)
+                  loci += pstack->path[h].pos.sz;
+               // Continue if repeat_thr is exceeded.
+               if (loci > r) {
+                  // DEBUG.
+                  if (VERBOSE_DEBUG) fprintf(stdout, "[beg:%d] too many loci (%ld)\n", beg, loci);
+                  beg++;
+                  continue;
+               } else if (loci > max_align) {
+                  // Sort to prioritize low scores
+                  qsort(pstack->path, pstack->pos, sizeof(spath_t), compar_path_score);
+                  loci = 0;
+                  for (int h = 0; h < pstack->pos && loci < max_align; h++) {
+                     spath_t path = pstack->path[h];
+                     fmdpos_t fmdp = path.pos;
+                     loci += fmdp.sz;
+                     if (loci > max_align) fmdp.sz -= loci-max_align;
+                     bwpos_t pos = {.depth = fmdp.dp, .sp = fmdp.fp, .ep = fmdp.fp + fmdp.sz - 1};
+                     seedstack_push((seed_t) {.errors = path.score, .qry_pos = beg, .ref_pos = pos}, &seeds);
+                  }
+               } else {
+                  for (int h = 0; h < pstack->pos; h++) {
+                     spath_t path = pstack->path[h];
+                     fmdpos_t fmdp = path.pos;
+                     bwpos_t pos = {.depth = fmdp.dp, .sp = fmdp.fp, .ep = fmdp.fp + fmdp.sz - 1};
+                     seedstack_push((seed_t) {.errors = path.score, .qry_pos = beg, .ref_pos = pos}, &seeds);
+                  }
+               }
+               if (seeds->pos) {
+                  // DEBUG.
+                  if (VERBOSE_DEBUG) fprintf(stdout, "[beg:%d] aligning %ld seeds\n", beg, seeds->pos);
+                  // Align non-unique seeds.
+                  align_seeds(seq[i].seq, seeds, &map_matches, index, opt->filter, opt->align);
+                  // DEBUG.
+                  if (VERBOSE_DEBUG) {
+                     for (int k = 0; k < map_matches->pos; k++) {
+                        match_t m = map_matches->match[k];
+                        fprintf(stdout, "match[%d]: read_s:%d, read_e:%d, ref_s:%ld, hits:%d, s_hits:%d (%d), ann:%d\n", k, m.read_s, m.read_e, m.ref_s, m.hits, m.s_hits, m.s_hits_cnt, m.ann_d);
+                     }
+                  }
+               }
+            } else if (value[beg] == 255) {
+               // Check seed in seed table.
+               hit_t hit = find_uniq_seed(beg,beg + k,query,value,index);
+               if (hit.errors == 0) {
+                  align_hits(seq[i].seq, &hit, 1, &map_matches, index, opt->filter, opt->align);
+               }
+               continue;
+            } 
+            beg++;
          }
       }
 
-      // Save chromosome start position.
-      buffer[i] = 0;
-      start[chrcount] = atol(buffer);
-      // Save chromosome name.
-      name = buffer + i + 1;
-      names[chrcount] = malloc(strlen(name)+1);
-      strcpy(names[chrcount], name);
-      // Inc.
-      chrcount++;
+
+      // DEBUG.
+      if (VERBOSE_DEBUG) {
+         for (int k = 0; k < map_matches->pos; k++) {
+            match_t m = map_matches->match[k];
+            fprintf(stdout, "match[%d]: read_s:%d, read_e:%d, ref_s:%ld, hits:%d, s_hits:%d (%d), ann:%d\n", k, m.read_s, m.read_e, m.ref_s, m.hits, m.s_hits, m.s_hits_cnt, m.ann_d);
+         }
+      }
+
+   map_end:
+      // Score and output.
+      map_score(map_matches,cumlog);
+      mapped += print_and_free(seq[i], map_matches, index, opt->format);
+      free(query);
+      free(value);
    }
 
-   // Return chromosome index structure.
-   chr_t * chrindex = malloc(sizeof(chr_t));
-   chrindex->nchr = chrcount;
-   chrindex->start= start;
-   chrindex->name = names;
+   // Free data structures.
+   free(seeds);
+   free(reseeds);
+   free(mems);
+   free(map_matches);
+   
+   // Report to scheduler.
+   pthread_mutex_lock(job->mutex);
+   job->control->mapped += mapped;
+   job->control->active -= 1;
+   pthread_cond_signal(job->monitor);
+   pthread_mutex_unlock(job->mutex);
 
-   fclose(input);
-   return chrindex;
+   // Free args.
+   free(args);
+   return NULL;
 }
-
 
 seqstack_t *
 read_file
@@ -933,50 +711,4 @@ read_file
    free(subline);
    free(temp);
    return seqstack;
-}
-
-int
-compar_seedhits
-(
- const void * a,
- const void * b,
- const int   param
-)
-{
-   match_t * ma = (match_t *) a;
-   match_t * mb = (match_t *) b;
-   
-   if (ma->hits < mb->hits) return 1;
-   else return -1;
-}
-
-int
-compar_matcheexp
-(
- const void * a,
- const void * b,
- const int   param
-)
-{
-   match_t * ma = (match_t *) a;
-   match_t * mb = (match_t *) b;
-
-   if (mb->e_exp < ma->e_exp) return 1;
-   else return -1;
-}
-
-int
-compar_intvstart
-(
- const void * a,
- const void * b,
- const int   param
-)
-{
-   matchlist_t * ma = *(matchlist_t **) a;
-   matchlist_t * mb = *(matchlist_t **) b;
-   if (ma->pos == 0) return 1;
-   if (mb->pos == 0) return -1;
-   if (mb->match[0].read_s < ma->match[0].read_s) return 1;
-   else return -1;
 }
