@@ -42,8 +42,7 @@ find_uniq_seeds
    int r = sht.repeat_thr;
    int z = 0;
    int zp = -k;
-   ann_t ann;
-   ann_find(k,index->ann,&ann);
+   ann_t * ann = ann_find(k,index->ann);
    // Query buffer.
    uint8_t * q = malloc(k);
    for (int i = 0; i <= slen - k; i++) {
@@ -94,7 +93,7 @@ find_uniq_seeds
             uint64_t locus = get_sa(pos.sp, index->sar);
             uint64_t loc = locus;
             if (loc >= index->size/2) loc = index->size - 1 - loc - k;
-             int ann_d = ann_read(ann, loc, NULL);
+             int ann_d = ann_read(*ann, loc, NULL);
             if (ann_d > d) {
                seed_t seed = (seed_t) {.errors = 0, .qry_pos = i, .ref_pos = pos};
                seedstack_push(seed, seeds);
@@ -130,8 +129,7 @@ find_uniq_seed
    if (beg > slen-k)
       return (hit_t) {.errors = 1};
    // Find annotation table with same k.
-   ann_t ann;
-   ann_find(k, index->ann, &ann);
+   ann_t * ann = ann_find(k, index->ann);
    // Query buffer.
    uint8_t * q = malloc(k);
    for (int i = beg; i <= slen - k; i++) {
@@ -158,7 +156,7 @@ find_uniq_seed
             uint64_t locus = get_sa(pos.sp, index->sar);
             uint64_t loc = locus;
             if (loc >= index->size/2) loc = index->size - 1 - loc - k;
-            int ann_d = ann_read(ann, loc, NULL);
+            int ann_d = ann_read(*ann, loc, NULL);
             if (ann_d > d) {
                free(q);
                return (hit_t) {.locus = locus, .qrypos = i, .depth = k, .errors = 0};
@@ -557,6 +555,55 @@ compar_hit_errors_qsort
    hit_t * hb = (hit_t *)b;
    if (ha->errors < hb->errors) return 1;
    else return -1;
+}
+
+int
+mem_unique
+(
+ seed_t    seed,
+ index_t * index,
+ hit_t   * hit
+)
+{
+   // Seed must be single loci.
+   if (seed.ref_pos.sp != seed.ref_pos.ep)
+      return 0;
+   int k = seed.ref_pos.depth;
+   uint64_t locus = get_sa(seed.ref_pos.sp, index->sar);
+   uint64_t loc = locus;
+   if (loc >= index->size/2) loc = index->size - 1 - loc - k;
+   // Select annotation.
+   ann_t * ann = ann_find(k, index->ann);
+   if (ann == NULL) return 0;
+   // Check neighbors for all k-mers.
+   int max_d = 0;
+   for (int i = 0; i <= k - ann->k; i++) {
+      max_d = max(max_d, ann_read(*ann, loc + i, NULL));
+   }
+   if (max_d > 1) {
+      *hit = (hit_t) {.locus = locus, .qrypos = seed.qry_pos, .depth = k, .errors = 0};
+      return 1;
+   }
+   return 0;
+
+}
+
+int
+next_mem
+(
+ uint8_t * q,
+ int       beg,
+ int       end,
+ seed_t  * mem,
+ index_t * index
+)
+{
+   int pos = beg;
+   fmdpos_t bwpos;
+   pos = extend_lr(q, pos, end, &bwpos, index);
+   bwpos_t ref_pos = {.sp = bwpos.fp, .ep = bwpos.fp + bwpos.sz - 1, .depth = bwpos.dp};
+   *mem = (seed_t){.errors = 0, .qry_pos = pos-bwpos.dp, .ref_pos = ref_pos};
+   return pos;
 }
 
 int

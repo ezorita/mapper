@@ -73,6 +73,8 @@ ann_index_read
    size_t bytes = 0, total = count*sizeof(ann_t);
    while ((bytes += read(fd,((uint8_t*)list->ann)+bytes,total-bytes)) < total);
 
+   // Sort annotations by ascending k.
+   qsort(list->ann, list->count, sizeof(ann_t), compar_ann_k_asc);
    return list;
 }
 
@@ -110,6 +112,7 @@ ann_index_load
       free(fname);
       free(suffix);
    }
+      
    return 0;
 }
 
@@ -652,28 +655,34 @@ ann_read
    return d;
 }
 
-int
+ann_t *
 ann_find
 (
  int         k,
- annlist_t * list,
- ann_t     * ann
+ annlist_t * list
 )
 {
-   if (list->count == 0) return -1;
-   uint32_t dist = 0xFFFFFFFF;
-   ann_t best;
+   if (list->count == 0) return NULL;
+   int idx = -1;
    for (int i = 0; i < list->count; i++) {
-      if (list->ann[i].k == k) {
-         *ann = list->ann[i];
-         return 0;
-      } else {
-         int d = list->ann[i].k - k;
-         d = (d < 0 ? -d : d);
-         if (d < dist)
-            best = list->ann[i];
-      }
+      if (list->ann[i].k > k)
+         break;
+      else
+         idx = i;
    }
-   *ann = best;
-   return 1;
+   if (idx < 0) return NULL;
+   return list->ann + idx;
+}
+
+
+int
+compar_ann_k_asc
+(
+ const void * aa,
+ const void * ab
+)
+{
+   ann_t * a = (ann_t *)aa;
+   ann_t * b = (ann_t *)ab;
+   return (a->k > b->k ? 1 : -1);
 }

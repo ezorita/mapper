@@ -53,6 +53,7 @@ struct match_t {
    int ann_d;
    int ann_cnt;
    int mapq;
+   int maxq;
    double ident;
 };
 
@@ -105,6 +106,8 @@ struct sortargs_t {
 
 // Map score.
 int           map_score        (matchlist_t *, double *);
+int           tentative_score  (match_t *, double *);
+double        compute_fp_prob  (int, int, int, int, int, double *);
 // Sorting algorithms.
 int           mergesort_mt     (void * data, int numels, size_t elmsize, int param, int thrmax, int (*compar)(const void*, const void*, const int));
 void        * _mergesort       (void * args);
@@ -131,7 +134,7 @@ matchlist_t   * matchlist_new    (int elements);
 int             matchlist_add    (matchlist_t ** listp, match_t match);
 
 // Intervals.
-int             mem_intervals  (matchlist_t *, size_t, int, vstack_t **);
+int             mem_intervals  (matchlist_t *, size_t, int, double, int, vstack_t **);
 
 
 #endif

@@ -27,6 +27,7 @@ struct filteropt_t {
    double align_filter_eexp;
    double mapq_evalue_ratio;
    double min_best_to_second;
+   double min_gap_id;
 };
 
 

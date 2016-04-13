@@ -48,11 +48,11 @@ extend_align_bp
       int seed_end_error = translate[(int)seq[aln->read_e]] != translate[(int)index->genome[aln->ref_e]];
       path_t r = align_bp(q_len, seq+aln->read_e, r_len, index->genome+aln->ref_e, 0, 1, 1, opt);
       // Add hits, avoid counting twice the mismatches at the ends of the seed.
-      r.score = max(0,r.score - seed_end_error);
-      aln->hits += r.col - r.score;
+      int hits = r.col - max(0,r.score - seed_end_error);
+      aln->hits += hits;
       aln->read_e += r.col;
       aln->ref_e += r.row;
-      aln->score += max(0, max(r.col,r.row) - opt.mismatch_penalty*r.score);
+      aln->score += max(0, hits - opt.mismatch_penalty*r.score);
 
 #if VERBOSE_DEBUG == 1
       fprintf(stdout, "R: qry:%d, ref:%d, mismatches:%d\n", r.col, r.row, r.score);
@@ -62,10 +62,11 @@ extend_align_bp
       if (r.col < r.row && r.row == r_len-1) {
          q_len -= r.col;
          r = align_bp(q_len, seq+aln->read_e, q_len, index->genome+aln->ref_e, 0, 1, 1, opt);
+         int hits = r.col - r.score;
+         aln->hits += hits;
          aln->read_e += r.col;
          aln->ref_e += r.row;
-         aln->hits += r.col - r.score;
-         aln->score += max(0, max(r.col,r.row) - opt.mismatch_penalty*r.score);
+         aln->score += max(0, hits - opt.mismatch_penalty*r.score);
 #if VERBOSE_DEBUG == 1
          fprintf(stdout, "R (del gap): qry:%d, ref:%d, mismatches:%d\n", r.col, r.row, r.score);
 #endif
@@ -77,11 +78,11 @@ extend_align_bp
       int64_t r_len = align_min(q_len, aln->ref_s + 1);
       int seed_end_error = translate[(int)seq[aln->read_s]] != translate[(int)index->genome[aln->ref_s]];
       path_t l = align_bp(q_len, seq+aln->read_s, r_len, index->genome+aln->ref_s, 0, -1, -1, opt);
-      l.score = max(0, l.score - seed_end_error);
-      aln->hits += l.col -  l.score;
+      int hits = l.col - max(0, l.score - seed_end_error);
+      aln->hits += hits;
       aln->read_s -= l.col;
       aln->ref_s -= l.row;
-      aln->score += max(0, max(l.col,l.row) - opt.mismatch_penalty*l.score);
+      aln->score += max(0, hits - opt.mismatch_penalty*l.score);
 
 #if VERBOSE_DEBUG == 1
       fprintf(stdout, "L: qry:%d, ref:%d, mismatches:%d\n", l.col, l.row, l.score);
@@ -93,10 +94,11 @@ extend_align_bp
 #if VERBOSE_DEBUG == 1
          fprintf(stdout, "L (del gap): qry:%d, ref:%d, mismatches:%d\n", l.col, l.row, l.score);
 #endif
+         hits = l.col - l.score;
          aln->read_s -= l.col;
          aln->ref_s -= l.row;
-         aln->hits += l.col - l.score;
-         aln->score += max(0, max(l.col,l.row) - opt.mismatch_penalty*l.score);
+         aln->hits += hits;
+         aln->score += max(0, hits - opt.mismatch_penalty*l.score);
       }
    }
 #if VERBOSE_DEBUG == 1
@@ -169,6 +171,8 @@ add_align_info
                aln.s_score = m.s_score;
                aln.s_score_cnt = m.s_score_cnt;
             }
+            // Flag mapQ to recompute.
+            aln.mapq = -1;
          } else {
             // Conditions to accept a second best hit:
             // 1. s_hits >= best_hits - annotation
@@ -177,6 +181,8 @@ add_align_info
             if (aln.hits > m.s_hits && aln.hits >= m.hits-m.ann_d && aln.hits > m.hits*opt.min_best_to_second) {
                list->match[j].s_hits = aln.hits;
                list->match[j].s_hits_cnt  = 1;
+               // Flag mapQ to recompute.
+               list->match[j].mapq = -1;
             } else if (aln.hits == m.s_hits) {
                list->match[j].s_hits_cnt += 1;
             }
@@ -184,6 +190,8 @@ add_align_info
          if (aln.score > m.s_score) {
             list->match[j].s_score = aln.score;
             list->match[j].s_score_cnt = 1;
+            // Flag mapQ to recompute.
+            list->match[j].mapq = -1;
          } else if (aln.score == m.s_score) {
             list->match[j].s_score_cnt += 1;
          }
@@ -319,7 +327,9 @@ align_hits
          .s_hits_cnt  = 0,
          .score       = 0,
          .s_score     = 0,
-         .s_score_cnt = 0
+         .s_score_cnt = 0,
+         .mapq        = -1,
+         .maxq        = -1
       };
       // Extend seed.
       extend_align_bp(&m,read,slen,index,alignopt);

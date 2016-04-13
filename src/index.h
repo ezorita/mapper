@@ -36,5 +36,6 @@ bwt_t      * index_load_bwt        (char *);
 sar_t      * index_load_sar        (char *);
 chr_t      * index_load_chr        (char *);
 int          ann_read              (ann_t, uint64_t, int *);
-int          ann_find              (int, annlist_t *, ann_t *);
+ann_t      * ann_find              (int, annlist_t *);
+int          compar_ann_k_asc      (const void *, const void *);
 #endif

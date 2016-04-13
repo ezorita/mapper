@@ -5,19 +5,21 @@ mem_intervals
 (
  matchlist_t  * intv,
  size_t         slen,
+ int            target_q,
+ double         gap_id,
  int            min_intv_size,
  vstack_t    ** stack
 )
 {
-   // CONDITIONS TO NOT RESEED:
-   // - Minimum identity (not implemented)
-   // - Already best and second best score.
-   // - Path 1 alignment.
    int beg = 0;
    for (int i = 0; i < intv->pos; i++) {
       match_t m = intv->match[i];
+      int gap_end = ( i == intv->pos - 1 ? slen : intv->match[i+1].read_s);
       // Apply conditions.
-      if (m.s_hits_cnt == 0) continue;
+      // 1. MapQ uncertainty around target quality.
+      // 2. Gap identity.
+      if ((m.mapq < target_q && m.maxq >= target_q) || m.hits < gap_id*(gap_end-m.read_s))
+         continue;
       // Store gap for mem seeding.
       if (m.read_s - beg >= min_intv_size) {
          push(stack, beg);
@@ -40,9 +42,6 @@ map_score
  double      * cumlog
 )
 {
-   static const double logpm = -0.4771213;
-   static const double logpe = -0.1760913;
-
    for (size_t i = 0; i < matches->pos; i++) {
       match_t m = matches->match[i];
       if (m.score <= m.s_score) {
@@ -72,9 +71,9 @@ map_score
          // that such alignment would have been cached anyway... (Especially on path 1).
          //         k = f + max(0,b - (a>>1));
          // Temporary workaround:
-         if (b*1.0/L < 0.05) { // unlikely that better alignment exists and we didn't find it.
+         if (b*1.0/L < 0.10) { // unlikely that better alignment exists and we didn't find it.
             f = a;
-            k = a;
+            k = b+a;
          } else { // old branch.
             f = (a>>1) + (a&1);
             k = max(b+1, f + max(0,b - (a>>1)));
@@ -91,29 +90,105 @@ map_score
          matches->match[i].mapq = 0;         
          continue;
       }
-      double ppos = 0;
-      for (int t = f; t <= min(a,k); t++) {
-         double pnt = 0;
-         for (int j = f; j <= t; j++) {
-            pnt += pow(10,cumlog[t] - cumlog[t-j] - cumlog[j] + j*logpm + (t-j)*logpe);
-         }
-         ppos += pow(10,cumlog[a]-cumlog[a-t]+cumlog[k]-cumlog[k-t]-cumlog[L]+cumlog[L-a]+cumlog[L-k]-cumlog[L-k+t-a]-cumlog[t])*pnt;
-      }
-      //matches->match[i].mapq = -10*log10(ppos);
+      double ppos = compute_fp_prob(L,b,k,a,f,cumlog);      
+      // Do not apply identity penalty if ident >= 95%
       double idnt = m.hits*1.0/L;
-      //      matches->match[i].mapq = min(40,max(0,idnt*idnt*(-10*log10(ppos*cnt))));
+      idnt = (idnt >= 0.95 ? 1 : idnt);
       // Include mapQ based on alignment score.
-      double score_mapq = 6*(m.score-m.s_score)-10*log10(m.s_score_cnt);
+      double score_mapq = m.s_score_cnt ? 6*(m.score-m.s_score)-10*log10(m.s_score_cnt) : 100;
       double neigh_mapq = -10*log10(ppos*cnt);
       matches->match[i].mapq = min(60,max(0,idnt*idnt*min(score_mapq, neigh_mapq)));
       if (VERBOSE_DEBUG) {
          fprintf(stdout, "NEIGHBOR MODEL: second=%d, b=%d, k=%d (cnt=%d), a=%d (cnt=%d), cnt=%d, L=%d, f=%d, neigh_mapq=%d\n", m.s_hits_cnt > 0, b, k, m.s_hits_cnt, a, m.ann_cnt, cnt, L, f, (int)neigh_mapq);
-         fprintf(stdout, "ALIGN SCORE: best_score=%d, s_score=%d, s_score_cnt=%d, score_mapq=%d", m.score, m.s_score, m.s_score_cnt, (int)score_mapq);
+         fprintf(stdout, "ALIGN SCORE: best_score=%d, s_score=%d, s_score_cnt=%d, score_mapq=%d\n", m.score, m.s_score, m.s_score_cnt, (int)score_mapq);
          fprintf(stdout, "mapq after ident penalty: %d\n", matches->match[i].mapq);
       }
    }
    return 0;
 }
+
+int
+tentative_score
+(
+ match_t * match,
+ double  * cumlog
+ )
+{
+   if (match->score <= match->s_score) {
+      match->mapq = 0;
+      match->maxq = 0;
+      return 0;
+   }
+
+   int b,k,a,L,f,cnt,maxf,maxk;
+   L = match->read_e - match->read_s + 1;
+   b = L - match->hits;
+   k = L - match->s_hits;
+   a = match->ann_d;
+   cnt = max(match->ann_cnt, match->s_hits_cnt);
+   //   if (match->s_hits_cnt == 0 || L - (int)match->s_hits >= a) {
+   if (k >= a) {
+      match->s_hits = match->hits - match->ann_d;
+      if (b <= 0.05*L) {
+         f = a;
+         k = b+a;
+      } else {
+         f = (a>>1) + (a&1);
+         k = max(b+1, f + max(0,b - (a>>1)));
+      }
+   } else {
+      a = min(a, k);
+      f = (a+k-b)/2;
+   }
+   maxf = a;
+   maxk = a+b;
+
+   if (VERBOSE_DEBUG) {
+      fprintf(stdout, "mapq start: L:%d, hits:%d, a:%d, s_hits:%d, s_cnt:%d, k=%d, f=%d, maxk=%d, maxa=%d\n", L, match->hits, a, match->s_hits, cnt, k, f, maxk, maxf);
+   }
+
+   if ((match->s_hits_cnt && k==b) || a == 0) {
+      match->mapq = match->maxq = 0;
+      return 0;
+   }
+   double pfp = compute_fp_prob(L,b,k,a,f,cumlog);
+   double max_pfp = compute_fp_prob(L,b,maxk,a,maxf,cumlog);
+   // Do not apply identity penalty if ident >= 95%
+   double idnt = match->hits*1.0/L;
+   idnt = (idnt >= 0.95 ? 1 : idnt);
+   // Include mapQ based on alignment score.
+   double score_mapq = 6*(match->score-match->s_score)-10*log10(match->s_score_cnt);
+   double neigh_mapq = -10*log10(pfp*cnt);
+   double max_neigh_mapq = -10*log10(max_pfp*cnt);
+   match->mapq = min(60,max(0,idnt*idnt*min(score_mapq, neigh_mapq)));
+   match->maxq = min(60,max(0,idnt*idnt*min(score_mapq, max_neigh_mapq)));
+   return 0;
+}
+
+double
+compute_fp_prob
+(
+ int      L,
+ int      b,
+ int      k,
+ int      a,
+ int      f,
+ double * cumlog
+)
+{
+   static const double logpm = -0.4771213;
+   static const double logpe = -0.1760913;
+   double ppos = 0;
+   for (int t = f; t <= min(a,k); t++) {
+      double pnt = 0;
+      for (int j = f; j <= t; j++) {
+         pnt += pow(10,cumlog[t] - cumlog[t-j] - cumlog[j] + j*logpm + (t-j)*logpe);
+      }
+      ppos += pow(10,cumlog[a]-cumlog[a-t]+cumlog[k]-cumlog[k-t]-cumlog[L]+cumlog[L-a]+cumlog[L-k]-cumlog[L-k+t-a]-cumlog[t])*pnt;
+   }
+   return ppos;
+}
+
 
 long
 bisect_search

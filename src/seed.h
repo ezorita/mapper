@@ -49,12 +49,15 @@ struct hit_t {
 int            find_uniq_seeds (int, uint8_t *, uint8_t *, index_t *, seedstack_t **);
 hit_t          find_uniq_seed  (int, int, uint8_t *, uint8_t *, index_t *);
 int            find_thr_seed   (int, int, int, uint8_t *, index_t *);
+
+int            mem_unique      (seed_t, index_t *, hit_t *);
 // Longest MEM strategy.
 seed_t         longest_mem     (char *, index_t *);
 // Naive algorithms. (To compare with)
 seedstack_t  * naive_smem     (char *, seedopt_t, index_t *);
 // Seed functions.
 int            seed_mem       (uint8_t *, int, int, index_t *, seedstack_t **);
+int            next_mem       (uint8_t *, int, int, seed_t  *, index_t *);
 int            extend_lr      (uint8_t *, int, int, fmdpos_t *, index_t *);
 int            reseed_mem     (uint8_t *, seed_t, int, int, index_t *, seedstack_t **);
 int            seed_mem_bp    (uint8_t *, int, int, int, index_t *, seedstack_t **);

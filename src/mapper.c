@@ -79,7 +79,8 @@ int main(int argc, char *argv[])
       .min_best_to_second = 0.75,
       .min_interval_size = 25,
       .min_interval_score = 30,
-      .min_interval_hits = 30
+      .min_interval_hits = 30,
+      .min_gap_id = 0.8
    };
    alignopt_t alignopt = {
       .bp_diagonal      = 1,
@@ -276,7 +277,10 @@ mt_worker
    int k = index->sht->sht[0].k;
    int d = index->sht->sht[0].d;
    int r = index->sht->sht[0].repeat_thr;
+
+   // Parametrize
    int max_align = 20;
+   int target_q = 20;
 
    // Precompute log table.
    int cumlog_max = 0;
@@ -313,6 +317,7 @@ mt_worker
       **/
 
       int beg = 0;
+      /*
       while (1) {
          // Do not seed intervals.
          if (map_matches->pos) {
@@ -345,21 +350,141 @@ mt_worker
       }
 
       if (map_matches->pos) goto map_end;
+      */
 
       /**
-      *** MEM SEEDING
+      *** NEW MEM PATH 1
       **/
+      hit_t hit;
+      while (beg < slen) {
+         seed_t mem;
+         beg = next_mem(query,beg,slen-1,&mem,index);
+         // Select mems longer than min_len.
+         if (mem.ref_pos.depth < opt->seed.min_len) continue;
+         // Check neighborhood.
+         if (mem_unique(mem, index, &hit)) {
+            if (VERBOSE_DEBUG) {
+               fprintf(stdout, "unique mem: beg:%d, end:%d, loci:%ld\n", mem.qry_pos, mem.qry_pos+mem.ref_pos.depth, mem.ref_pos.ep - mem.ref_pos.sp + 1);
+            }
+            align_hits(seq[i].seq, &hit, 1, &map_matches, index, opt->filter, opt->align);
+         } else {
+            if (VERBOSE_DEBUG) {
+               fprintf(stdout, "mem: beg:%d, end:%d, loci:%ld\n", mem.qry_pos, mem.qry_pos+mem.ref_pos.depth, mem.ref_pos.ep - mem.ref_pos.sp + 1);
+            }
+            if (mem.ref_pos.ep - mem.ref_pos.sp > opt->seed.max_loci)
+               // Repeat seeds. Do not reseed.
+               mem.ref_pos.ep = mem.ref_pos.sp + opt->seed.max_loci - 1;
+            else if (mem.ref_pos.depth >= opt->seed.reseed_len)
+               // Reseed mems longer that reseed_len.
+               reseed_mem(query, mem, slen, opt->seed.min_len, index, &reseeds);
+            // Store MEM.
+            seedstack_push(mem, &mems);
+         }
+         // Update beg.
+         for (int j = 0; j < map_matches->pos; j++) {
+            match_t m = map_matches->match[j];
+            if (beg > m.read_e) continue;
+            if (beg < m.read_s - k) break;
+            // Update tentative score.
+            if (m.mapq < 0) {
+               tentative_score(map_matches->match+j, cumlog);
+               m = map_matches->match[j];
+            }
+            if ((m.mapq >= target_q || m.maxq < target_q) &&  m.hits >= opt->filter.min_gap_id*(slen - m.read_s)) {
+               beg = m.read_e + 1;
+            }
+            if (VERBOSE_DEBUG) {
+               fprintf(stdout, "match[%d]: r_beg:%d, r_end:%d, hits:%d, a:%d, score:%d, mapQ=%d, maxQ=%d, gap_id:%.2f, next_beg:%d\n", j, m.read_s, m.read_e, m.hits, m.ann_d, m.score, m.mapq, m.maxq, m.hits*1.0/(slen-m.read_s), beg);
+            }
+         }
+      }
+
+      // Update tentative scores.
+      for (int j = 0; j < map_matches->pos; j++)
+         if (map_matches->match[j].mapq < 0)
+            tentative_score(map_matches->match+j, cumlog);
+
+
+      if (VERBOSE_DEBUG) {
+         for (int j = 0; j < map_matches->pos; j++) {
+            match_t m = map_matches->match[j];
+            int gap_end = ( j == map_matches->pos - 1 ? slen : map_matches->match[j+1].read_s);
+            fprintf(stdout, "match[%d]: r_beg:%d, r_end:%d, hits:%d, a:%d, score:%d, mapQ=%d, maxQ=%d, gap_id:%.2f, next_beg:%d\n", j, m.read_s, m.read_e, m.hits, m.ann_d, m.score, m.mapq, m.maxq, m.hits*1.0/(gap_end-m.read_s), beg);
+         }
+      }
+
+      // Append reseeds.
+      for (int k = 0; k < reseeds->pos; k++) {
+         seed_t s = reseeds->seed[k];
+         if (s.ref_pos.ep - s.ref_pos.sp > opt->seed.max_loci)
+            s.ref_pos.ep = s.ref_pos.sp + opt->seed.max_loci - 1;
+         seedstack_push(s, &mems);
+      }
+
+      // Recompute unmapped intervals.
       mem_intv->pos = 0;
-      mem_intervals(map_matches, slen, opt->filter.min_interval_size, &mem_intv);
+      mem_intervals(map_matches, slen, target_q,opt->filter.min_gap_id,  opt->filter.min_interval_size, &mem_intv);
+      if (mem_intv->pos == 0) goto map_end;
+
+      if (VERBOSE_DEBUG) {
+         fprintf(stdout,"unmapped intervals:\n");
+         for (int j = 0; j < mem_intv->pos; j+=2) {
+            fprintf(stdout, "beg: %d, end:%d\n", mem_intv->val[j], mem_intv->val[j+1]);
+         }
+      }
+
+      // Remove mapped mems.
+      seeds->pos = 0;
+      for (int j = 0; j < mems->pos; j++) {
+         seed_t m = mems->seed[j];
+         for (int s = 0; s < mem_intv->pos; s+= 2) {
+            if (mem_intv->val[s+1] < m.qry_pos) continue;
+            if (mem_intv->val[s] >= m.qry_pos + m.ref_pos.depth) break;
+            seedstack_push(m, &seeds);
+            break;
+         }
+      }
+
+      // Perform threshold seeding on unmapped intervals.
+      for (int s = 0; s < mem_intv->pos; s+= 2) {
+         int b = mem_intv->val[s];
+         int e = mem_intv->val[s+1];
+         int nsd = seeds->pos;
+         seed_interv(query, b, e, opt->seed.min_len+1, opt->seed.thr_loci, index, &seeds);
+         if (VERBOSE_DEBUG) {
+            fprintf(stdout, "LAST:\n");
+            for (int j = nsd; j < seeds->pos; j++) {
+               seed_t s = seeds->seed[j];
+               fprintf(stdout, "beg: %d, end: %d, loci: %ld\n", s.qry_pos, s.qry_pos + s.ref_pos.depth, s.ref_pos.ep - s.ref_pos.sp + 1);
+            }
+         }
+      }
+
+      // Chain seeds.
+      if (seeds->pos) {
+         size_t hit_cnt = 0;
+         hit_t * hits = chain_seeds(seeds, slen, index, opt->filter.dist_accept, opt->filter.read_ref_ratio, &hit_cnt);
+         hit_cnt = min(opt->filter.max_align_per_read, hit_cnt);
+         for (int j = 0; j < hit_cnt; j++)
+            hits[j].errors = 0;
+         // Sort and align up to max_align.
+         if (hit_cnt) {
+            align_hits(seq[i].seq, hits, hit_cnt, &map_matches, index, opt->filter, opt->align);
+         }
+         free(hits);
+      }
+
+      goto map_end;
+
+      /**
+      *** MEM SEEDING ON GAPS
+      **/
+      /*
       seeds->pos = 0;
       for (int s = 0; s < mem_intv->pos; s += 2) {
          int beg = mem_intv->val[s];
          int end = mem_intv->val[s+1];
          mems->pos = 0;
-         /*
-         seed_mem(query, beg, end, index, &seeds);
-         get_smem(&mems, seeds);
-         */
          seed_mem(query, beg, end, index, &mems);
          // SMEM and SMEM reseeding.
          // TODO:
@@ -369,7 +494,6 @@ mt_worker
          for (int j = 0; j < mems->pos; j++) {
             seed_t s = mems->seed[j];
             if (VERBOSE_DEBUG) fprintf(stdout, "beg: %d, end: %d, loci: %ld\n", s.qry_pos, s.qry_pos + s.ref_pos.depth, s.ref_pos.ep - s.ref_pos.sp + 1);
-            if (s.ref_pos.depth < opt->seed.min_len) continue;
             // Simple thresholding. Will do this only on super-repeated seeds,
             // because the seed content will be used to chain in MEM mode...
             if (s.ref_pos.ep - s.ref_pos.sp > opt->seed.max_loci) {
@@ -418,7 +542,6 @@ mt_worker
          }
          free(hits);
       }
-
 
       /*
       if (opt->seed.sensitive_mem) {
