@@ -58,45 +58,27 @@ annotate
 (
  int        kmer,
  int        tau,
- int        seed_tau,
- int        repeat_thr,
  index_t  * index,
- int        threads,
- int        mode
+ int        threads
  )
 {
    // Alloc variables.
    pthread_mutex_t * mutex = malloc(sizeof(pthread_mutex_t));
-   pthread_mutex_t * ht_mutex = malloc(sizeof(pthread_mutex_t));
    pthread_cond_t  * monitor = malloc(sizeof(pthread_cond_t));
    uint64_t computed = 0;
    uint64_t kmers = 0;
-   uint64_t collision = 0;
-   uint64_t htable_pos = 0;
    uint64_t unique = 0;
    int32_t  done = 0;
    // Annotation bitfield.
    int bits = 0;
    while ((tau >> bits) > 0) bits++;
    uint8_t * repeat_bf = NULL;
-   if (mode & STORE_ANNOTATION) {
-      size_t struct_size = ((index->size >> 4) + 1)*(bits+2) * sizeof(uint8_t);
-      repeat_bf = malloc(struct_size);
-      fprintf(stderr, "[info] annotation index size: %.2f MB\n", (struct_size*1.0/1024)/1024);
-   }
-   // Hash table.
-   htable_t * ht = NULL;
-   bits = 0;
-   if (mode & STORE_SEEDTABLE) {
-      while ((index->size >> bits) > 0) bits++;
-      // Alloc Hash table with same size as genome.
-      ht = htable_new(bits+2);
-      fprintf(stderr, "[info] seed table index size: %.2f MB\n", ((sizeof(htable_t) + ((uint64_t)1<<bits))*1.0/1024)/1024);
-   }
+   size_t struct_size = ((index->size >> 4) + 1)*(bits+2) * sizeof(uint8_t);
+   repeat_bf = malloc(struct_size);
+   fprintf(stderr, "[info] annotation index size: %.2f MB\n", (struct_size*1.0/1024)/1024);
 
    // Initialization.
    pthread_mutex_init(mutex,NULL);
-   pthread_mutex_init(ht_mutex,NULL);
    pthread_cond_init(monitor,NULL);
 
    // Find 'NXXX..' interval.
@@ -116,7 +98,6 @@ annotate
       // Set job values.
       job[i]->beg = offset;
       job[i]->mutex = mutex;
-      job[i]->ht_mutex = ht_mutex;
       job[i]->monitor = monitor;
       job[i]->computed = &computed;
       job[i]->unique = &unique;
@@ -124,14 +105,8 @@ annotate
       job[i]->index = index;
       job[i]->kmer = kmer;
       job[i]->tau = tau;
-      job[i]->seed_tau = seed_tau;
       job[i]->kmers = &kmers;
-      job[i]->collision = &collision;
-      job[i]->htable_pos = &htable_pos;
-      job[i]->repeat_thr = repeat_thr;
       job[i]->repeat_bf = repeat_bf;
-      job[i]->htable = ht;
-      job[i]->mode = mode;
    }
    // Set job end indices.
    for (int i = 0; i < njobs-1; i++) job[i]->end = job[i+1]->beg;
@@ -174,17 +149,12 @@ annotate
    fprintf(stderr, "[proc] annotating... done [%.3fs]\n", ((clock()-clk)*1.0/CLOCKS_PER_SEC)/threads);
    fprintf(stderr, "[info] kmer diversity: %ld/%ld (%.2f%%).\n",kmers,index->size/2,kmers*200.0/index->size);
    fprintf(stderr, "[info] unique loci: %ld/%ld (%.2f%%).\n",unique,index->size/2,unique*200.0/index->size);
-   if (mode & STORE_SEEDTABLE) {
-      fprintf(stderr, "[info] hash table occupancy: %ld (%.2f%%).\n", htable_pos, htable_pos*100.0/(((uint64_t)1)<<(bits+2)));
-      fprintf(stderr, "[info] hash table collisions: %ld (%.2f%%).\n", collision, collision*100.0/kmers);
-   }
    // Free variables.
    for (int i = 0; i < threads; i++) { free(job[i]); }
    free(job);
    free(mutex);
-   free(ht_mutex);
    free(monitor);
-   return (annotation_t){.htable = ht, .bitfield = repeat_bf};
+   return (annotation_t){.bitfield = repeat_bf};
 }
 
 void *
@@ -196,8 +166,6 @@ annotate_mt
    annjob_t * job = (annjob_t *)argp;
    int kmer = job->kmer;
    int tau  = job->tau;
-   int seed_tau = job->seed_tau;
-   int thr  = job->repeat_thr;
    index_t * index = job->index;
    // hit stack.
    pstree_t * stack_tree = alloc_stack_tree(tau);
@@ -207,8 +175,6 @@ annotate_mt
    uint8_t * query = malloc(kmer);
    uint8_t * lastq = malloc(kmer);
    uint64_t kmers = 0;
-   uint64_t ht_collision = 0;
-   uint64_t ht_pos = 0;
    uint64_t unique = 0;
 
    int w_bits = 0;
@@ -276,7 +242,7 @@ annotate_mt
       // - Otherwise:
       //   bit[n-1] bit[n-2] = log10(neighbor diversity)
       //   bit[n-3].. bit[0] = matching tau.
-      if ((job->mode & STORE_ANNOTATION) && !loci_count[0]) {
+      if (!loci_count[0]) {
          // Set locus in forward strand.
          if (locus >= index->size/2) locus = index->size - 1 - locus - kmer;
          // Words.
@@ -306,31 +272,14 @@ annotate_mt
          lw = (w << shift) & 0x00FF;
          uw = (w >> (8-shift)) & 0x00FF;
          // Mutex write.
-         pthread_mutex_lock(job->ht_mutex);
+         // TODO:
+         // Since each thread is workin on a different
+         // region of the SA, this can be done safely
+         // without mutex lock.
+         pthread_mutex_lock(job->mutex);
          job->repeat_bf[word]   |= lw;
          job->repeat_bf[word+1] |= uw;
-         pthread_mutex_unlock(job->ht_mutex);
-      }
-      if (job->mode & STORE_SEEDTABLE) {
-         // Count seed hits.
-         uint64_t seed_count = 0;
-         for (int t = 0; t <= seed_tau; t++) seed_count += loci_count[t];
-         if (seed_count > 0 && seed_count < thr) seed_count = 2;
-         else if (seed_count > thr) seed_count = 3;
-         else seed_count = 1;
-         unique += seed_count == 1;
-         // Compute query key.
-         uint64_t key = XXH64(query, kmer, 0);
-         // Store hit count in hash table.
-         pthread_mutex_lock(job->ht_mutex);
-         int ht_val = htable_get(job->htable, key);
-         if (!ht_val || ht_val > seed_count)
-            htable_set(job->htable, key, seed_count);
-         if (ht_val) 
-            ht_collision++;
-         else
-            ht_pos++;
-         pthread_mutex_unlock(job->ht_mutex);
+         pthread_mutex_unlock(job->mutex);
       }
       free(loci_count);
       free(hit_count);
@@ -344,8 +293,6 @@ annotate_mt
    *(job->done) += 1;
    *(job->computed) += job->end - computed;
    *(job->kmers) += kmers;
-   *(job->collision) += ht_collision;
-   *(job->htable_pos) += ht_pos;
    *(job->unique) += unique;
    pthread_cond_signal(job->monitor);
    pthread_mutex_unlock(job->mutex);

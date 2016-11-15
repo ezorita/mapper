@@ -347,7 +347,6 @@ seqdash_fw
    return 0;
 }
 
-
 int
 compar_path_score
 (

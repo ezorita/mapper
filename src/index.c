@@ -273,143 +273,75 @@ index_add_annotation
 (
  int       kmer,
  int       tau,
- int       seed_tau,
- int       repeat_thr,
- int       mode,
  int       threads,
  index_t * index,
  char    * index_file
- )
+)
 {
-   int ann_slot = -1, ann_pos = -1, sht_slot = 0;
+   int ann_slot = -1, ann_pos = -1;
    annlist_t * annlist = NULL;
-   shtlist_t * shtlist = NULL;
    // Check current annotations.
-   if (mode & STORE_ANNOTATION) {
-      annlist = ann_index_read(index_file);
-      ann_print_index(annlist);
-      if (annlist == NULL)
-         return EXIT_FAILURE;
-      for (int i = 0; i < annlist->count; i++) {
-         if (kmer == annlist->ann[i].k) {
-            if (tau <= annlist->ann[i].d) {
-               fprintf(stderr, "[warning] the index already has a (%d,%d) annotation.\n",kmer,tau);
-               mode &= 2;
-               break;
-            } else {
-               ann_slot = annlist->ann[i].id;
-               ann_pos  = i;
-               fprintf(stderr, "[warning] the existing (%d,%d) annotation will be overwritten (id=%d).\n",kmer,annlist->ann[i].d,ann_slot);
-               break;
-            }
-         }
-      }
-      // Find slot to store annotation.
-      if (ann_slot < 0) ann_slot = ann_find_slot(annlist);
-   }
-
-   // Check current seed tables.
-   if (mode & STORE_SEEDTABLE) {
-      shtlist = sht_index_read(index_file);
-      if (shtlist == NULL)
-         return EXIT_FAILURE;
-      for (int i = 0; i < shtlist->count; i++) {
-         if (kmer == shtlist->sht[i].k && tau == shtlist->sht[i].d && repeat_thr == shtlist->sht[i].repeat_thr) {
-            fprintf(stderr, "[warning] the index already has a (%d,%d) seed table with repeat_thr=%d.\n",kmer,tau,repeat_thr);
-            mode &= 1;
+   annlist = ann_index_read(index_file);
+   ann_print_index(annlist);
+   if (annlist == NULL)
+      return EXIT_FAILURE;
+   for (int i = 0; i < annlist->count; i++) {
+      if (kmer == annlist->ann[i].k) {
+         if (tau <= annlist->ann[i].d) {
+            fprintf(stderr, "[warning] the index already has a (%d,%d) annotation.\n",kmer,tau);
+            return EXIT_SUCCESS;
+         } else {
+            ann_slot = annlist->ann[i].id;
+            ann_pos  = i;
+            fprintf(stderr, "[warning] the existing (%d,%d) annotation will be overwritten (id=%d).\n",kmer,annlist->ann[i].d,ann_slot);
             break;
          }
       }
-      // Find slot to store seed table.
-      sht_slot = sht_find_slot(shtlist);
    }
-
-   if (!(mode & 3)) {
-      fprintf(stderr,"[warning] nothing will be computed.\n");
-      return EXIT_SUCCESS;
-   }
+   // Find slot to store annotation.
+   if (ann_slot < 0) ann_slot = ann_find_slot(annlist);
 
    fprintf(stderr, "[info] computing (%d,%d) genomic hits using %d threads.\n", kmer, tau, threads);
-   annotation_t ann = annotate(kmer,tau,seed_tau,repeat_thr,index,threads,mode);
+   annotation_t ann = annotate(kmer,tau,index,threads);
 
    // Write output file.
-   if (mode & STORE_ANNOTATION) {
-      // Generate file name.
-      char * suffix = malloc(9);
-      if (suffix == NULL)
-         return EXIT_FAILURE;
-      sprintf(suffix, ".ann.%d", ann_slot);
-      char * fname = add_suffix(index_file, suffix);
-      if (fname == NULL)
-         return EXIT_FAILURE;
-      free(suffix);
-      // Open file.
-      int fd = open(fname,O_WRONLY | O_CREAT | O_TRUNC,0644);
-      free(fname);
-      size_t bytes = 0;
-      // Write annotation.
-      int bits = 0;
-      while ((tau >> bits) > 0) bits++;
-      size_t struct_size = ((index->size >> 4) + 1)*(bits+2);
-      fprintf(stderr,"[info] writing annotation (%ld bytes)... ",struct_size);
-      while ((bytes += write(fd,ann.bitfield+bytes,struct_size-bytes)) < struct_size);
-      fprintf(stderr,"%ld bytes written.\n",bytes);
-      // Close file descriptor.
-      close(fd);
-      // Update table.
-      fprintf(stderr,"[info] updating annotation index... ");
-      annlist = realloc(annlist, sizeof(annlist_t) + (annlist->count + 1)*sizeof(ann_t));
-      if (ann_pos < 0) ann_pos = annlist->count++;
-      annlist->ann[ann_pos] = (ann_t) {
-         .id = ann_slot,
-         .k = kmer,
-         .d = tau,
-         .size = ann.ann_size,
-         .unique = ann.ann_set,
-         .data = NULL
-      };
-      ann_index_write(annlist, index_file);
-      free(annlist);
-      fprintf(stderr,"done.\n");
-   }
-   if (mode & STORE_SEEDTABLE) {
-      // Generate file name.
-      char * suffix = malloc(9);
-      if (suffix == NULL)
-         return EXIT_FAILURE;
-      sprintf(suffix, ".sht.%d", sht_slot);
-      char * fname = add_suffix(index_file, suffix);
-      if (fname == NULL)
-         return EXIT_FAILURE;
-      free(suffix);
-      // Open file.
-      int fd = open(fname,O_WRONLY | O_CREAT | O_TRUNC,0644);
-      free(fname);
-      size_t bytes = 0;
-      // Write seed hash table.
-      size_t struct_size = sizeof(htable_t) + (((uint64_t)1)<<(ann.htable->bits-2));
-      fprintf(stderr,"[info] writing seed table (%ld bytes)... ",struct_size);
-      while ((bytes += write(fd,((uint8_t *)ann.htable)+bytes,struct_size-bytes)) < struct_size);
-      fprintf(stderr,"%ld bytes written.\n",bytes);
-      // Close file descriptor.
-      close(fd);
-      // Update table.
-      fprintf(stderr,"[info] updating seed table index... ");
-      shtlist = realloc(shtlist, sizeof(shtlist_t) + (shtlist->count + 1)*sizeof(sht_t));
-      shtlist->sht[shtlist->count++] = (sht_t) {
-         .id = sht_slot,
-         .k = kmer,
-         .d = tau,
-         .bits = ann.htable->bits,
-         .repeat_thr = repeat_thr,
-         .set_count = ann.sht_set,
-         .collision = ann.sht_coll,
-         .htable = NULL
-      };
-      sht_index_write(shtlist, index_file);
-      free(shtlist);
-      fprintf(stderr,"done.\n");
-   }
+   // Generate file name.
+   char * suffix = malloc(9);
+   if (suffix == NULL)
+      return EXIT_FAILURE;
+   sprintf(suffix, ".ann.%d", ann_slot);
+   char * fname = add_suffix(index_file, suffix);
+   if (fname == NULL)
+      return EXIT_FAILURE;
+   free(suffix);
+   // Open file.
+   int fd = open(fname,O_WRONLY | O_CREAT | O_TRUNC,0644);
+   free(fname);
+   size_t bytes = 0;
+   // Write annotation.
+   int bits = 0;
+   while ((tau >> bits) > 0) bits++;
+   size_t struct_size = ((index->size >> 4) + 1)*(bits+2);
+   fprintf(stderr,"[info] writing annotation (%ld bytes)... ",struct_size);
+   while ((bytes += write(fd,ann.bitfield+bytes,struct_size-bytes)) < struct_size);
+   fprintf(stderr,"%ld bytes written.\n",bytes);
+   // Close file descriptor.
+   close(fd);
+   // Update table.
+   fprintf(stderr,"[info] updating annotation index... ");
+   annlist = realloc(annlist, sizeof(annlist_t) + (annlist->count + 1)*sizeof(ann_t));
+   if (ann_pos < 0) ann_pos = annlist->count++;
+   annlist->ann[ann_pos] = (ann_t) {
+      .id = ann_slot,
+      .k = kmer,
+      .d = tau,
+      .size = ann.ann_size,
+      .unique = ann.ann_set,
+      .data = NULL
+   };
+   ann_index_write(annlist, index_file);
+   free(annlist);
+   fprintf(stderr,"done.\n");
 
    return EXIT_SUCCESS;
 }

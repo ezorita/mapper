@@ -40,9 +40,11 @@ struct seedstack_t {
 
 struct hit_t {
    uint64_t locus;
-   uint32_t qrypos;
-   uint16_t depth;
-   uint16_t errors;
+   uint32_t beg;
+   uint32_t end;
+   uint32_t s_beg;
+   uint16_t s_end;
+   uint16_t s_errors;
 };
 
 // Annotated seed.
@@ -60,6 +62,7 @@ int            seed_mem       (uint8_t *, int, int, index_t *, seedstack_t **);
 int            next_mem       (uint8_t *, int, int, seed_t  *, index_t *);
 int            extend_lr      (uint8_t *, int, int, fmdpos_t *, index_t *);
 int            reseed_mem     (uint8_t *, seed_t, int, int, index_t *, seedstack_t **);
+int            remove_dup_mem (seedstack_t *);
 int            seed_mem_bp    (uint8_t *, int, int, int, index_t *, seedstack_t **);
 int            extend_lr_bp   (uint8_t *, int, int, int, fmdpos_t *, index_t *);
 int            seed_thr       (uint8_t *, int, int, int, index_t *, seedstack_t **);
@@ -80,7 +83,7 @@ int            seedstack_push   (seed_t, seedstack_t **);
 int            seedstack_append (seedstack_t **, seedstack_t *);
 // Mergesort compar functions.
 int            compar_hit_locus  (const void * a, const void * b, const int param);
-int            compar_seed_start (const void * a, const void * b, const int param);
+int            compar_seed_pos   (const void * a, const void * b);
 int            compar_hit_locus_qsort (const void * a, const void * b);
 int            compar_hit_errors_qsort (const void * a, const void * b);
 // Aux functions.

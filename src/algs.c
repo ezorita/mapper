@@ -14,11 +14,10 @@ mem_intervals
    int beg = 0;
    for (int i = 0; i < intv->pos; i++) {
       match_t m = intv->match[i];
-      int gap_end = ( i == intv->pos - 1 ? slen : intv->match[i+1].read_s);
       // Apply conditions.
       // 1. MapQ uncertainty around target quality.
       // 2. Gap identity.
-      if ((m.mapq < target_q && m.maxq >= target_q) || m.hits < gap_id*(gap_end-m.read_s))
+      if ((m.mapq < target_q && m.maxq >= target_q) || m.gap_id < gap_id)
          continue;
       // Store gap for mem seeding.
       if (m.read_s - beg >= min_intv_size) {
@@ -35,6 +34,7 @@ mem_intervals
 }
 
 
+/*
 int
 map_score
 (
@@ -44,6 +44,15 @@ map_score
 {
    for (size_t i = 0; i < matches->pos; i++) {
       match_t m = matches->match[i];
+
+   int s_mapq = score_mapq(*match);
+   if (s_mapq == 0)
+      matches->match[i]->mapq = match->maxq = 0;
+
+   int n_mapq = score_mapq(*match, cumlog, NULL);
+   matches->match[i].mapq = min(60,max(0,min(s_mapq, n_mapq)));
+
+
       if (m.score <= m.s_score) {
          matches->match[i].mapq = 0;
          continue;
@@ -53,15 +62,6 @@ map_score
       b = L - (int)m.hits;
       a = m.ann_d;
       if (VERBOSE_DEBUG) fprintf(stdout, "mapq start: L:%d, hits:%d, a:%d, s_hits:%d, s_hits_cnt:%d\n", L, m.hits, a, m.s_hits, m.s_hits_cnt);
-      /*
-      if (m.s_hits_cnt == 0) {
-         m.s_hits_cnt = 1;
-         m.s_hits = m.hits - a;
-      }
-      k = L - (int)m.s_hits;
-      a = min(a, k);
-      f = (a+k-b)/2;
-      */
       cnt = max(m.ann_cnt, m.s_hits_cnt);
       if (m.s_hits_cnt == 0) {
          m.s_hits = m.hits - m.ann_d;
@@ -106,29 +106,71 @@ map_score
    }
    return 0;
 }
+*/
 
 int
-tentative_score
+tentative_mapq
 (
  match_t * match,
  double  * cumlog
  )
 {
-   if (match->score <= match->s_score) {
-      match->mapq = 0;
-      match->maxq = 0;
-      return 0;
-   }
+   int s_mapq = score_mapq(*match);
+   if (s_mapq == 0)
+      match->mapq = match->maxq = 0;
 
+   int m_mapq = 0;
+   int n_mapq = neighbor_mapq(*match, cumlog, &m_mapq);
+   match->mapq = min(60,max(0,min(s_mapq, n_mapq)));
+   match->maxq = min(60,max(0,min(s_mapq, m_mapq)));
+   if (VERBOSE_DEBUG)
+      fprintf(stdout, "tentative score: est:%d, max:%d (score_mapq:%d, neigh_mapq:%d, neigh_maxq:%d)\n", match->mapq, match->maxq, s_mapq, n_mapq, m_mapq);
+   return 0;
+}
+
+int
+score_mapq
+(
+ match_t match
+) 
+{
+   if (match.score <= match.s_score)
+      return 0;
+   if (match.s_score_cnt == 0)
+      return 100;
+
+   // Do not apply identity penalty if ident >= 95%
+   double idnt = match.hits*1.0/(match.read_e-match.read_s+1);
+   idnt = (idnt >= 0.95 ? 1 : idnt*idnt);
+   // Include mapQ based on alignment score.
+   int mapq = (int)idnt*(6*(match.score-match.s_score)-10*log10(match.s_score_cnt));
+   if (VERBOSE_DEBUG)
+      fprintf(stdout, "score_mapq:%d (score:%d, s_score:%d, s_cnt:%d, idnt:%.2f)\n", mapq, match.score, match.s_score, match.s_score_cnt, idnt);
+   return mapq;
+}
+
+
+
+int
+neighbor_mapq
+(
+ match_t   match,
+ double  * cumlog,
+ int     * maxq
+)
+{
    int b,k,a,L,f,cnt,maxf,maxk;
-   L = match->read_e - match->read_s + 1;
-   b = L - match->hits;
-   k = L - match->s_hits;
-   a = match->ann_d;
-   cnt = max(match->ann_cnt, match->s_hits_cnt);
-   //   if (match->s_hits_cnt == 0 || L - (int)match->s_hits >= a) {
+   L = match.read_e - match.read_s + 1;
+   b = L - match.hits;
+   k = L - match.s_hits;
+   a = match.ann_d;
+   cnt = max(match.ann_cnt, match.s_hits_cnt);
+
+   maxf = a;
+   maxk = min(k,a+b);
+
    if (k >= a) {
-      match->s_hits = match->hits - match->ann_d;
+      match.s_hits = match.hits - match.ann_d;
       if (b <= 0.05*L) {
          f = a;
          k = b+a;
@@ -140,29 +182,30 @@ tentative_score
       a = min(a, k);
       f = (a+k-b)/2;
    }
-   maxf = a;
-   maxk = a+b;
 
-   if (VERBOSE_DEBUG) {
-      fprintf(stdout, "mapq start: L:%d, hits:%d, a:%d, s_hits:%d, s_cnt:%d, k=%d, f=%d, maxk=%d, maxa=%d\n", L, match->hits, a, match->s_hits, cnt, k, f, maxk, maxf);
-   }
-
-   if ((match->s_hits_cnt && k==b) || a == 0) {
-      match->mapq = match->maxq = 0;
+   if ((match.s_hits_cnt && k==b) || a == 0) {
+      match.mapq = match.maxq = 0;
       return 0;
    }
-   double pfp = compute_fp_prob(L,b,k,a,f,cumlog);
-   double max_pfp = compute_fp_prob(L,b,maxk,a,maxf,cumlog);
+
    // Do not apply identity penalty if ident >= 95%
-   double idnt = match->hits*1.0/L;
-   idnt = (idnt >= 0.95 ? 1 : idnt);
-   // Include mapQ based on alignment score.
-   double score_mapq = 6*(match->score-match->s_score)-10*log10(match->s_score_cnt);
-   double neigh_mapq = -10*log10(pfp*cnt);
-   double max_neigh_mapq = -10*log10(max_pfp*cnt);
-   match->mapq = min(60,max(0,idnt*idnt*min(score_mapq, neigh_mapq)));
-   match->maxq = min(60,max(0,idnt*idnt*min(score_mapq, max_neigh_mapq)));
-   return 0;
+   double idnt = match.hits*1.0/L;
+   idnt = (idnt >= 0.95 ? 1 : idnt*idnt);
+
+   if (maxq != NULL) {
+      double max_pfp = compute_fp_prob(L,b,maxk,a,maxf,cumlog);
+      *maxq = (int)-10*idnt*log10(max_pfp*cnt);
+      if (VERBOSE_DEBUG)
+         fprintf(stdout, "neig_maxq:%d (L:%d, b:%d, k:%d, a:%d (cnt:%d), f:%d, idnt:%.2f)\n", *maxq, L, b, maxk, a, cnt, maxf, idnt);
+   }
+
+   double pfp = compute_fp_prob(L,b,k,a,f,cumlog);
+   int mapq = (int)-10*idnt*log10(pfp*cnt);
+   
+   if (VERBOSE_DEBUG)
+      fprintf(stdout, "neig_mapq:%d (L:%d, b:%d, k:%d, a:%d (cnt:%d), f:%d, idnt:%.2f)\n", mapq, L, b, k, a, cnt, f, idnt);
+
+   return mapq;
 }
 
 double

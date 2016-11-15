@@ -19,9 +19,9 @@ ASOURCES= $(addprefix $(SRC_DIR)/,$(ASOURCE_FILES))
 AHEADERS= $(addprefix $(INC_DIR)/,$(AHEADER_FILES))
 INCLUDES= $(addprefix -I, $(INC_DIR))
 
-CFLAGS= -std=c99 -Wall -O3 -mpopcnt
+#CFLAGS= -std=c99 -Wall -O3 -mpopcnt
 #CFLAGS= -std=c99 -Wall -g -pg -O0 -mpopcnt
-#CFLAGS= -std=c99 -Wall -g -O0 -mpopcnt
+CFLAGS= -std=c99 -Wall -g -O0 -mpopcnt
 LDLIBS= -lm -lpthread
 CC= gcc
 

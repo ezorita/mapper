@@ -127,7 +127,7 @@ find_uniq_seed
    int     z = 0;
    int    zp = -k;
    if (beg > slen-k)
-      return (hit_t) {.errors = 1};
+      return (hit_t) {.s_errors = 1};
    // Find annotation table with same k.
    ann_t * ann = ann_find(k, index->ann);
    // Query buffer.
@@ -159,7 +159,7 @@ find_uniq_seed
             int ann_d = ann_read(*ann, loc, NULL);
             if (ann_d > d) {
                free(q);
-               return (hit_t) {.locus = locus, .qrypos = i, .depth = k, .errors = 0};
+               return (hit_t) {.locus = locus, .beg = i, .end = i+k-1, .s_beg = i, .s_end = i+k-1, .s_errors = 0};
             } else {
                values[i] = 2;
             }
@@ -172,7 +172,7 @@ find_uniq_seed
       } 
    }
    free(q);
-   return (hit_t) {.errors = 1};
+   return (hit_t) {.s_errors = 1};
 }
 
 int
@@ -365,10 +365,11 @@ compute_hits
    hit_t * hits = malloc(cnt * sizeof(hit_t));
    size_t l = 0;
    for (size_t i = 0; i < seeds->pos; i++) {
-      seed_t seed = seeds->seed[i];
-      for (size_t j = seed.ref_pos.sp; j <= seed.ref_pos.ep; j++) {
+      seed_t s = seeds->seed[i];
+      for (size_t j = s.ref_pos.sp; j <= s.ref_pos.ep; j++) {
          int64_t loc = get_sa(j,index->sar);
-         hits[l++] = (hit_t) {.locus=loc, .qrypos=seed.qry_pos, .depth=seed.ref_pos.depth, .errors=seed.errors};
+         int end = s.qry_pos + s.ref_pos.depth - 1;
+         hits[l++] = (hit_t) {.locus=loc, .s_beg=s.qry_pos, .s_end=end, .beg=s.qry_pos, .end=end, .s_errors=s.errors};
       }
    }
    
@@ -398,7 +399,7 @@ chain_seeds
          uint64_t g_start;
          int dir = 0;
          if (hits[i].locus >= index->size/2) {
-            g_start = index->size - (hits[i].locus+hits[i].depth) - 2;
+            g_start = index->size - (hits[i].locus+hits[i].s_end-hits[i].s_beg) - 2;
             dir = 1;
          } else {
             g_start = hits[i].locus + 1;
@@ -408,8 +409,8 @@ chain_seeds
          int   chrnum = bisect_search(0, index->chr->nchr-1, index->chr->start, g_start+1)-1;
          // Print results.
          fprintf(stdout, "[%d,%d] (%d) %s,%ld%c\n",
-                 hits[i].qrypos, hits[i].qrypos+hits[i].depth-1,
-                 hits[i].depth,
+                 hits[i].s_beg, hits[i].s_end,
+                 hits[i].s_end - hits[i].s_beg + 1,
                  index->chr->name[chrnum],
                  g_start - index->chr->start[chrnum]+1,
                  dir ? '-' : '+'
@@ -427,35 +428,33 @@ chain_seeds
    size_t cnt = 0;
 
    while (i < hit_count) {
-      // Match start.
-      int64_t span     = hits[i].depth;
-      int64_t lbeg_tmp = hits[i].locus;
-      int64_t lend_tmp = lbeg_tmp + span;
-      int64_t rbeg_tmp = hits[i].qrypos;
-      int64_t rend_tmp = rbeg_tmp + span;
-      int64_t lbeg = lbeg_tmp, rbeg = rbeg_tmp, rend = rend_tmp;
-      i++;
+      hit_t chain = hits[i++];
+      // Temp seed length.
+      int32_t s_beg = chain.s_beg;
+      int32_t s_end = chain.s_end;
+      int32_t l_beg = chain.locus;
+      chain.s_errors = s_end - s_beg + 1;
 
       // Debug seeds...
       if (VERBOSE_DEBUG) {
          uint64_t g_start;
          int dir = 0;
-         if (lbeg_tmp >= index->size/2) {
-            g_start = index->size - lend_tmp - 2;
+         if (chain.locus >= index->size/2) {
+            g_start = index->size - (chain.locus + chain.end - chain.beg) - 2;
             dir = 1;
          } else {
-            g_start = lbeg_tmp + 1;
+            g_start = chain.locus + 1;
             dir = 0;
          }
          // Search chromosome name.
          int   chrnum = bisect_search(0, index->chr->nchr-1, index->chr->start, g_start+1)-1;
          // Print results.
-         fprintf(stdout, "%s,%ld%c/%ld,%ld/%ld,%ld",
+         fprintf(stdout, "%s,%ld%c/%d,%d/%d,%d",
                  index->chr->name[chrnum],
                  g_start - index->chr->start[chrnum]+1,
                  dir ? '-' : '+',
-                 rbeg_tmp, rend_tmp-1,
-                 span, span
+                 chain.beg, chain.end,
+                 chain.end-chain.beg+1, chain.end-chain.beg+1
                  );
       }
 
@@ -463,26 +462,26 @@ chain_seeds
       while (i < hit_count) {
          // Compare genome and read distances.
          int64_t g_dist = (int64_t)(hits[i].locus) - (int64_t)(hits[i-1].locus);
-         int64_t r_dist = (int64_t)(hits[i].qrypos) - (int64_t)(hits[i-1].qrypos);
+         int64_t r_dist = (int64_t)(hits[i].s_beg) - (int64_t)(hits[i-1].s_beg);
          if (r_dist >= 0 && (g_dist <= (1+read_ref_ratio) * r_dist) && (g_dist >= (1-read_ref_ratio) * r_dist)) {
-            uint64_t new_rend = hits[i].qrypos + hits[i].depth;
-            if (new_rend > rend_tmp) {
+            if (hits[i].end > chain.end) {
                // Update hits.
-               if (hits[i].qrypos <= rend_tmp) {
-                  span += new_rend - rend_tmp;
-                  rend_tmp = new_rend;
+               if (hits[i].beg <= chain.end) {
+                  chain.s_errors += hits[i].end - chain.end;
+                  s_end = hits[i].end;
                }
                else {
-                  span += hits[i].depth;
-                  rbeg_tmp = hits[i].qrypos;
-                  rend_tmp = new_rend;
-                  lbeg_tmp = hits[i].locus;
+                  chain.s_errors += hits[i].end - hits[i].beg + 1;
+                  s_beg = hits[i].s_beg;
+                  s_end = hits[i].s_end;
+                  l_beg = hits[i].locus;
                }
+               chain.end = hits[i].end;
                // Check if this is the longest seed.
-               if (rend_tmp - rbeg_tmp > rend - rbeg) {
-                  rbeg = rbeg_tmp;
-                  rend = rend_tmp;
-                  lbeg = lbeg_tmp;
+               if (s_end - s_beg > chain.s_end - chain.s_beg) {
+                  chain.s_beg = s_beg;
+                  chain.s_end = s_end;
+                  chain.locus = l_beg;
                }
             }
 
@@ -491,7 +490,7 @@ chain_seeds
                uint64_t g_start;
                int dir = 0;
                if (hits[i].locus >= index->size/2) {
-                  g_start = index->size - hits[i].locus - hits[i].depth - 2;
+                  g_start = index->size - hits[i].locus - (hits[i].end-hits[i].beg+1) - 2;
                   dir = 1;
                } else {
                   g_start = hits[i].locus + 1;
@@ -500,12 +499,12 @@ chain_seeds
                // Search chromosome name.
                int   chrnum = bisect_search(0, index->chr->nchr-1, index->chr->start, g_start+1)-1;
                // Print results.
-               fprintf(stdout, "\t%s,%ld%c/%d,%d/%d,%ld",
+               fprintf(stdout, "\t%s,%ld%c/%d,%d/%d,%d",
                        index->chr->name[chrnum],
                        g_start - index->chr->start[chrnum]+1,
                        dir ? '-' : '+',
-                       hits[i].qrypos, hits[i].qrypos + hits[i].depth-1,
-                       hits[i].depth, span
+                       hits[i].beg, hits[i].end,
+                       hits[i].end - hits[i].beg + 1, chain.s_errors
                        );
             }
 
@@ -513,8 +512,7 @@ chain_seeds
          } else break;
       }
 
-      hit_t h = (hit_t) {.locus = lbeg, .qrypos = rbeg, .depth = rend - rbeg, .errors = span};
-      hits[cnt++] = h;
+      hits[cnt++] = chain;
 
       if (VERBOSE_DEBUG) fprintf(stdout, "\n");
    }
@@ -541,7 +539,7 @@ compar_hit_locus_qsort
    hit_t * hb = (hit_t *)b;
    if (ha->locus > hb->locus) return 1;
    else if (ha->locus < hb->locus) return -1;
-   else return (ha->depth > hb->depth ? 1 : -1);
+   else return (ha->end > hb->end ? -1 : 1);
 }
 
 int
@@ -553,7 +551,7 @@ compar_hit_errors_qsort
 {
    hit_t * ha = (hit_t *)a;
    hit_t * hb = (hit_t *)b;
-   if (ha->errors < hb->errors) return 1;
+   if (ha->s_errors < hb->s_errors) return 1;
    else return -1;
 }
 
@@ -581,7 +579,8 @@ mem_unique
       max_d = max(max_d, ann_read(*ann, loc + i, NULL));
    }
    if (max_d > 1) {
-      *hit = (hit_t) {.locus = locus, .qrypos = seed.qry_pos, .depth = k, .errors = 0};
+      int end = seed.qry_pos + k - 1;
+      *hit = (hit_t) {.locus=locus, .s_beg=seed.qry_pos, .s_end=end, .beg=seed.qry_pos, .end=end, .s_errors=0};
       return 1;
    }
    return 0;
@@ -656,43 +655,28 @@ extend_lr
    return i + (i <= end ? (q[i] > 3) : 0);
 }
 
-/*
-** This version of the function uses suffix_extend attempting
-** to do forward search. Either use reverse complement and
-** then correct the locus (which requires querying the SA),
-** or start from the end (results may differ from BWA).
 int
-seed_interv
+remove_dup_mem
 (
- uint8_t      * q,
- int            beg,
- int            end,
- int            min_len,
- int            max_loci,
- index_t      * index,
- seedstack_t ** stack
+ seedstack_t * seeds
 )
 {
-   if (min_len < 1) min_len = 1;
-   while (beg <= end - min_len) {
-      bwpos_t pos = index->bwt->bwt_base;
-      while (pos.ep - pos.sp >= max_loci || pos.depth < min_len) {
-         if (beg >= end) return 0;
-         int c = q[beg++];
-         if (c > 3) {
-            if (beg > end - min_len) return 0;
-            pos = index->bwt->bwt_base;
-            continue;
-         }
-         suffix_extend(c,pos,&pos,index->bwt);
-         fprintf(stdout, "pos[%d]: depth=%d, loci=%ld\n", beg-1, pos.depth, pos.ep-pos.sp+1);
-      }
-      if (pos.ep >= pos.sp) 
-         seedstack_push((seed_t){.errors = 0, .qry_pos = beg-pos.depth, .ref_pos = pos}, stack);
+   if (seeds->pos < 2) return 0;
+   qsort(seeds->seed, seeds->pos, sizeof(seed_t), compar_seed_pos);
+   int cnt = seeds->pos;
+   int beg = seeds->seed[0].qry_pos;
+   int end = beg + seeds->seed[0].ref_pos.depth;
+   seeds->pos = 1;
+   for (int i = 1; i < cnt; i++) {
+      seed_t s = seeds->seed[i];
+      if (beg == s.qry_pos && end == s.qry_pos + s.ref_pos.depth) continue;
+      beg = s.qry_pos;
+      end = beg + s.ref_pos.depth;
+      seeds->seed[seeds->pos++] = s;
    }
    return 0;
-} 
-*/ 
+}
+
 
 int
 seed_interv
@@ -1126,15 +1110,14 @@ compar_hit_locus
    hit_t * hb = (hit_t *)b;
    if (ha->locus > hb->locus) return 1;
    else if (ha->locus < hb->locus) return -1;
-   else return (ha->depth > hb->depth ? 1 : -1);
+   else return (ha->s_end - ha->s_beg > hb->s_end - hb->s_beg ? 1 : -1);
 }
 
 int
-compar_seed_start
+compar_seed_pos
 (
  const void * a,
- const void * b,
- const int param
+ const void * b
 )
 {
    seed_t * sa = (seed_t *)a;

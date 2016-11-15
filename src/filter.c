@@ -116,6 +116,7 @@ align_seeds
  char         * read,
  seedstack_t  * seeds,
  matchlist_t ** seqmatches,
+ double       * cumlog,
  index_t      * index,
  filteropt_t    opt,
  alignopt_t     alignopt
@@ -125,7 +126,7 @@ align_seeds
    uint64_t hit_count;
    // Forward seeds.
    hit_t * hits = compute_hits(seeds, index, &hit_count);
-   int rval = align_hits(read,hits,hit_count,seqmatches,index,opt,alignopt);
+   int rval = align_hits(read,hits,hit_count,seqmatches,cumlog,index,opt,alignopt);
    free(hits);
    return rval;
 }
@@ -134,7 +135,9 @@ int
 add_align_info
 (
  match_t        aln,
+ int            slen,
  matchlist_t ** matchlist,
+ double       * cumlog,
  index_t      * index,
  filteropt_t    opt
 )
@@ -181,19 +184,35 @@ add_align_info
             if (aln.hits > m.s_hits && aln.hits >= m.hits-m.ann_d && aln.hits > m.hits*opt.min_best_to_second) {
                list->match[j].s_hits = aln.hits;
                list->match[j].s_hits_cnt  = 1;
-               // Flag mapQ to recompute.
-               list->match[j].mapq = -1;
+               // Recompute neighbor mapQ.
+               int mapq, maxq;
+               mapq = neighbor_mapq(list->match[j], cumlog, &maxq);
+               list->match[j].mapq = min(mapq,list->match[j].mapq);
+               list->match[j].maxq = min(maxq,list->match[j].maxq);
             } else if (aln.hits == m.s_hits) {
                list->match[j].s_hits_cnt += 1;
+               // Recompute neighbor mapQ.
+               int mapq, maxq;
+               mapq = neighbor_mapq(list->match[j], cumlog, &maxq);
+               list->match[j].mapq = min(mapq,list->match[j].mapq);
+               list->match[j].maxq = min(maxq,list->match[j].maxq);
             }
          }
          if (aln.score > m.s_score) {
             list->match[j].s_score = aln.score;
             list->match[j].s_score_cnt = 1;
-            // Flag mapQ to recompute.
-            list->match[j].mapq = -1;
+            // Recompute score mapQ.
+            int mapq;
+            mapq = score_mapq(list->match[j]);
+            list->match[j].mapq = min(mapq,list->match[j].mapq);
+            list->match[j].maxq = min(mapq,list->match[j].maxq);
          } else if (aln.score == m.s_score) {
             list->match[j].s_score_cnt += 1;
+            // Recompute score mapQ.
+            int mapq;
+            mapq = score_mapq(list->match[j]);
+            list->match[j].mapq = min(mapq,list->match[j].mapq);
+            list->match[j].maxq = min(mapq,list->match[j].maxq);
          }
       }
    }
@@ -203,6 +222,8 @@ add_align_info
       check_neighbor_info(&aln,index);
       // Double check second best alignment.
       if (aln.s_hits < aln.hits - aln.ann_d) aln.s_hits = aln.s_hits_cnt =  0;
+      // Compute tentative mapQ.
+      tentative_mapq(&aln, cumlog);
       // Insert interval in empty gap.
       if (ov_beg < 0) {
          // Insert position.
@@ -225,6 +246,14 @@ add_align_info
                memmove(list->match+ov_beg + 1, list->match+ov_end+1, (list->pos-1-ov_end)*sizeof(match_t));
             list->pos += ov_beg - ov_end;
          }
+      }
+      // Recompute gap identities.
+      int beg = 0;
+      for (int i = 0; i < list->pos; i++) {
+         match_t m = list->match[i];
+         int gap_span = (i == list->pos - 1 ? slen : list->match[i+1].read_s) - beg;
+         list->match[i].gap_id = m.hits*1.0/gap_span;
+         beg = m.read_e + 1;
       }
    }
 
@@ -291,6 +320,7 @@ align_hits
  hit_t        * hits,
  uint64_t       hit_count,
  matchlist_t ** seqmatches,
+ double       * cumlog,
  index_t      * index,
  filteropt_t    opt,
  alignopt_t     alignopt
@@ -298,31 +328,37 @@ align_hits
 {
    int slen = strlen(read);
    for(int i = 0; i < hit_count; i++) {
-      // Added this line to avoid duplicate match when
-      // unique seed align is not safe (while reseeding).
-      // TODO:
-      //  Use a hash table with ~10k entries (or some number that will never be aligned).
-      //  Use a bin size and mark the aligned loci in the hash table.
       int done = 0;
       for (size_t j = 0; j < (*seqmatches)->pos; j++) {
-         int64_t d = ((int64_t)(*seqmatches)->match[j].ref_s) - ((int64_t)hits[i].locus);
+         match_t m = (*seqmatches)->match[j];
+         // Filter out repeated alignments.
+         // TODO:
+         //  - Needs improvement, keep track of all the alignments.
+         int64_t d = ((int64_t)m.ref_s) - ((int64_t)hits[i].locus);
          if (d < slen && d > -slen) {
+            if (VERBOSE_DEBUG) fprintf(stdout, "repeated alignment\n");
             done = 1;
             break;
          }
+         // Filter out redundant alignments.
+         /*
+         if (hits[i].beg >= m.read_s && hits[i].end <= m.read_e) {
+            if ((m.mapq > opt.target_q || m.maxq < opt.target_q) && m.gap_id >= opt.min_gap_id) {
+               if (VERBOSE_DEBUG) fprintf(stdout, "redundant alignment\n");
+               done = 1;
+               break;
+            }
+         }
+         */
       }
-      if (done) {
-         // DEBUG.
-         if (VERBOSE_DEBUG) fprintf(stdout, "repeated alignment\n");
-         continue;
-      }
+      if (done) continue;
 
       match_t m = {
-         .read_s      = hits[i].qrypos,
-         .read_e      = hits[i].qrypos + hits[i].depth - 1,
+         .read_s      = hits[i].s_beg,
+         .read_e      = hits[i].s_end,
          .ref_s       = hits[i].locus,
-         .ref_e       = hits[i].locus + hits[i].depth - 1,
-         .hits        = hits[i].depth - hits[i].errors,
+         .ref_e       = hits[i].locus + hits[i].s_end - hits[i].s_beg,
+         .hits        = hits[i].s_end - hits[i].s_beg + 1 - hits[i].s_errors,
          .s_hits      = 0,
          .s_hits_cnt  = 0,
          .score       = 0,
@@ -341,7 +377,7 @@ align_hits
       if (m.hits < opt.min_interval_hits) continue;
 
       // Now check overlap with any other interval.
-      add_align_info(m,seqmatches,index,opt);
+      add_align_info(m,slen,seqmatches,cumlog,index,opt);
    }
    return 0;
 }

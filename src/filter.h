@@ -12,6 +12,7 @@
 typedef struct filteropt_t filteropt_t;
 
 struct filteropt_t {
+   int target_q;
    int split_interv;
    long dist_accept;
    long max_align_per_read;
@@ -32,11 +33,11 @@ struct filteropt_t {
 
 
 // Aligning
-int             align_seeds         (char *, seedstack_t *, matchlist_t **, index_t *, filteropt_t, alignopt_t);
-int             align_hits          (char *, hit_t *, uint64_t, matchlist_t **, index_t *, filteropt_t, alignopt_t);
+int             align_seeds         (char *, seedstack_t *, matchlist_t **, double *, index_t *, filteropt_t, alignopt_t);
+int             align_hits          (char *, hit_t *, uint64_t, matchlist_t **, double *, index_t *, filteropt_t, alignopt_t);
 int             extend_align_bp     (match_t *, char *, size_t, index_t *, alignopt_t);
 int             check_neighbor_info (match_t *, index_t *);
-int             add_align_info      (match_t, matchlist_t **, index_t *, filteropt_t);
+int             add_align_info      (match_t, int, matchlist_t **, double *, index_t *, filteropt_t);
 double          e_value             (int L, int m, long gsize);
 
 // Post-processing functions.

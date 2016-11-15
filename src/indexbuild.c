@@ -30,14 +30,12 @@ write_index
    char * bwtfile = add_suffix(filename, ".bwt");
    char * genfile = add_suffix(filename, ".gen");
    char * annfile = add_suffix(filename, ".ann");
-   char * shtfile = add_suffix(filename, ".sht");
 
    // Open files.
    int fsa = open(sarfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
    int fbw = open(bwtfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
    int fgn = open(genfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
    int fan = open(annfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-   int fsh = open(shtfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 
    // Error control.
    if (fsa == -1) {
@@ -56,16 +54,11 @@ write_index
       fprintf(stderr, "[error] opening '%s' file: %s.\n", annfile, strerror(errno));
       return EXIT_FAILURE;
    }
-   if (fsh == -1) {
-      fprintf(stderr, "[error] opening '%s' file: %s.\n", shtfile, strerror(errno));
-      return EXIT_FAILURE;
-   }
    
    free(sarfile);
    free(bwtfile);
    free(genfile);
    free(annfile);
-   free(shtfile);
 
 
    clock_t tstart;
@@ -154,14 +147,8 @@ write_index
       return EXIT_FAILURE;
    }
    close(fan);
-   fprintf(stderr, "done.\n[proc] creating seed table index... ");
-   if(write(fsh, &count, sizeof(uint8_t)) < 1) {
-      fprintf(stderr, "\n[error] could not write seed table index.\n");
-      return EXIT_FAILURE;
-   }
-   close(fsh);
    fprintf(stderr, "done.\n");
-   index_add_annotation(def_kmer,def_tau,def_tau,def_rthr,3,threads,index,filename);
+   index_add_annotation(def_kmer,def_tau,threads,index,filename);
    return 0;
 }
 

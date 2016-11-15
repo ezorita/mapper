@@ -27,6 +27,8 @@ int main(int argc, char *argv[])
          char * index_file;
          opt_add_t opt;
          int rval;
+         // TODO: 
+         // - Remove seed hash table params.
          if ((rval = parse_opt_add(argc, argv, &opt, &index_file))) {
             return (rval == -1 ? EXIT_FAILURE : EXIT_SUCCESS);
          }
@@ -35,8 +37,7 @@ int main(int argc, char *argv[])
          if (index == NULL)
             return EXIT_FAILURE;
          // Compute annotation.
-         return index_add_annotation(opt.k, opt.d, opt.sd, opt.repeat_thr, opt.mode,
-                                     opt.threads, index, index_file);
+         return index_add_annotation(opt.k, opt.d, opt.threads, index, index_file);
       } else if (strcmp(argv[2], "build") == 0) {
          if (argc == 3) {
             say_build_usage();
@@ -55,6 +56,7 @@ int main(int argc, char *argv[])
    }
 
    // DEFAULT Options.
+   /* ILLUMINA
    seedopt_t seedopt = { // MEM
       .min_len = 19,
       .max_len = 1000,
@@ -64,10 +66,23 @@ int main(int argc, char *argv[])
       .reseed_len = 28,
       .sensitive_mem = 0
    };
+   */
+   // NANOPORE 2D
+   seedopt_t seedopt = { // MEM
+      .min_len = 14,
+      .max_len = 1000,
+      .min_loci = 0,
+      .max_loci = 500,
+      .thr_loci = 100,
+      .reseed_len = 10,
+      .sensitive_mem = 0
+   };
+
    filteropt_t filteropt = {
+      .target_q = 20,
       .dist_accept = 10,
       .max_align_per_read = 200,
-      .read_ref_ratio = 0.05,
+      .read_ref_ratio = 0.15,
       .align_accept_eexp = -100.0,
       .overlap_max_tolerance = 0.5,
       .align_seed_filter_thr = 0.5,
@@ -83,16 +98,16 @@ int main(int argc, char *argv[])
       .min_gap_id = 0.8
    };
    alignopt_t alignopt = {
-      .bp_diagonal      = 1,
+      .bp_diagonal      = 0,
       .bp_thr           = 10,
       .bp_max_thr       = 50,
       .bp_resolution    = 1,
       .bp_period        = 5,
-      .bp_repeats       = 2,
-      .read_error       = 0.02,
+      .bp_repeats       = 4,
+      .read_error       = 0.15,
       .rand_error       = 0.50,
-      .width_ratio      = 0.05,
-      .mismatch_penalty = 4
+      .width_ratio      = 0.15,
+      .mismatch_penalty = 1
    };
 
    // Precompute logarithms.
@@ -148,19 +163,7 @@ int main(int argc, char *argv[])
       return EXIT_FAILURE;
    ann_print_index(ann);
 
-   shtlist_t * sht = sht_index_read(ifile);
-   if (sht == NULL)
-      return EXIT_FAILURE;
-   if (sht->count == 0) {
-      fprintf(stderr, "[error] no seed tables found.\n");
-      return EXIT_FAILURE;
-   }
-   if (sht_index_load(sht, ifile))
-      return EXIT_FAILURE;
-   sht_print_index(sht);
-
    index->ann = ann;
-   index->sht = sht;
 
    // Read file.
    if (opt_verbose) fprintf(stderr, "reading query file...\n");
@@ -274,13 +277,13 @@ mt_worker
    seedstack_t * mems     = seedstack_new(SEEDSTACK_SIZE);
    vstack_t    * mem_intv = new_stack(SEEDSTACK_SIZE);
    pathstack_t * pstack   = pathstack_new(PATHSTACK_DEF_SIZE);
-   int k = index->sht->sht[0].k;
-   int d = index->sht->sht[0].d;
-   int r = index->sht->sht[0].repeat_thr;
+   //   int k = index->sht->sht[0].k;
+   //   int d = index->sht->sht[0].d;
+   //   int r = index->sht->sht[0].repeat_thr;
 
    // Parametrize
    int max_align = 20;
-   int target_q = 20;
+   int target_q = opt->filter.target_q;
 
    // Precompute log table.
    int cumlog_max = 0;
@@ -315,8 +318,6 @@ mt_worker
       /**
       *** UNIQUE SEEDS
       **/
-
-      int beg = 0;
       /*
       while (1) {
          // Do not seed intervals.
@@ -353,9 +354,14 @@ mt_worker
       */
 
       /**
-      *** NEW MEM PATH 1
+      *** UNIQUE MEMS
       **/
+      if (VERBOSE_DEBUG) fprintf(stdout, "MEMS:\n");
       hit_t hit;
+      int beg = 0;
+      mems->pos = 0;
+      seeds->pos = 0;
+      reseeds->pos = 0;
       while (beg < slen) {
          seed_t mem;
          beg = next_mem(query,beg,slen-1,&mem,index);
@@ -366,10 +372,10 @@ mt_worker
             if (VERBOSE_DEBUG) {
                fprintf(stdout, "unique mem: beg:%d, end:%d, loci:%ld\n", mem.qry_pos, mem.qry_pos+mem.ref_pos.depth, mem.ref_pos.ep - mem.ref_pos.sp + 1);
             }
-            align_hits(seq[i].seq, &hit, 1, &map_matches, index, opt->filter, opt->align);
+            align_hits(seq[i].seq, &hit, 1, &map_matches, cumlog, index, opt->filter, opt->align);
          } else {
             if (VERBOSE_DEBUG) {
-               fprintf(stdout, "mem: beg:%d, end:%d, loci:%ld\n", mem.qry_pos, mem.qry_pos+mem.ref_pos.depth, mem.ref_pos.ep - mem.ref_pos.sp + 1);
+               fprintf(stdout, "beg:%d, end:%d, loci:%ld\n", mem.qry_pos, mem.qry_pos+mem.ref_pos.depth, mem.ref_pos.ep - mem.ref_pos.sp + 1);
             }
             if (mem.ref_pos.ep - mem.ref_pos.sp > opt->seed.max_loci)
                // Repeat seeds. Do not reseed.
@@ -384,32 +390,44 @@ mt_worker
          for (int j = 0; j < map_matches->pos; j++) {
             match_t m = map_matches->match[j];
             if (beg > m.read_e) continue;
-            if (beg < m.read_s - k) break;
-            // Update tentative score.
-            if (m.mapq < 0) {
-               tentative_score(map_matches->match+j, cumlog);
-               m = map_matches->match[j];
-            }
-            if ((m.mapq >= target_q || m.maxq < target_q) &&  m.hits >= opt->filter.min_gap_id*(slen - m.read_s)) {
+            if (beg < m.read_s - opt->seed.min_len) break;
+            if ((m.mapq >= target_q || m.maxq < target_q) &&  m.gap_id >= opt->filter.min_gap_id)
                beg = m.read_e + 1;
-            }
             if (VERBOSE_DEBUG) {
-               fprintf(stdout, "match[%d]: r_beg:%d, r_end:%d, hits:%d, a:%d, score:%d, mapQ=%d, maxQ=%d, gap_id:%.2f, next_beg:%d\n", j, m.read_s, m.read_e, m.hits, m.ann_d, m.score, m.mapq, m.maxq, m.hits*1.0/(slen-m.read_s), beg);
+               fprintf(stdout, "match[%d]: r_beg:%d, r_end:%d, hits:%d, a:%d, score:%d, mapQ=%d, maxQ=%d, gap_id:%.2f, next_beg:%d\n", j, m.read_s, m.read_e, m.hits, m.ann_d, m.score, m.mapq, m.maxq, m.gap_id, beg);
             }
          }
       }
 
-      // Update tentative scores.
-      for (int j = 0; j < map_matches->pos; j++)
-         if (map_matches->match[j].mapq < 0)
-            tentative_score(map_matches->match+j, cumlog);
-
 
       if (VERBOSE_DEBUG) {
+         // Print reseeds.
+         fprintf(stdout, "RESEEDS:\n");
+         for (int j = 0; j < reseeds->pos; j++) {
+            seed_t mem = reseeds->seed[j];
+            fprintf(stdout, "beg:%d, end:%d, loci:%ld\n", mem.qry_pos, mem.qry_pos+mem.ref_pos.depth, mem.ref_pos.ep - mem.ref_pos.sp + 1);
+         }
+
+         // Print intervals.
          for (int j = 0; j < map_matches->pos; j++) {
             match_t m = map_matches->match[j];
-            int gap_end = ( j == map_matches->pos - 1 ? slen : map_matches->match[j+1].read_s);
-            fprintf(stdout, "match[%d]: r_beg:%d, r_end:%d, hits:%d, a:%d, score:%d, mapQ=%d, maxQ=%d, gap_id:%.2f, next_beg:%d\n", j, m.read_s, m.read_e, m.hits, m.ann_d, m.score, m.mapq, m.maxq, m.hits*1.0/(gap_end-m.read_s), beg);
+            fprintf(stdout, "match[%d]: r_beg:%d, r_end:%d, hits:%d, a:%d, score:%d, mapQ=%d, maxQ=%d, gap_id:%.2f, next_beg:%d\n", j, m.read_s, m.read_e, m.hits, m.ann_d, m.score, m.mapq, m.maxq, m.gap_id, beg);
+         }
+      }
+
+      /**
+      *** MEM/THRESHOLD ALIGNMENT
+      **/
+
+      // Recompute unmapped intervals.
+      mem_intv->pos = 0;
+      mem_intervals(map_matches, slen, target_q,opt->filter.min_gap_id, opt->filter.min_interval_size, &mem_intv);
+      if (mem_intv->pos == 0) goto map_end;
+
+      if (VERBOSE_DEBUG) {
+         fprintf(stdout,"unmapped intervals:\n");
+         for (int j = 0; j < mem_intv->pos; j+=2) {
+            fprintf(stdout, "beg: %ld, end:%ld\n", mem_intv->val[j], mem_intv->val[j+1]);
          }
       }
 
@@ -419,18 +437,6 @@ mt_worker
          if (s.ref_pos.ep - s.ref_pos.sp > opt->seed.max_loci)
             s.ref_pos.ep = s.ref_pos.sp + opt->seed.max_loci - 1;
          seedstack_push(s, &mems);
-      }
-
-      // Recompute unmapped intervals.
-      mem_intv->pos = 0;
-      mem_intervals(map_matches, slen, target_q,opt->filter.min_gap_id,  opt->filter.min_interval_size, &mem_intv);
-      if (mem_intv->pos == 0) goto map_end;
-
-      if (VERBOSE_DEBUG) {
-         fprintf(stdout,"unmapped intervals:\n");
-         for (int j = 0; j < mem_intv->pos; j+=2) {
-            fprintf(stdout, "beg: %d, end:%d\n", mem_intv->val[j], mem_intv->val[j+1]);
-         }
       }
 
       // Remove mapped mems.
@@ -460,21 +466,96 @@ mt_worker
          }
       }
 
-      // Chain seeds.
+      // Remove duplicates.
+      remove_dup_mem(seeds);
+
+      // Chain seeds and align.
       if (seeds->pos) {
          size_t hit_cnt = 0;
          hit_t * hits = chain_seeds(seeds, slen, index, opt->filter.dist_accept, opt->filter.read_ref_ratio, &hit_cnt);
+         //hit_t * hits = compute_hits(seeds, index, &hit_cnt);
          hit_cnt = min(opt->filter.max_align_per_read, hit_cnt);
          for (int j = 0; j < hit_cnt; j++)
-            hits[j].errors = 0;
+            hits[j].s_errors = 0;
          // Sort and align up to max_align.
          if (hit_cnt) {
-            align_hits(seq[i].seq, hits, hit_cnt, &map_matches, index, opt->filter, opt->align);
+            align_hits(seq[i].seq, hits, hit_cnt, &map_matches, cumlog, index, opt->filter, opt->align);
          }
          free(hits);
       }
 
+      /**
+      *** MISMATCHED MEMS
+      **/
+
+      // Recompute seed intervals.
+      mem_intv->pos = 0;
+      mem_intervals(map_matches, slen, target_q,opt->filter.min_gap_id, opt->filter.min_interval_size, &mem_intv);
+      if (mem_intv->pos == 0) goto map_end;
+
+      // Remove mapped mems.
+      seeds->pos = 0;
+      for (int j = 0; j < mems->pos; j++) {
+         seed_t m = mems->seed[j];
+         for (int s = 0; s < mem_intv->pos; s+= 2) {
+            if (mem_intv->val[s+1] < m.qry_pos) continue;
+            if (mem_intv->val[s] >= m.qry_pos + m.ref_pos.depth) break;
+            seedstack_push(m, &seeds);
+            break;
+         }
+      }
+
+      // Compute 1-mismatch sequences.
+      if (VERBOSE_DEBUG) fprintf(stdout, "Mismatch MEMS:\n");
+      mems->pos = 0;
+      for (int j = 0; j < seeds->pos; j++) {
+         // Reset stacks.
+         pstack->pos = 0;
+         // Perform 1-mismatch (every k nt?) block search on seed.
+         seed_t s = seeds->seed[j];
+         blocksearch(query + s.qry_pos, s.ref_pos.depth, 1, index, &pstack);
+         int64_t loci = 0;
+         // Count loci and remove perfect seed.
+         for (int h = 0; h < pstack->pos; h++) {
+            // Remove perfect seed.
+            if (pstack->path[h].score == 0)
+               pstack->path[h] = pstack->path[--pstack->pos];
+            // Count loci.
+            loci += pstack->path[h].pos.sz;
+         }
+         if (VERBOSE_DEBUG) fprintf(stdout, "beg:%d, end:%d, seqs:%ld, loci:%ld\n", s.qry_pos, s.qry_pos + s.ref_pos.depth - 1, pstack->pos, loci);         
+         // Continue if repeat_thr is exceeded.
+         //         if (loci > r) {
+         //            continue;
+         //         } else if (loci > max_align) {
+         if (loci > max_align) {
+            // Sort by score, then loci.
+            qsort(pstack->path, pstack->pos, sizeof(spath_t), compar_path_score);
+            loci = 0;
+            for (int h = 0; h < pstack->pos && loci < max_align; h++) {
+               spath_t path = pstack->path[h];
+               fmdpos_t fmdp = path.pos;
+               loci += fmdp.sz;
+               if (loci > max_align) fmdp.sz -= loci-max_align;
+               bwpos_t pos = {.depth = fmdp.dp, .sp = fmdp.fp, .ep = fmdp.fp + fmdp.sz - 1};
+               seedstack_push((seed_t) {.errors = path.score, .qry_pos = beg, .ref_pos = pos}, &mems);
+            }
+         } else {
+            for (int h = 0; h < pstack->pos; h++) {
+               spath_t path = pstack->path[h];
+               fmdpos_t fmdp = path.pos;
+               bwpos_t pos = {.depth = fmdp.dp, .sp = fmdp.fp, .ep = fmdp.fp + fmdp.sz - 1};
+               seedstack_push((seed_t) {.errors = path.score, .qry_pos = beg, .ref_pos = pos}, &mems);
+            }
+         }
+      }
+
+      // Align 1-mismatch seeds.
+      if (seeds->pos)
+         align_seeds(seq[i].seq, seeds, &map_matches, cumlog, index, opt->filter, opt->align);
+
       goto map_end;
+
 
       /**
       *** MEM SEEDING ON GAPS
@@ -543,7 +624,6 @@ mt_worker
          free(hits);
       }
 
-      /*
       if (opt->seed.sensitive_mem) {
          for (int s = 0; s < mem_intv->pos; s += 2) {
             int beg = mem_intv->val[s];
@@ -610,19 +690,27 @@ mt_worker
       *** NON-UNIQUE AND NOT FOUND
       **/
 
+      // TODO:
+      // - Adaptar aquesta part del codi per fer-lo funcionar amb MEMS.
+      // - Aqui han quedat alguns espais buits dins el read o alguns alineaments
+      //   que no tenen prou suport. El que fa falta fer es definir una estrategia
+      //   per fer mismatched seeding en aquests intervals irregulars.
+
+      // ### De moment ho deixo comentat pero aquesta estrategia va al soft final ###
+      /*
       int v[2] = {2,0};
       // Align acceptable seeds (less than repeat_thr loci) then the not found ones.
       for (int l = 0; l < 2; l++) {
          // DEBUG.
          if (VERBOSE_DEBUG) fprintf(stdout, "** path %d **\n", v[l]);
          int beg = 0;
-         while (beg <= (int)(slen - k)) {
+         while (beg <= (int)(slen - opt->seed.min_len)) {
             // Do not seed path 1 intervals or alignments with second best score.
             int next = 0;
             for (int j = 0; j < map_matches->pos; j++) {
                match_t m = map_matches->match[j];
                if (beg > m.read_e) continue;
-               if (beg < m.read_s - k) break;
+               if (beg < m.read_s - opt->seed.min_len) break;
                if (m.s_hits_cnt > 0) {
                   beg = m.read_e + 1;
                   next = 1;
@@ -669,7 +757,7 @@ mt_worker
                   // DEBUG.
                   if (VERBOSE_DEBUG) fprintf(stdout, "[beg:%d] aligning %ld seeds\n", beg, seeds->pos);
                   // Align non-unique seeds.
-                  align_seeds(seq[i].seq, seeds, &map_matches, index, opt->filter, opt->align);
+                  align_seeds(seq[i].seq, seeds, &map_matches, cumlog, index, opt->filter, opt->align);
                   // DEBUG.
                   if (VERBOSE_DEBUG) {
                      for (int k = 0; k < map_matches->pos; k++) {
@@ -681,15 +769,15 @@ mt_worker
             } else if (value[beg] == 255) {
                // Check seed in seed table.
                hit_t hit = find_uniq_seed(beg,beg + k,query,value,index);
-               if (hit.errors == 0) {
-                  align_hits(seq[i].seq, &hit, 1, &map_matches, index, opt->filter, opt->align);
+               if (hit.s_errors == 0) {
+                  align_hits(seq[i].seq, &hit, 1, &map_matches, cumlog, index, opt->filter, opt->align);
                }
                continue;
             } 
             beg++;
          }
       }
-
+      */
 
       // DEBUG.
       if (VERBOSE_DEBUG) {
@@ -701,7 +789,7 @@ mt_worker
 
    map_end:
       // Score and output.
-      map_score(map_matches,cumlog);
+      //      map_score(map_matches,cumlog);
       mapped += print_and_free(seq[i], map_matches, index, opt->format);
       free(query);
       free(value);
