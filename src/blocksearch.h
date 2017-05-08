@@ -29,6 +29,7 @@ struct pstree_t {
 void          blocksearch            (uint8_t *, int, int, index_t *, pathstack_t **);
 void          blocksearch_rec        (uint8_t *, int, int, index_t *, pathstack_t **);
 void          blocksearch_trail      (uint8_t *, int, int, int, index_t *, pstree_t *);
+void          blocksearch_trail_sc   (uint8_t *, fmdpos_t *, int, int, int, index_t *, pstree_t *);
 void          blocksearch_trail_rec  (uint8_t *, int, int, int, int, index_t *, pstree_t *);
 int           seqsearch_fw           (spath_t, uint8_t *, int, int, int, int, int, index_t *, pathstack_t **);
 int           seqsearch_bw           (spath_t, uint8_t *, int, int, int, int, int, index_t *, pathstack_t **);
@@ -40,4 +41,5 @@ pstree_t    * alloc_stack_tree       (int);
 pstree_t    * alloc_stack_tree_rec   (int);
 void          free_stack_tree        (pstree_t *);
 int           compar_path_score      (const void *, const void *);
+int           which_strand           (uint8_t *, int);
 #endif

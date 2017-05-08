@@ -1,5 +1,31 @@
 #include "blocksearch.h"
 
+int
+which_strand
+(
+ uint8_t * query,
+ int       kmer
+ )
+/*
+** This function takes a seq and compares it with its reverse
+** complement. Returns 1 if the reverse complement is 
+** lexicographically smaller/equal than the original sequence.
+** The aim of this is to avoid computing the same thing twice.
+** Since we have an index with forward and reverse strands,
+** the forward and reverse complement of each kmer must yield
+** exactly the same number of hits. Therefore we will only
+** compute half of the job for the lexicographically smaller
+** and the other half (maybe +1 nucleotide if k is odd) for
+** the legicographically bigger.
+*/
+{
+   for (int i = 0, j = kmer-1; i < kmer; i++, j--) {
+      if (3-query[j] == query[i]) continue;
+      return 3-query[j] < query[i];
+   }
+   return 1;
+}
+
 pathstack_t *
 pathstack_new
 (
@@ -51,6 +77,74 @@ blocksearch
    // Divide query in tau+1 blocks and perform recursive search.
    return blocksearch_rec(query, slen, tau+1, index, hits);
 }
+
+void
+blocksearch_trail_sc
+(
+
+ uint8_t   * query,
+ fmdpos_t  * qarray,
+ int         slen,
+ int         tau,
+ int         trail,
+ index_t   * index,
+ pstree_t  * tree
+)
+// Seeq & Construct version of blocksearch algorithm over a Forward/Reverse index.
+// This version shall only be used for exhaustive genome neighbors computaion.
+
+// Out of the tau mismatches, make first division and assign mismatches as follows:
+// 
+//  - Sequence is lexicographically smaller compared to its revcomp:
+//     Left block:
+//       length = L/2 
+//       tau    = floor(tau_max/2) - (1 - tau_max % 2)
+//     Then extend right up to tau_max.
+//
+//  - Sequence is lexicographically bigger or equal compared to its revcomp:
+//     Left block:
+//       length = L/2 + L%2
+//       tau    = floor(tau_max/2)
+//     Then extend right up to tau_max.
+
+// If the query contains N in either block (left or right), reduce the value of
+// tau by num(N) mismatches.
+{
+   if (trail >= slen) return;
+
+   // Reset hits.
+   tree->stack->pos = 0;
+
+   // Which strand.
+   int rc_last = which_strand(query, slen);
+
+   // Split block.
+   int len = slen/2 + (rc_last ? slen%2 : 0);
+   int tau = tau_max/2 - (rc_last ? 0 : (1 - tau_max % 2));
+
+   // Recursive call on left block, don't compute if current data is valid (trail).
+   if (trail < len) {
+      blocksearch_trail_rec(query, pos, beg_r, blk_l, trail, index, tree->next_l);
+      // Remove out-of-boundary hits (lexicographically bigger than query).
+      int64_t max_sa_pos = qarray[len].fp + qarray[len].sz;
+      int i = 0;
+      while (i < tree->next_l->stack->pos) {
+         if (tree->next_l->stack->path[i].pos.fp < max_sa_pos)
+            i++;
+         else
+            tree->next_l->stack->path[i] = tree->next_l->stack->path[--tree->next_l->stack->pos];
+      }
+   }
+
+   // Extend left block to the right.
+   for (int i = 0; i < tree->next_l->stack->pos; i++) {
+      spath_t p = tree->next_l->stack->path[i];
+      seqsearch_fw_sc(p, query+len, 0, slen-len, tau, p.score, 0, index, &(tree->stack));
+   }
+
+   return;
+}
+
 
 void
 blocksearch_rec
@@ -319,6 +413,59 @@ seqsearch_fw
       } else {
          // Recursive call.
          seqsearch_fw(p, query, d+1, slen, tau, score_ref, score_diff, index, hits);
+      }
+   }
+
+   return 0;
+}
+
+int
+seqsearch_fw_sc
+(
+ spath_t        path,
+ uint8_t      * query,
+ int            depth,
+ int            slen,
+ int            tau,
+ int            score_ref,
+ int            score_diff,
+ index_t      * index,
+ pathstack_t ** hits
+)
+{
+   // Extend sequence.
+   fmdpos_t tmp[NUM_BASES];
+   extend_fw_all(path.pos, tmp, index->bwt);
+
+   // Iterate over nt.
+   for (int nt = 0; nt < (score_ref ? NUM_BASES : query[depth] + 1); nt++) {
+      // Check whether prefix exists.
+      if (tmp[nt].sz < 1)
+         continue;
+      // Update score.
+      // 'N' is treated as wildcard -- The maximum distance should have been lowered
+      // by the number of 'N' present in the query.
+      int s = path.score + (nt != query[depth] && query[depth] < 4);
+      // Check score boundary.
+      if (s > tau)
+         continue;
+      // Update path.
+      int d = depth;
+      spath_t p = {.pos = tmp[nt], .score = s};
+      // Dash if max tau is reached.
+      if (s == tau) {
+         if (seqdash_fw(&p, query, d+1, slen, index))
+            continue;
+         d = slen-1;
+      }
+      // If depth is reached.
+      if (d == slen-1) {
+         // Check score difference and store hit.
+         if (s - score_ref >= score_diff)
+            path_push(p, hits);
+      } else {
+         // Recursive call.
+         seqsearch_fw_sc(p, query, d+1, slen, tau, score_ref, score_diff, index, hits);
       }
    }
 

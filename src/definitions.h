@@ -26,6 +26,7 @@ static const char uppercase[256] = {[0 ... 255] = 'e',
 
 // Definitions
 #define NUM_BASES 5
+#define UNKNOWN_BASE 4
 #define NUM_COMBS NUM_BASES*NUM_BASES*NUM_BASES
 #define MAXSEQLEN 10000
 #define MAXTAU    2
