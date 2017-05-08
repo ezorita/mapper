@@ -19,18 +19,18 @@ typedef struct {
 } annotation_t;
 
 typedef struct {
-   int               kmer;
-   int               tau;
+   uint32_t          kmer;
+   uint16_t          tau;
+   uint16_t          wsize;
    uint64_t          beg;
    uint64_t          end;
-   uint64_t        * unique;
    uint64_t        * computed;
-   uint8_t         * repeat_bf;
    int             * done;
-   index_t         * index;
    pthread_mutex_t * mutex;
    pthread_cond_t  * monitor;
    uint64_t        * kmers;
+   index_t         * index;
+   uint8_t         * info;
 } annjob_t;
 
 int             reverse_duplicate (uint8_t *, int);

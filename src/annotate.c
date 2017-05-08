@@ -2,30 +2,18 @@
 #include <string.h>
 #include <time.h>
 
-int
-reverse_duplicate
-(
- uint8_t * query,
- int       kmer
- )
-/*
-** This function takes a seq from the genome and compares
-** it with its reverse complement. Returns 1 (duplicate) if
-** the reverse complement is lexicographically smaller.
-** The aim of this is to avoid computing the same thing twice.
-** Since we have an index with forward and reverse strands,
-** the forward and reverse complement of each kmer must yield
-** exactly the same number of hits. Therefore we will only
-** compute and store the lexicographically smallest of each
-** forward/reverse pair.
-*/
-{
-   for (int i = 0, j = kmer-1; i < kmer; i++, j--) {
-      if (3-query[j] == query[i]) continue;
-      return 3-query[j] < query[i];
-   }
-   return 0;
-}
+// Annotation array.
+// Information structure:
+// 8 bits per genomic locus.
+//   bit 7 \
+//   bit 6 |
+//   bit 5 | Num of neighbors, in dec (!bit3) or log2 (bit3).
+//   bit 4 /
+//   bit 3 - Log2/dec flag for bits 4-7.
+//   bit 2 - Neighbor alignment bit.
+//   bit 1 \ 
+//   bit 0 / Distance of closest neighbor (00: 1, 01: 2, 10: 3, 11: 4).
+
 
 int
 contains_n
@@ -52,6 +40,40 @@ cmp_seq
    return 1;
 }
 
+void
+job_ranges_rec
+(
+ fmdpos_t   pos,
+ int        tau,
+ int        n_cnt,
+ int        depth,
+ int        max_depth,
+ int      * jobcnt,
+ annjob_t * jobs,
+ index_t  * index
+)
+{
+   // Too many 'N'.
+   if (n_cnt > tau) return;
+   // If reached suffix depth, make and store job.
+   if (depth == max_depth) {
+      annjob_t job = {
+         .beg = pos.fw,
+         .end = pos.fw + pos.sz
+      };
+      jobs[(*jobcnt)++] = job;
+      return;
+   }
+   
+   // Otherwise continue exploring the suffix trie.
+   fmdpos_t newpos[NUM_BASES];
+   extend_fw_all(pos, newpos, index->bwt);
+   for (int i = 0; i < NUM_BASES; i++)
+      job_ranges_rec(newpos[i], tau, n_cnt + (i == UNKNOWN_BASE), depth + 1, max_depth, jobcnt, jobs, index);
+
+   return;
+}
+
 
 annotation_t
 annotate
@@ -60,86 +82,88 @@ annotate
  int        tau,
  index_t  * index,
  int        threads
- )
+)
 {
+   // Constant parameters.
+   int job_to_thread_ratio = 5;
+   int           word_size = max(3,tau) + 3;
+
    // Alloc variables.
    pthread_mutex_t * mutex = malloc(sizeof(pthread_mutex_t));
    pthread_cond_t  * monitor = malloc(sizeof(pthread_cond_t));
    uint64_t computed = 0;
    uint64_t kmers = 0;
-   uint64_t unique = 0;
    int32_t  done = 0;
-   // Annotation bitfield.
-   int bits = 0;
-   while ((tau >> bits) > 0) bits++;
-   uint8_t * repeat_bf = NULL;
-   size_t struct_size = ((index->size >> 4) + 1)*(bits+2) * sizeof(uint8_t);
-   repeat_bf = malloc(struct_size);
-   fprintf(stderr, "[info] annotation index size: %.2f MB\n", (struct_size*1.0/1024)/1024);
+
+   // Temporary info array.
+   // Has 'index->size' elements with the following structure:
+   //   bytes 0-1: number of different neighbors (16bit).
+   //   byte    2: distance of closest neighbor.
+   //   byte  3-?: M bytes encoding the mutated positions to find the closest neighbors.
+   //   
+   //   M is max(3,tau). If the number of mutations is > M, the alignment is not stored.
+
+   uint8_t * info = calloc(index->size, word_size);
 
    // Initialization.
    pthread_mutex_init(mutex,NULL);
    pthread_cond_init(monitor,NULL);
 
-   // Find 'NXXX..' interval.
-   bwpos_t n_pos = {.sp = 0, .ep = index->size-1, .depth = 0};
-   uint64_t eff_size = index->size;
-   suffix_extend(translate['N'], n_pos, &n_pos, index->bwt);
-   if (n_pos.ep >= n_pos.sp) eff_size = n_pos.sp;
-   // Compute thread jobs.
-   int      njobs = 10*threads;
-   uint64_t seqs  = eff_size/njobs;
-   annjob_t ** job = malloc(njobs*sizeof(annjob_t*));
-   for (int i = 0; i < njobs; i++) {
-      // Allocate job.
-      job[i] = malloc(sizeof(annjob_t));
-      // Compute sequence offset in BWT.
-      uint64_t offset = i*seqs;
-      // Set job values.
-      job[i]->beg = offset;
-      job[i]->mutex = mutex;
-      job[i]->monitor = monitor;
-      job[i]->computed = &computed;
-      job[i]->unique = &unique;
-      job[i]->done = &done;
-      job[i]->index = index;
-      job[i]->kmer = kmer;
-      job[i]->tau = tau;
-      job[i]->kmers = &kmers;
-      job[i]->repeat_bf = repeat_bf;
+   // Divide job ranges.
+   // For consistency, the best is to split the jobs in ranges of prefixes.
+   // For instance, for 6 threads, it may be a good idea to create one job
+   // for each prefix of 2nt, i.e. jobs = [1: 'AA', 2:'AC', 3:'AG', 4:'AT',
+   // 5:'AN', ..., 25: 'NN']
+   // So increase the prefix depth until the number of prefixes (jobs) is at least
+   // K(=5?) times the number of threads.
+   int prefix_depth = 1;
+   int num_jobs = NUM_BASES;
+   while (num_jobs < job_to_thread_ratio*threads) {
+      prefix_depth++;
+      num_jobs *= NUM_BASES;
    }
-   // Set job end indices.
-   for (int i = 0; i < njobs-1; i++) job[i]->end = job[i+1]->beg;
-   job[njobs-1]->end = eff_size;
 
-   // Do not break intervals between jobs.
-   for (int i = 1; i < njobs; i++) {
-      while (cmp_seq(index->genome + get_sa(job[i-1]->end - 1,index->sar), index->genome + get_sa(job[i]->beg, index->sar), kmer))
-         job[i]->beg += 1;
+   // Create jobs based on prefixes of depth 'prefix_depth'.
+   annjob_t * jobs = malloc(num_jobs*sizeof(annjob_t));
+   num_jobs = 0;
+   // Fill specific job info.
+   job_ranges_rec(index->bwt->fmd_base, tau, 0, 0, prefix_depth, &num_jobs, jobs, index);
+   // Fill constant job info.
+   for (int i = 0; i < num_jobs; i++) {
+      jobs[i]->kmer     = (uint32_t) kmer;
+      jobs[i]->tau      = (uint16_t) tau;
+      jobs[i]->wsize    = (uint16_t) word_size;
+      jobs[i]->computed = &computed;
+      jobs[i]->done     = &done;
+      jobs[i]->mutex    = mutex;
+      jobs[i]->monitor  = monitor;
+      jobs[i]->kmers    = &kmers;
+      jobs[i]->index    = index;
+      jobs[i]->info     = info;
    }
 
    clock_t clk = clock();
    // Run threads.
-   for (int i = 0; i < threads; i++) {
+   for (int i = 0; i < min(threads, num_jobs); i++) {
       pthread_t thread;
-      pthread_create(&thread,NULL,annotate_mt,job[i]);
+      pthread_create(&thread,NULL,annotate_mt,jobs+i);
       pthread_detach(thread);
       //      annotate_mt(job[i]);
    }
    // Sleep and wait for thread signals.
    int runcount = threads;
    pthread_mutex_lock(mutex);
-   while (done < njobs) {
+   while (done < num_jobs) {
       // Run new threads.
-      for (int i = runcount; i < min(done + threads, njobs); i++) {
+      for (int i = runcount; i < min(done + threads, num_jobs); i++) {
          pthread_t thread;
-         pthread_create(&thread,NULL,annotate_mt,job[i]);
+         pthread_create(&thread,NULL,annotate_mt,jobs+i);
          pthread_detach(thread);
       }
       // Update submitted jobs.
       runcount = done + threads;
       // Report progress.
-      fprintf(stderr, "[proc] annotating... %.2f%%\r", computed*100.0/eff_size);
+      fprintf(stderr, "[proc] annotating... %.2f%%\r", computed*100.0/index->bwt->fmd_base.sz);
       // Wait for signal.
       pthread_cond_wait(monitor,mutex);
    }
@@ -148,10 +172,8 @@ annotate
    //   fprintf(stderr, "annotating... %ld/%ld\n", *computed, index->size);
    fprintf(stderr, "[proc] annotating... done [%.3fs]\n", ((clock()-clk)*1.0/CLOCKS_PER_SEC)/threads);
    fprintf(stderr, "[info] kmer diversity: %ld/%ld (%.2f%%).\n",kmers,index->size/2,kmers*200.0/index->size);
-   fprintf(stderr, "[info] unique loci: %ld/%ld (%.2f%%).\n",unique,index->size/2,unique*200.0/index->size);
    // Free variables.
-   for (int i = 0; i < threads; i++) { free(job[i]); }
-   free(job);
+   free(jobs);
    free(mutex);
    free(monitor);
    return (annotation_t){.bitfield = repeat_bf};
