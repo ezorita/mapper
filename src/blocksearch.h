@@ -32,6 +32,7 @@ void          blocksearch_trail      (uint8_t *, int, int, int, index_t *, pstre
 void          blocksearch_trail_sc   (uint8_t *, fmdpos_t *, int, int, int, index_t *, pstree_t *);
 void          blocksearch_trail_rec  (uint8_t *, int, int, int, int, index_t *, pstree_t *);
 int           seqsearch_fw           (spath_t, uint8_t *, int, int, int, int, int, index_t *, pathstack_t **);
+int           seqsearch_fw_sc        (spath_t, uint8_t *, int, int, int, int, int, int, index_t *, pathstack_t **);
 int           seqsearch_bw           (spath_t, uint8_t *, int, int, int, int, int, index_t *, pathstack_t **);
 int           seqdash_fw             (spath_t *, uint8_t *, int, int, index_t *);
 int           seqdash_bw             (spath_t *, uint8_t *, int, int, index_t *);
