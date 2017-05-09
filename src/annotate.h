@@ -28,14 +28,14 @@ typedef struct {
    int             * done;
    pthread_mutex_t * mutex;
    pthread_cond_t  * monitor;
-   uint64_t        * kmers;
    index_t         * index;
    uint8_t         * info;
 } annjob_t;
 
-int             reverse_duplicate (uint8_t *, int);
-int             contains_n        (uint8_t *, int);
-annotation_t    annotate          (int, int, index_t *,int);
+void            job_ranges_rec    (fmdpos_t, int, int, int, int, int*, annjob_t*, index_t*);
+int             next_seq          (int32_t, int32_t, int64_t, int64_t*, uint8_t*, fmdpos_t*, index_t*);
+void            store_hits        (annjob_t*, pstree_t*);
+annotation_t    annotate          (int, int, index_t*, int);
 void          * annotate_mt       (void*);
 
 

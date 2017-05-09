@@ -14,31 +14,8 @@
 //   bit 1 \ 
 //   bit 0 / Distance of closest neighbor (00: 1, 01: 2, 10: 3, 11: 4).
 
-
-int
-contains_n
-(
- uint8_t * query,
- int       kmer
-)
-{
-   for (int i = 0; i < kmer; i++)
-      if (query[i] > 3) return 1;
-   return 0;
-}
-
-int
-cmp_seq
-(
- char * seq_a,
- char * seq_b,
- int    k
-)
-{
-   for (int i = 0; i < k; i++)
-      if (translate[(int)seq_a[i]] != translate[(int)seq_b[i]]) return 0;
-   return 1;
-}
+// Inline functions.
+inline void send_progress_to_scheduler (int64_t, int64_t*, annjob_t*);
 
 void
 job_ranges_rec
@@ -92,7 +69,6 @@ annotate
    pthread_mutex_t * mutex = malloc(sizeof(pthread_mutex_t));
    pthread_cond_t  * monitor = malloc(sizeof(pthread_cond_t));
    uint64_t computed = 0;
-   uint64_t kmers = 0;
    int32_t  done = 0;
 
    // Temporary info array.
@@ -137,7 +113,6 @@ annotate
       jobs[i]->done     = &done;
       jobs[i]->mutex    = mutex;
       jobs[i]->monitor  = monitor;
-      jobs[i]->kmers    = &kmers;
       jobs[i]->index    = index;
       jobs[i]->info     = info;
    }
@@ -171,12 +146,103 @@ annotate
 
    //   fprintf(stderr, "annotating... %ld/%ld\n", *computed, index->size);
    fprintf(stderr, "[proc] annotating... done [%.3fs]\n", ((clock()-clk)*1.0/CLOCKS_PER_SEC)/threads);
-   fprintf(stderr, "[info] kmer diversity: %ld/%ld (%.2f%%).\n",kmers,index->size/2,kmers*200.0/index->size);
    // Free variables.
    free(jobs);
    free(mutex);
    free(monitor);
    return (annotation_t){.bitfield = repeat_bf};
+}
+
+int
+next_seq
+(
+ int32_t    qlen,
+ int32_t    tau,
+ int64_t    max_sa,
+ int64_t  * sa_ptr,
+ uint8_t  * query,
+ fmdpos_t * pos,
+ index_t  * index
+)
+{
+   int n_cnt;
+   int trail;
+   uint8_t * tmp = malloc(qlen*sizeof(uint8_t));
+   memcpy(tmp, query, qlen*sizeof(uint8_t));
+
+   // Iterate until a valid sequence is found (num(N) <= tau).
+   do {
+      // Reset variables.
+      n_cnt = 0;
+      trail = 0;
+      // Get sequence from genome.
+      char * seq = index->genome + get_sa(*sa_ptr, index->sar);
+      // Iterate over qlen nucleotides.
+      for (int i = 0; i < qlen; i++) {
+         int nt = translate[(int)query[i]];
+         n_cnt += nt == UNKNOWN_BASE;
+         // Extend BWT search.
+         if (trail == i && nt == tmp[i]) 
+            trail++;
+         else
+            pos[i+1] = extend_fw(nt, pos[i], index->bwt);
+
+         // Update tmp query.
+         tmp[i] = nt;
+      }
+      // Update sa_ptr (point the start of the next suffix).
+      *sa_ptr += pos[qlen].sz;
+      
+      // Return -1 if we're already out of segment.
+      if (pos[qlen].fp >= max_sa) {
+         free(tmp);
+         return -1;
+      }
+
+   } while (n_cnt > tau);
+
+   // Recompute trail wrt last query.
+   trail = 0;
+   while (tmp[trail] == query[trail]) trail++;
+
+   // Copy tmp to query.
+   memcpy(query, tmp, qlen*sizeof(uint8_t));
+
+   // Free memory.
+   free(tmp);
+
+   // Return trail.
+   return trail;
+}
+
+void
+store_hits
+(
+ annjob_t  * job,
+ pstree_t  * stack_tree
+)
+{
+   // TODO.
+}
+
+inline
+void
+send_progress_to_scheduler
+(
+ int64_t     sa_pos,
+ int64_t   * computed,
+ annjob_t  * job
+)
+{
+   // Send progress every 1M processed sequences.
+   if (__builtin_expect((computed>>20) > (sa_pos>>20),0)) {
+      pthread_mutex_lock(job->mutex);
+      *(job->computed) += sa_pos - *computed;
+      pthread_cond_signal(job->monitor);
+      pthread_mutex_unlock(job->mutex);
+      *computed = sa_pos;
+   }
+   return;
 }
 
 void *
@@ -185,12 +251,56 @@ annotate_mt
  void * argp
  )
 {
-   annjob_t * job = (annjob_t *)argp;
-   int kmer = job->kmer;
-   int tau  = job->tau;
-   index_t * index = job->index;
-   // hit stack.
+   // Read job.
+   annjob_t * job    = (annjob_t *)argp;
+   index_t  * index  = job->index;
+   int64_t    sa_ptr = job->beg;
+   int        kmer   = job->kmer;
+   int        tau    = job->tau;
+
+   // Translated query.
+   uint8_t * query = malloc(kmer*sizeof(uint8_t));
+   memset(query, NUM_BASES, kmer*sizeof(uint8_t));
+
+   // BWT path.
+   fmdpos_t * path = malloc((kmer+1)*sizeof(fmdpos_t));
+   path[0] = index->bwt->fmd_base;
+
+   // Hit stack.
    pstree_t * stack_tree = alloc_stack_tree(tau);
+
+   // Aux vars.
+   int64_t computed = sa_ptr;
+
+   // Iterate over all kmers.
+   while (sa_ptr < job->end) {
+      // Report progress to scheduler.
+      send_progress_to_scheduler(sa_ptr, &computed, job);
+      // This updates query and path, and makes sa_ptr point to the position of the next sequence in the SA.
+      int trail = next_seq(kmer, tau, job->end, &sa_ptr, query, path, index);
+      // Query the sequence.
+      blocksearch_trail_sc(query, path, kmer, tau, trail, index, stack_tree);
+      // Update annotation info.
+      store_hits(job, stack_tree);
+   }
+
+   // Report job end to scheduler.
+   pthread_mutex_lock(job->mutex);
+   *(job->done) += 1;
+   *(job->computed) += job->end - computed;
+   pthread_cond_signal(job->monitor);
+   pthread_mutex_unlock(job->mutex);
+
+   // Free memory.
+   free_stack_tree(stack_tree);
+   free(query);
+   free(path);
+
+   return NULL;
+
+}
+
+/*
    // aux vars.
    uint64_t sa_pos = job->beg;
    uint64_t computed = job->beg;
@@ -209,14 +319,6 @@ annotate_mt
 
    // Iterate over all kmers.
    while (sa_pos < job->end) {
-      // Report progress to scheduler.
-      if ((computed>>20) > (sa_pos>>20)) {
-         pthread_mutex_lock(job->mutex);
-         *(job->computed) += sa_pos - computed;
-         pthread_cond_signal(job->monitor);
-         pthread_mutex_unlock(job->mutex);
-         computed = sa_pos;
-      }
 
       // Get query values.
       uint64_t locus = get_sa(sa_pos, index->sar);
@@ -325,71 +427,5 @@ annotate_mt
    free(lastq);
 
    return NULL;
-}
-
-
-/*
-htable_t *
-htable_new
-(
- int    index_bits,
- int    probe_bits,
- size_t elm_size
- )
-{
-   htable_t * htable = calloc(sizeof(htable_t) + elm_size * (1 << index_bits), 1);
-   if (htable == NULL) {
-      return NULL;
-   }
-   // Compute bitmasks.
-   htable->index_bits = index_bits;
-   htable->index_bitmask = 0xFFFFFFFFFFFFFFFF >> (64 - index_bits);
-   htable->probe_bits = probe_bits;
-   htable->probe_bitmask = (0xFFFFFFFFFFFFFFFF >> (64 - probe_bits)) << index_bits;
-   htable->probe_datamask = 0xFF >> (8 - probe_bits);
-   // Set element size and reset count.
-   htable->count = 0;
-   htable->elm_size = elm_size;
-   return htable;
-}
-
-int
-htable_insert
-(
- uint8_t         * key,
- uint32_t          keylen,
- uint8_t           data,
- uint32_t          data_pos,
- htable_t        * table,
- pthread_mutex_t * mutex
- )
-{
-   if (data_pos >= table->elm_size) return -1;
-   if (table->count >= table->index_bitmask) return -1;
-   // Generate key Hash.
-   uint64_t k = XXH64(key, keylen, 0);
-   // Split index and probe bits.
-   uint64_t idx = k & table->index_bitmask;
-   uint8_t chk = ((k & table->probe_bitmask) >> table->index_bits) & 0xFF;
-   // chk = 0 reserved for free cells.
-   if (chk == 0) chk = 1;
-   // Find spot in table. Simple linear probing.
-   uint8_t * beg_addr = table->c + idx*table->elm_size + data_pos;
-   uint8_t * max_addr = table->c + table->index_bitmask * table->elm_size;
-   uint8_t * cell = beg_addr;
-   // This part of the code is concurrent, mutex lock required.
-   pthread_mutex_lock(mutex);
-   while (*cell != 0 && ((*cell & table->probe_datamask) != chk)) {
-      // Next cell (Linear probing).
-      cell += table->elm_size;
-      // Loop until cell is free or has the same probe.
-      if (cell > max_addr) cell = table->c + data_pos;
-   }
-   // Store data in cell.
-   *cell = data;
-   // End of concurrent code.
-   pthread_mutex_unlock(mutex);
-
-   return 0;
 }
 */
