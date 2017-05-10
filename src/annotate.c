@@ -218,11 +218,125 @@ next_seq
 void
 store_hits
 (
- annjob_t  * job,
- pstree_t  * stack_tree
+ annjob_t     * job,
+ pathstack_t  * stack,
+ int64_t        self_fp
 )
 {
-   // TODO.
+   int hits     = 0;
+   int tau      = -1;
+   int aln_size = job->wsize - 3;
+
+   // Aggregate query alignment.
+   uint64_t * qalign = calloc(ALIGN_WORD_SIZE, sizeof(uint64_t));
+
+   // Find minimum tau.
+   for (int i = 0; i < stack->pos; i++) {
+      if (path.pos.fp == self_fp) continue;
+      spath_t path = stack->path[i];
+      if (tau == -1 || path.score < tau) tau = path.score;
+   }
+
+   // Store hits info in their SA start position.
+   for (int i = 0; i < stack->pos; i++) {
+      spath_t path = stack->path[i];
+      // Remove self hit.
+      if (path.score != tau || path.pos.fp == self_fp) continue;
+
+      // info structure:
+      //   bytes     0-1: number of different neighbors (16bit).
+      //   byte        2: distance to closest neighbor.
+      //   byte  3-wsize: bytes encoding the mutated positions to find the closest neighbors.
+
+      uint8_t  * info = job->info + path.pos.fp * job->wsize;
+      uint16_t * nghb_cnt = (uint16_t *) info;
+      uint8_t  * nghb_tau = info + sizeof(uint16_t);
+      uint8_t  * nghb_aln = nghb_tau + 1;
+
+      // If first hit or smaller distance -- Reset count and mismatched positions.
+      if (*nghb_tau == 0 || *nghb_tau > tau) {
+         *nghb_cnt = 1;
+         *nghb_tau = tau;
+         memset(nghb_aln, 0, aln_size);
+      }
+      // Otherwise update neighbor info.
+      else if (info[2] == tau)
+         *nghb_cnt = (uint16_t) min(0xFFFF, ((uint32_t) *nghb_cnt) + 1);
+
+      // Update query align positions.
+      for (int w = 0; w < ALIGN_WORDS; w++)
+         qalign |= path.align[w];
+      
+      // Compute align positions.
+      int i = 0, j = 0, a = 0;
+      uint8_t hit_aln[aln_size];
+      uint8_t tmp_aln[aln_size+1];
+      for (; i < job->kmer; i++) {
+         int w = i / ALIGN_WORD_SIZE;
+         int b = i % ALIGN_WORD_SIZE;
+         if ((path.align[w] >> b) & (uint64_t)1)
+            hit_aln[a++] = i + 1;
+      }
+      for (i=a; i < aln_size; i++)
+         hit_aln[i] = 0;
+      hits++;
+      // Merge align positions.
+      int k = 0;
+      while (i < aln_size && j < aln_size && k <= aln_size) {
+         if ([i] == 0 || nghb_aln[j] == 0) break;
+         if (align[i] == nghb_aln[j]) {
+            tmp_aln[k++] = align[i];
+            i++; j++;
+         }
+         else if (align[i] < nghb_aln[j])
+            tmp_aln[k++] = align[i++];
+         else if (align[i] > nghb_aln[j])
+            tmp_aln[k++] = nghb_aln[j++];
+      }
+      while (i < aln_size && k <= aln_size && align[i])
+         tmp_aln[k++] = align[i++];
+      while (j < aln_size && k <= aln_size && nghb_aln[j])
+         tmp_aln[k++] = nghb_aln[j++];
+      while (k < aln_size)
+         tmp_aln[k++] = 0;
+
+      // Store combined alignment.
+      // If there are too many mismatched positions, set aln to 0.
+      if (k > aln_size)
+         memset(nghb_aln, 0, aln_size);
+      // Otherwise store tmp_aln.
+      else
+         memcpy(nghb_aln, tmp_aln, aln_size);
+   }
+
+   // Query info.
+   uint8_t  * info = job->info + self_fp * job->wsize;
+   uint16_t * qcnt = (uint16_t *) info;
+   uint8_t  * qtau = info + sizeof(uint16_t);
+   uint8_t  * qaln = qry_tau + 1;
+
+   // Set tau and neighbor count.
+   *qcnt = (uint16_t) min(0xFFFF, hits);
+
+   // Now compute mismatch positions for query sequence.
+   uint8_t qry_aln[aln_size+1];
+   int a = 0;
+   for (int i = 0; i < job->kmer && a <= aln_size; i++) {
+      int w = i / ALIGN_WORD_SIZE;
+      int b = i % ALIGN_WORD_SIZE;
+      if ((qalign[w] >> b) & (uint64_t)1)
+         qry_aln[a++] = i + 1;
+   }
+   for (int i = a; i < aln_size; i++)
+      qry_aln[i] = 0;
+
+   // If there are too many mismatched positions, set aln to 0.
+   if (a > aln_size)
+      memset(qaln, 0, aln_size);
+   else 
+      memcpy(qaln, qry_aln, aln_size);
+
+   free(qalign);
 }
 
 inline
