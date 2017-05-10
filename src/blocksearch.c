@@ -64,22 +64,9 @@ path_push
    return 0;
 }
 
-void
-blocksearch
-(
- uint8_t      * query,
- int            slen,
- int            tau,
- index_t      * index,
- pathstack_t ** hits
-)
-{
-   // Divide query in tau+1 blocks and perform recursive search.
-   return blocksearch_rec(query, slen, tau+1, index, hits);
-}
 
 void
-blocksearch_trail_sc
+blocksc_trail
 (
 
  uint8_t   * query,
@@ -125,14 +112,14 @@ blocksearch_trail_sc
    if (tau < 0 || (tau == 0 && !rc_last)) return;
 
    // Split block.
-   int len = slen/2 + (rc_last ? slen%2 : 0);
-   int tau = tau_max/2 - (rc_last ? 0 : (1 - tau_max % 2));
+   int pos_r = slen/2 + (rc_last ? slen%2 : 0);
+   int tau_l = tau_max/2 - (rc_last ? 0 : (1 - tau_max % 2));
 
    // Recursive call on left block, don't compute if current data is valid (trail).
-   if (trail < len) {
-      blocksearch_trail_rec(query, pos, beg_r, blk_l, trail, index, tree->next_l);
+   if (trail < pos_r) {
+      blocksearch_trail_rec(query, 0, pos_r-1, tau_l+1, trail, index, tree->next_l);
       // Remove out-of-boundary hits (lexicographically bigger than query).
-      int64_t max_sa_pos = qarray[len].fp + qarray[len].sz;
+      int64_t max_sa_pos = qarray[pos_r].fp + qarray[pos_r].sz;
       int i = 0;
       while (i < tree->next_l->stack->pos) {
          if (tree->next_l->stack->path[i].pos.fp < max_sa_pos)
@@ -145,7 +132,7 @@ blocksearch_trail_sc
    // Extend left block to the right.
    for (int i = 0; i < tree->next_l->stack->pos; i++) {
       spath_t p = tree->next_l->stack->path[i];
-      seqsearch_fw_sc(p, query+len, 0, slen-len, tau, p.score, 0, 1, index, &(tree->stack));
+      scsearch_fw(p, query, pos_r, slen-1, tau, p.score, 0, 1, index, &(tree->stack));
    }
 
    // Add num(N) mismatches to hits.
@@ -158,71 +145,11 @@ blocksearch_trail_sc
 
 
 void
-blocksearch_rec
-(
- uint8_t      * query,
- int            slen,
- int            blocks,
- index_t      * index,
- pathstack_t ** hits
-)
-{
-   // Compute single block and return.
-   if (blocks == 1) {
-      spath_t empty = {.pos = (fmdpos_t){.fp = 0, .rp = 0, .sz = index->size, .dp = 0}, .score = 0};
-      seqsearch_bw(empty, query, 0, slen, 0, 0, 0, index, hits);
-      return;
-   }
-   // Split block.
-   int blk_l = (blocks >> 1) + (blocks & 1);
-   int blk_r = (blocks >> 1);
-   int beg_r = (slen >> 1) + (slen & 1);
-   
-   // Alloc temp hit buffer.
-   pathstack_t * tmp_hits = pathstack_new(PATHSTACK_DEF_SIZE);
-   // Recursive call on left block.
-   blocksearch_rec(query, beg_r, blk_l, index, &tmp_hits);
-   // Extend left block to the right.
-   for (int i = 0; i < tmp_hits->pos; i++) {
-      seqsearch_fw(tmp_hits->path[i], query+beg_r, 0, slen-beg_r, blocks-1, tmp_hits->path[i].score, 0, index, hits);
-   }
-   // Reset temp hits.
-   tmp_hits->pos = 0;
-
-   // Recursive call on right block.
-   blocksearch_rec(query + beg_r, slen-beg_r, blk_r, index, &tmp_hits);
-   // Extend right block to the left.
-   for (int i = 0; i < tmp_hits->pos; i++) {
-      seqsearch_bw(tmp_hits->path[i], query, 0, beg_r, blocks-1, tmp_hits->path[i].score, blk_l, index, hits);
-   }
-   // Free memory.
-   free(tmp_hits);
-
-   return;
-}
-
-void
-blocksearch_trail
-(
- uint8_t   * query,
- int         slen,
- int         tau,
- int         trail,
- index_t   * index,
- pstree_t  * tree
-)
-{
-   if (trail >= slen) return;
-   if (trail < 0) trail = 0;
-   return blocksearch_trail_rec(query,0,slen,tau+1,trail,index,tree);
-}
-
-void
 blocksearch_trail_rec
 (
  uint8_t   * query,
  int         pos,
- int         slen,
+ int         end,
  int         blocks,
  int         trail,
  index_t   * index,
@@ -234,30 +161,35 @@ blocksearch_trail_rec
 
    // Compute single block and return.
    if (blocks == 1) {
-      spath_t empty = {.pos = (fmdpos_t){.fp = 0, .rp = 0, .sz = index->size, .dp = 0}, .score = 0};
-      seqsearch_bw(empty, query+pos, 0, slen, 0, 0, 0, index, &(tree->stack));
+      spath_t empty = {.pos = index->bwt->fmd_base, .score = 0};
+      seqsearch_bw(empty, query, pos, end, 0, 0, 0, index, &(tree->stack));
       return;
    }
+
    // Split block.
    int blk_l = (blocks >> 1) + (blocks & 1);
    int blk_r = (blocks >> 1);
-   int beg_r = (slen >> 1) + (slen & 1);
+
+   // Read params.
+   int slen = end - pos + 1;
+   int pos_r = pos + (slen >> 1) + (slen & 1);
+   int end_l = pos_r - 1;
 
    // Recursive call on left block, don't compute if current data is valid (trail).
-   if (trail < pos+beg_r)
-      blocksearch_trail_rec(query, pos, beg_r, blk_l, trail, index, tree->next_l);
+   if (trail < pos_r)
+      blocksearch_trail_rec(query, pos, end_l, blk_l, trail, index, tree->next_l);
    // Extend left block to the right.
    for (int i = 0; i < tree->next_l->stack->pos; i++) {
       spath_t p = tree->next_l->stack->path[i];
-      seqsearch_fw(p, query+pos+beg_r, 0, slen-beg_r, blocks-1, p.score, 0, index, &(tree->stack));
+      seqsearch_fw(p, query, beg_r, end, blocks-1, p.score, 0, index, &(tree->stack));
    }
 
    // Recursive call on right block.
-   blocksearch_trail_rec(query, pos + beg_r, slen-beg_r, blk_r, trail, index, tree->next_r);
+   blocksearch_trail_rec(query, pos_r, end, blk_r, trail, index, tree->next_r);
    // Extend right block to the left.
    for (int i = 0; i < tree->next_r->stack->pos; i++) {
       spath_t p = tree->next_r->stack->path[i];
-      seqsearch_bw(p, query+pos, 0, beg_r, blocks-1, p.score, blk_l, index, &(tree->stack));
+      seqsearch_bw(p, query, end_l, 0, blocks-1, p.score, blk_l, index, &(tree->stack));
    }
 
    return;
@@ -305,13 +237,27 @@ free_stack_tree
    free(tree);
 }
 
+inline
+void
+mpos_set
+(
+ spath_t * path,
+ int       pos
+)
+{
+   int w = pos/ALIGN_WORD_SIZE;
+   int b = pos%ALIGN_WORD_SIZE;
+   path->align[w] |= (uint64_t)1 << b;
+   return;
+}
+
 int
 seqsearch_bw
 (
  spath_t        path,
  uint8_t      * query,
- int            depth,
- int            slen,
+ int            pos,
+ int            end,
  int            tau,
  int            score_ref,
  int            score_diff,
@@ -329,67 +275,32 @@ seqsearch_bw
       if (tmp[nt].sz < 1)
          continue;
       // Update score.
-      int s = path.score + (nt != query[slen-1-depth] && query[slen-1-depth] != UNKNOWN_BASE);
+      int ds = (nt != query[pos] && query[pos] != UNKNOWN_BASE);
+      int  s = path.score + ds;
       // Check score boundary.
       if (s > tau)
          continue;
       // Update path.
-      int d = depth;
       spath_t p = {.pos = tmp[nt], .score = s};
+      memcpy(&(p.align), &(path.align), ALIGN_WORDS*sizeof(uint64_t));
+      // Update mismatched positions.
+      if (ds || query[pos] == UNKNOWN_BASE) mpos_set(&p, pos);      
       // Dash if max tau is reached.
       if (s == tau) {
-         if (seqdash_bw(&p, query, d+1, slen, index))
-            continue;
-         d = slen-1;
+         seqdash_bw(p, query, pos-1, end, index);
+         continue;
       }
       // If depth is reached.
-      if (d == slen-1) {
+      if (pos == end) {
          // Check score difference and store hit.
          if (s - score_ref >= score_diff)
             path_push(p, hits);
       } else {
          // Recursive call.
-         seqsearch_bw(p, query, d+1, slen, tau, score_ref, score_diff, index, hits);
+         seqsearch_bw(p, query, pos-1, end, tau, score_ref, score_diff, index, hits);
       }
    }
 
-   return 0;
-}
-
-int
-seqdash_bw
-(
- spath_t      * path,
- uint8_t      * query,
- int            depth,
- int            slen,
- index_t      * index,
- pathstack_t ** hits
-)
-{
-   fmdpos_t p = path->pos;
-   // Dash until the end of the search region.
-   for (int d = slen-1-depth; d >= 0; d--) {
-      // Do not allow any mismatch. If sequence does not exits, return.
-      if (__builtin_expect(query[d] != UNKNOWN_BASE,1)) {
-         p = extend_bw(query[d], p, index->bwt);
-         if (p.sz < 1) return -1;
-      }
-      // When querying UNKNOWN_BASE, follow all branches.
-      else {
-         fmdpos_t newpos[NUM_BASES];
-         extend_bw_all(p, newpos, index->bwt);
-         for (int i = 0; i < NUM_BASES; i++) {
-            if (newpos[i].sz < 1) continue;
-            path.pos = newpos[i];
-            seqdash_bw(path, query, d-1, slen, index, hits);
-         }
-         return 0;
-      }
-   }
-   // Sequence found, push to hit stack.
-   path.pos = p;
-   path_push(path, hits);
    return 0;
 }
 
@@ -398,8 +309,8 @@ seqsearch_fw
 (
  spath_t        path,
  uint8_t      * query,
- int            depth,
- int            slen,
+ int            pos,
+ int            end,
  int            tau,
  int            score_ref,
  int            score_diff,
@@ -417,27 +328,29 @@ seqsearch_fw
       if (tmp[nt].sz < 1)
          continue;
       // Update score.
-      int s = path.score + (nt != query[depth] && query[depth] != UNKNOWN_BASE);
+      int ds = (nt != query[depth] && query[depth] != UNKNOWN_BASE);
+      int  s = path.score + ds;
       // Check score boundary.
       if (s > tau)
          continue;
       // Update path.
-      int d = depth;
       spath_t p = {.pos = tmp[nt], .score = s};
+      memcpy(&(p.align), &(path.align), ALIGN_WORDS*sizeof(uint64_t));
+      // Update mismatched positions.
+      if (ds || query[pos] == UNKNOWN_BASE) mpos_set(&p, pos);
       // Dash if max tau is reached.
       if (s == tau) {
-         if (seqdash_fw(&p, query, d+1, slen, index))
-            continue;
-         d = slen-1;
+         seqdash_fw(p, query, pos+1, end, index);
+         continue;
       }
       // If depth is reached.
-      if (d == slen-1) {
+      if (pos == end) {
          // Check score difference and store hit.
          if (s - score_ref >= score_diff)
             path_push(p, hits);
       } else {
          // Recursive call.
-         seqsearch_fw(p, query, d+1, slen, tau, score_ref, score_diff, index, hits);
+         seqsearch_fw(p, query, pos+1, end, tau, score_ref, score_diff, index, hits);
       }
    }
 
@@ -445,12 +358,12 @@ seqsearch_fw
 }
 
 int
-seqsearch_fw_sc
+scsearch_fw
 (
  spath_t        path,
  uint8_t      * query,
- int            depth,
- int            slen,
+ int            pos,
+ int            end,
  int            tau,
  int            score_ref,
  int            score_diff,
@@ -464,35 +377,37 @@ seqsearch_fw_sc
    extend_fw_all(path.pos, tmp, index->bwt);
 
    // Iterate over nt.
-   for (int nt = 0; nt < (boundary ? query[depth] + 1 : NUM_BASES); nt++) {
+   for (int nt = 0; nt < (boundary ? query[pos] + 1 : NUM_BASES); nt++) {
       // Check whether prefix exists.
       if (tmp[nt].sz < 1)
          continue;
       // Update score.
       // 'N' is treated as wildcard -- The maximum distance should have been lowered
       // by the number of 'N' present in the query.
-      int s = path.score + (nt != query[depth] && query[depth] != UNKNOWN_BASE);
+      int ds = (nt != query[pos] && query[pos] != UNKNOWN_BASE);
+      int  s = path.score + ds;
       // Check score boundary.
       if (s > tau)
          continue;
       // Update path.
-      int d = depth;
       spath_t p = {.pos = tmp[nt], .score = s};
+      memcpy(&(p.align), &(path.align), ALIGN_WORDS*sizeof(uint64_t));
+      if (ds || query[pos] == UNKNOWN_BASE) mpos_set(&p, pos);
       // Dash if max tau is reached.
       if (s == tau) {
          if (s - score_ref >= score_diff)
-            seqdash_fw(p, query, d+1, slen, index, hits);
+            seqdash_fw(p, query, pos+1, end, index, hits);
          continue;
       }
       // If depth is reached.
-      if (d == slen-1) {
+      if (pos == end) {
          // Check score difference and store hit.
          if (s - score_ref >= score_diff)
             path_push(p, hits);
       } else {
          // Recursive call.
          int bnd = boundary && (nt == query[depth]);
-         seqsearch_fw_sc(p, query, d+1, slen, tau, score_ref, score_diff, bnd, index, hits);
+         scsearch_fw(p, query, pos+1, end, tau, score_ref, score_diff, bnd, index, hits);
       }
    }
 
@@ -504,15 +419,15 @@ seqdash_fw
 (
  spath_t        path,
  uint8_t      * query,
- int            depth,
- int            slen,
+ int            pos,
+ int            end,
  index_t      * index,
  pathstack_t ** hits,
 )
 {
    fmdpos_t p = path.pos;
    // Dash until the end of the search region.
-   for (int d = depth; d < slen; d++) {
+   for (int d = pos; d <= end; d++) {
       // Do not allow any mismatch. If sequence does not exist, return.
       if (__builtin_expect(query[d] != UNKNOWN_BASE,1)) {
          p = extend_fw(query[d], p, index->bwt);
@@ -520,12 +435,16 @@ seqdash_fw
       } 
       // When querying UNKNOWN_BASE, follow all branches.
       else {
+         // Set mismatch position.
+         mpos_set(&path, d);
+         // Extend all branches.
          fmdpos_t newpos[NUM_BASES];
          extend_fw_all(p, newpos, index->bwt);
+         // Follow branches.
          for (int i = 0; i < NUM_BASES; i++) {
             if (newpos[i].sz < 1) continue;
             path.pos = newpos[i];
-            seqdash_fw(path, query, d+1, slen, index, hits);
+            seqdash_fw(path, query, d+1, end, index, hits);
          }
          return 0;
       }
@@ -535,6 +454,49 @@ seqdash_fw
    path_push(path, hits);
    return 0;
 }
+
+int
+seqdash_bw
+(
+ spath_t        path,
+ uint8_t      * query,
+ int            pos,
+ int            end,
+ index_t      * index,
+ pathstack_t ** hits
+)
+{
+   fmdpos_t p = path.pos;
+   // Dash until the end of the search region.
+   for (int d = pos; d >= end; d--) {
+      // Do not allow any mismatch. If sequence does not exist, return.
+      if (__builtin_expect(query[d] != UNKNOWN_BASE,1)) {
+         p = extend_bw(query[d], p, index->bwt);
+         if (p.sz < 1) return -1;
+      }
+      // When querying UNKNOWN_BASE, follow all branches.
+      else {
+         // Set mismatch position.
+         mpos_set(&path, d);
+         // Extend all branches.
+         fmdpos_t newpos[NUM_BASES];
+         extend_bw_all(p, newpos, index->bwt);
+         // Follow branches.
+         for (int i = 0; i < NUM_BASES; i++) {
+            if (newpos[i].sz < 1) continue;
+            path.pos = newpos[i];
+            // Dash all branches.
+            seqdash_bw(path, query, d-1, end, index, hits);
+         }
+         return 0;
+      }
+   }
+   // Sequence found, push to hit stack.
+   path.pos = p;
+   path_push(path, hits);
+   return 0;
+}
+
 
 int
 compar_path_score
