@@ -6,7 +6,7 @@
 #ifndef _BLOCKSEARCH_H
 #define _BLOCKSEARCH_H
 #define PATHSTACK_DEF_SIZE 64
-#define MAX_K 255
+#define MAX_K 254
 #define ALIGN_WORDS 4
 #define ALIGN_WORD_SIZE 64
 
@@ -45,7 +45,5 @@ int           path_push              (spath_t, pathstack_t **);
 pstree_t    * alloc_stack_tree       (int);
 pstree_t    * alloc_stack_tree_rec   (int);
 void          free_stack_tree        (pstree_t *);
-// Other functions
-int           which_strand           (uint8_t *, int);
-int           compar_path_score      (const void *, const void *);
+
 #endif

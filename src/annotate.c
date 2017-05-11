@@ -2,17 +2,6 @@
 #include <string.h>
 #include <time.h>
 
-// Annotation array.
-// Information structure:
-// 8 bits per genomic locus.
-//   bit 7 \
-//   bit 6 |
-//   bit 5 | Num of neighbors, in dec (!bit3) or log2 (bit3).
-//   bit 4 /
-//   bit 3 - Log2/dec flag for bits 4-7.
-//   bit 2 - Neighbor alignment bit.
-//   bit 1 \ 
-//   bit 0 / Distance of closest neighbor (00: 1, 01: 2, 10: 3, 11: 4).
 
 // Inline functions.
 inline void send_progress_to_scheduler (int64_t, int64_t*, annjob_t*);
@@ -79,7 +68,7 @@ annotate
    //   
    //   M is max(3,tau). If the number of mutations is > M, the alignment is not stored.
 
-   uint8_t * info = calloc(index->size, word_size);
+   uint8_t * tmp_info = calloc(index->size, word_size);
 
    // Initialization.
    pthread_mutex_init(mutex,NULL);
@@ -114,7 +103,7 @@ annotate
       jobs[i]->mutex    = mutex;
       jobs[i]->monitor  = monitor;
       jobs[i]->index    = index;
-      jobs[i]->info     = info;
+      jobs[i]->info     = tmp_info;
    }
 
    clock_t clk = clock();
@@ -138,14 +127,48 @@ annotate
       // Update submitted jobs.
       runcount = done + threads;
       // Report progress.
-      fprintf(stderr, "[proc] annotating... %.2f%%\r", computed*100.0/index->bwt->fmd_base.sz);
+      fprintf(stderr, "\r[proc] computing neighbors... %.2f%%", computed*100.0/index->bwt->fmd_base.sz);
       // Wait for signal.
       pthread_cond_wait(monitor,mutex);
    }
    pthread_mutex_unlock(mutex);
 
-   //   fprintf(stderr, "annotating... %ld/%ld\n", *computed, index->size);
-   fprintf(stderr, "[proc] annotating... done [%.3fs]\n", ((clock()-clk)*1.0/CLOCKS_PER_SEC)/threads);
+   // Report time.
+   double elapsed = ((clock()-clk)*1.0/CLOCKS_PER_SEC);
+   fprintf(stderr, "\r[proc] computing neighbors... done [%.3fs with %d threads (%.3fs/thread)]\n", elapsed, threads, elapsed/threads);
+   fprintf(stderr, "[proc] compressing annotation...");
+   clk = clock();
+
+   // Alloc annotation.
+   annotation_t * ann = malloc(sizeof(annotation_t));
+   ann->kmer = kmer;
+   ann->tau  = tau;
+   ann->info = calloc(index->size/2+1, sizeof(uint8_t));
+   ann->size = index->size/2+1;
+
+   // Annotation array.
+   // Information structure:
+   // 8 bits per genomic locus.
+   //   bit 7 \
+   //   bit 6 |
+   //   bit 5 | Num of neighbors, in dec (!bit3) or log2 (bit3).
+   //   bit 4 /
+   //   bit 3 - Locus alignment info.
+   //   bit 2 - Locus alignment flag.
+   //   bit 1 \ 
+   //   bit 0 / Distance of closest neighbor (00: 1, 01: 2, 10: 3, 11: 4).
+
+   // Resolve genome positions and copy values (ONLY FORWARD STRAND!!!).
+   uint64_t i = 1;
+   while (i < index->size) {
+      // Read SA position.
+      
+      // Get target locus.
+   }
+
+   
+
+   
    // Free variables.
    free(jobs);
    free(mutex);
@@ -216,125 +239,186 @@ next_seq
 }
 
 void
+merge_alignments
+(
+ uint8_t * a,
+ uint8_t * b,
+ int       len
+)
+{
+   uint8_t * tmp = calloc(2*len, sizeof(uint8_t));
+
+   // Merge values, halt if a or b equals 0.
+   int i = 0, j = 0, k = 0;
+   while (i < len && j < len && k <= len) {
+      if (a[i] == 0 || b[j] == 0) break;
+      if (a[i] == b[j]) {
+         tmp[k++] = a[i];
+         i++; j++;
+      }
+      else if (a[i] < b[j])
+         tmp[k++] = a[i++];
+      else if (a[i] > b[j])
+         tmp[k++] = b[j++];
+   }
+
+   // Fill in remaining values.
+   while (i < len && k <= len && a[i])
+      tmp[k++] = a[i++];
+   while (j < len && k <= len && b[j])
+      tmp[k++] = b[j++];
+   while (k < len)
+      tmp[k++] = 0;
+
+   // If we found too many align positions, flag 0xFF.
+   if (k > len) 
+      memset(a, 0xFF, len*sizeof(uint8_t));
+   else 
+      memcpy(a, tmp, len*sizeof(uint8_t));
+
+   // Return.
+   free(tmp);
+   return;
+}
+
+void
+compute_aln_positions
+(
+ uint64_t * bits,
+ uint8_t  * pos,
+ int        nbits,
+ int        npos,
+ int        reverse
+)
+{
+   uint8_t * tmp = calloc(npos+1, sizeof(uint8_t));
+   int a = 0;
+
+   // Store positions of bits set to '1'.
+   for (int i = 0; i < nbits && a <= npos; i++) {
+      int w = i / ALIGN_WORD_SIZE;
+      int b = i % ALIGN_WORD_SIZE;
+      if ((qalign[w] >> b) & (uint64_t)1)
+         qry_aln[a++] = (reverse ? : nbits - i : i + 1);
+   }
+   // If we found too many align positions, flag 0xFF.
+   if (a > pos) {
+      memset(pos, 0xFF, npos*sizeof(uint8_t));
+   } else {
+      memcpy(pos, tmp, npos*sizeof(uint8_t));
+   }
+   
+   free(tmp);
+   return;
+}
+
+void
 store_hits
 (
  annjob_t     * job,
  pathstack_t  * stack,
- int64_t        self_fp
+ fmdpos_t       query
 )
+// Stores new information discovered in the last query.
+// Information is always stored/updated in the lexicographically
+// smallest between the queried/hit sequence and its rev complement.
 {
    int hits     = 0;
-   int tau      = -1;
+   int tau      = job->tau + 1;
    int aln_size = job->wsize - 3;
 
    // Aggregate query alignment.
    uint64_t * qalign = calloc(ALIGN_WORD_SIZE, sizeof(uint64_t));
 
-   // Find minimum tau.
-   for (int i = 0; i < stack->pos; i++) {
-      if (path.pos.fp == self_fp) continue;
-      spath_t path = stack->path[i];
-      if (tau == -1 || path.score < tau) tau = path.score;
-   }
-
    // Store hits info in their SA start position.
    for (int i = 0; i < stack->pos; i++) {
       spath_t path = stack->path[i];
       // Remove self hit.
-      if (path.score != tau || path.pos.fp == self_fp) continue;
+      if (path.pos.fp == query.fp) continue;
+
+      // Select lexicographically smallest between the neighbor and its revcomp.
+      int64_t nptr = (path.pos.rp < path.pos.fp ? path.pos.rp : path.pos.fp);
+      int     nrev = path.pos.rp < path.pos.fp;
 
       // info structure:
       //   bytes     0-1: number of different neighbors (16bit).
       //   byte        2: distance to closest neighbor.
       //   byte  3-wsize: bytes encoding the mutated positions to find the closest neighbors.
+      uint8_t  * info = job->info + nptr * job->wsize;
+      uint16_t * ncnt = (uint16_t *) info;
+      uint8_t  * ntau = info + sizeof(uint16_t);
+      uint8_t  * naln = ntau + 1;
 
-      uint8_t  * info = job->info + path.pos.fp * job->wsize;
-      uint16_t * nghb_cnt = (uint16_t *) info;
-      uint8_t  * nghb_tau = info + sizeof(uint16_t);
-      uint8_t  * nghb_aln = nghb_tau + 1;
-
-      // If first hit or smaller distance -- Reset count and mismatched positions.
-      if (*nghb_tau == 0 || *nghb_tau > tau) {
-         *nghb_cnt = 1;
-         *nghb_tau = tau;
-         memset(nghb_aln, 0, aln_size);
-      }
-      // Otherwise update neighbor info.
-      else if (info[2] == tau)
-         *nghb_cnt = (uint16_t) min(0xFFFF, ((uint32_t) *nghb_cnt) + 1);
-
-      // Update query align positions.
-      for (int w = 0; w < ALIGN_WORDS; w++)
-         qalign |= path.align[w];
-      
-      // Compute align positions.
-      int i = 0, j = 0, a = 0;
-      uint8_t hit_aln[aln_size];
-      uint8_t tmp_aln[aln_size+1];
-      for (; i < job->kmer; i++) {
-         int w = i / ALIGN_WORD_SIZE;
-         int b = i % ALIGN_WORD_SIZE;
-         if ((path.align[w] >> b) & (uint64_t)1)
-            hit_aln[a++] = i + 1;
-      }
-      for (i=a; i < aln_size; i++)
-         hit_aln[i] = 0;
-      hits++;
-      // Merge align positions.
-      int k = 0;
-      while (i < aln_size && j < aln_size && k <= aln_size) {
-         if ([i] == 0 || nghb_aln[j] == 0) break;
-         if (align[i] == nghb_aln[j]) {
-            tmp_aln[k++] = align[i];
-            i++; j++;
+      // Update neighbor.
+      if (*ntau == path.score) {
+         // Add one to neighbor count.
+         *ncnt = (uint16_t) min(0xFFFF, ((uint32_t) *ncnt) + 1);
+         // Check if neighbor has free align slots.
+         if (*naln != 0xFF) {
+            // Compute mismatch positions.
+            uint8_t hit_aln[aln_size];
+            compute_aln_positions(path.align, hit_aln, job->kmer, aln_size, nrev);
+            // Merge mismatch positions and store in neighbor memory (naln).
+            merge_alignments(naln, hit_aln, aln_size);
          }
-         else if (align[i] < nghb_aln[j])
-            tmp_aln[k++] = align[i++];
-         else if (align[i] > nghb_aln[j])
-            tmp_aln[k++] = nghb_aln[j++];
       }
-      while (i < aln_size && k <= aln_size && align[i])
-         tmp_aln[k++] = align[i++];
-      while (j < aln_size && k <= aln_size && nghb_aln[j])
-         tmp_aln[k++] = nghb_aln[j++];
-      while (k < aln_size)
-         tmp_aln[k++] = 0;
 
-      // Store combined alignment.
-      // If there are too many mismatched positions, set aln to 0.
-      if (k > aln_size)
-         memset(nghb_aln, 0, aln_size);
-      // Otherwise store tmp_aln.
-      else
-         memcpy(nghb_aln, tmp_aln, aln_size);
+      // Reset neighbor.
+      else if (*ncnt == 0 || *ntau > path.score) {
+         // Set count to 1 and neighbor's tau to path.score.
+         *ncnt = 1;
+         *ntau = path.score;
+         // Compute mismatch positions.
+         uint8_t hit_aln[aln_size];
+         compute_aln_positions(path.align, hit_aln, job->kmer, aln_size, nrev);
+         // Store mismatch positions.
+         memcpy(naln, hit_aln, aln_size);
+      }
+
+      // Update query info.
+      if (path.score == tau) {
+         // Update query align positions.
+         for (int w = 0; w < ALIGN_WORDS; w++)
+            qalign |= path.align[w];
+         // Update hit count.
+         hits++;
+      } 
+      // Found score smaller than tau, update.
+      else if (path.score < tau) {
+         memcpy(qalign, path.align, ALIGN_WORDS*sizeof(uint64_t));
+         tau = path.score;
+         hits = 1;
+      }
    }
+
+   // Select lexicographically smallest between the query and its revcomp.
+   int64_t qptr = (query.rp < query.fp ? query.rp : query.fp);
+   int     qrev = query.rp < query.fp;
 
    // Query info.
-   uint8_t  * info = job->info + self_fp * job->wsize;
+   uint8_t  * info = job->info + qptr * job->wsize;
    uint16_t * qcnt = (uint16_t *) info;
    uint8_t  * qtau = info + sizeof(uint16_t);
-   uint8_t  * qaln = qry_tau + 1;
+   uint8_t  * qaln = qtau + 1;
 
-   // Set tau and neighbor count.
-   *qcnt = (uint16_t) min(0xFFFF, hits);
-
-   // Now compute mismatch positions for query sequence.
-   uint8_t qry_aln[aln_size+1];
-   int a = 0;
-   for (int i = 0; i < job->kmer && a <= aln_size; i++) {
-      int w = i / ALIGN_WORD_SIZE;
-      int b = i % ALIGN_WORD_SIZE;
-      if ((qalign[w] >> b) & (uint64_t)1)
-         qry_aln[a++] = i + 1;
+   // If query is empty or tau < qtau, reset query.
+   if (*qcnt == 0 || *qtau > tau) {
+      // Set tau and neighbor count.
+      *qtau = (uint8_t)  tau;
+      *qcnt = (uint16_t) min(0xFFFF, hits);
+      // Compute and directly store mismatch positions for query sequence.
+      compute_aln_positions(qalign, qaln, job->kmer, aln_size, qrev);
    }
-   for (int i = a; i < aln_size; i++)
-      qry_aln[i] = 0;
-
-   // If there are too many mismatched positions, set aln to 0.
-   if (a > aln_size)
-      memset(qaln, 0, aln_size);
-   else 
-      memcpy(qaln, qry_aln, aln_size);
+   // Update query.
+   else if (*qtau == tau) {
+      // Update hit count.
+      *qcnt = (uint16_t) min(0xFFFF, ((uint32_t)hits)+((uint32_t)*qcnt));
+      // Compute mismatch positions for query sequence.
+      uint8_t tmp_aln[aln_size];
+      compute_aln_positions(qalign, tmp_aln, job->kmer, aln_size, qrev);
+      // Update alignments in query by merging.
+      merge_alignments(qaln, tmp_aln, aln_size);
+   }
 
    free(qalign);
 }
@@ -413,133 +497,3 @@ annotate_mt
    return NULL;
 
 }
-
-/*
-   // aux vars.
-   uint64_t sa_pos = job->beg;
-   uint64_t computed = job->beg;
-   uint8_t * query = malloc(kmer);
-   uint8_t * lastq = malloc(kmer);
-   uint64_t kmers = 0;
-   uint64_t unique = 0;
-
-   int w_bits = 0;
-   while ((tau >> w_bits) > 0) w_bits++;
-   // Two extra bits to store log10(num of different neighbors).
-   w_bits += 2;
-
-   // Force first trail to be 0.
-   memset(lastq, 5, kmer);
-
-   // Iterate over all kmers.
-   while (sa_pos < job->end) {
-
-      // Get query values.
-      uint64_t locus = get_sa(sa_pos, index->sar);
-      char * seq = index->genome + locus;
-      // Translate query sequence.
-      for (int i = 0; i < kmer; i++) query[i] = translate[(int)seq[i]];
-      // Find a non-reverse duplicate sequence without 'N'.
-      while (contains_n(query, kmer) || reverse_duplicate(query, kmer)) {
-         // Find next kmer.
-         sa_pos++;
-         if (sa_pos >= job->end) goto free_and_return;
-         locus = get_sa(sa_pos, index->sar);
-         seq = index->genome + locus;
-         // Translate query sequence.
-         for (int i = 0; i < kmer; i++) query[i] = translate[(int)seq[i]];
-      }
-      // Increase kmer count.
-      kmers++;
-      // Compute trail and update lastq.
-      int trail = 0;
-      while (query[trail] == lastq[trail] && trail < kmer) trail++;
-      memcpy(lastq, query, kmer);
-
-      // Alloc count buffers.
-      int64_t * loci_count = calloc(tau+1,sizeof(int64_t));
-      int64_t * hit_count = calloc(tau+1,sizeof(int64_t));
-      // Search sequence.
-      blocksearch_trail(query, kmer, tau, trail, index, stack_tree);
-      // Count hits.
-      pathstack_t * hits = stack_tree->stack;
-      fmdpos_t   self = {.fp = 0, .rp = 0, .sz = 1};
-      for (int i = 0; i < hits->pos; i++) {
-         spath_t p = hits->path[i];
-         loci_count[p.score] += p.pos.sz;
-         hit_count[p.score]++;
-         if (p.score == 0)
-            self = p.pos;
-      }
-      loci_count[0] -= 1;
-      
-      // Store annotation.
-      // Annotation format.
-      // - Exact match: 0b000..0
-      // - No match (d<=tau): 0b110..0
-      // - Otherwise:
-      //   bit[n-1] bit[n-2] = log10(neighbor diversity)
-      //   bit[n-3].. bit[0] = matching tau.
-      if (!loci_count[0]) {
-         // Set locus in forward strand.
-         if (locus >= index->size/2) locus = index->size - 1 - locus - kmer;
-         // Words.
-         size_t bit = w_bits*locus;
-         size_t word = bit >> 3;
-         uint8_t shift = bit & 7;
-         uint16_t uw = 0, lw = 0, w = 0;
-         // Find match distance.
-         // Find match distance.
-         int dist = tau+1;
-         for (int d = 1; d <= tau; d++) {
-            if (loci_count[d]) {
-               dist = d;
-               break;
-            }
-         }
-         // No match (write 0b110..0).
-         if (dist > tau) {
-            w = 3 << (w_bits-2);
-         } else {
-            w = dist;
-            if      (hit_count[dist] < 5)   {}
-            else if (hit_count[dist] < 50)  w |= 1 << (w_bits-2);
-            else if (hit_count[dist] < 500) w |= 2 << (w_bits-2);
-            else                            w |= 3 << (w_bits-2);
-         }
-         lw = (w << shift) & 0x00FF;
-         uw = (w >> (8-shift)) & 0x00FF;
-         // Mutex write.
-         // TODO:
-         // Since each thread is workin on a different
-         // region of the SA, this can be done safely
-         // without mutex lock.
-         pthread_mutex_lock(job->mutex);
-         job->repeat_bf[word]   |= lw;
-         job->repeat_bf[word+1] |= uw;
-         pthread_mutex_unlock(job->mutex);
-      }
-      free(loci_count);
-      free(hit_count);
-      // Update position.
-      sa_pos = self.fp + self.sz;
-   }
-
-   free_and_return:
-   // Report to scheduler.
-   pthread_mutex_lock(job->mutex);
-   *(job->done) += 1;
-   *(job->computed) += job->end - computed;
-   *(job->kmers) += kmers;
-   *(job->unique) += unique;
-   pthread_cond_signal(job->monitor);
-   pthread_mutex_unlock(job->mutex);
-
-   // Free memory.
-   free_stack_tree(stack_tree);
-   free(query);
-   free(lastq);
-
-   return NULL;
-}
-*/

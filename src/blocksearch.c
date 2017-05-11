@@ -1,31 +1,5 @@
 #include "blocksearch.h"
 
-int
-which_strand
-(
- uint8_t * query,
- int       kmer
- )
-/*
-** This function takes a seq and compares it with its reverse
-** complement. Returns 1 if the reverse complement is 
-** lexicographically smaller/equal than the original sequence.
-** The aim of this is to avoid computing the same thing twice.
-** Since we have an index with forward and reverse strands,
-** the forward and reverse complement of each kmer must yield
-** exactly the same number of hits. Therefore we will only
-** compute half of the job for the lexicographically smaller
-** and the other half (maybe +1 nucleotide if k is odd) for
-** the legicographically bigger.
-*/
-{
-   for (int i = 0, j = kmer-1; i < kmer; i++, j--) {
-      if (3-query[j] == query[i]) continue;
-      return 3-query[j] < query[i];
-   }
-   return 1;
-}
-
 pathstack_t *
 pathstack_new
 (
@@ -100,7 +74,7 @@ blocksc_trail
    tree->stack->pos = 0;
 
    // Which strand.
-   int rc_last = which_strand(query, slen);
+   int rc_last = qarray[slen].fp >= qarray[slen].rp;
 
    // If the query contains N in either block (left or right), reduce the value of
    // tau by num(N) mismatches.
@@ -495,20 +469,4 @@ seqdash_bw
    path.pos = p;
    path_push(path, hits);
    return 0;
-}
-
-
-int
-compar_path_score
-(
- const void * pa,
- const void * pb
-)
-{
-   spath_t * a = (spath_t *)pa;
-   spath_t * b = (spath_t *)pb;
-
-   if (a->score < b->score) return -1;
-   else if (a->score > b->score) return 1;
-   else return (a->pos.sz < b->pos.sz ? -1 : 1);
 }
