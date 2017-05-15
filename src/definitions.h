@@ -42,9 +42,7 @@ typedef struct bwt_t      bwt_t;
 typedef struct sar_t      sar_t;
 typedef struct chr_t      chr_t;
 typedef struct ann_t       ann_t;
-typedef struct sht_t       sht_t;
 typedef struct annlist_t   annlist_t;
-typedef struct shtlist_t   shtlist_t;
 typedef struct bwpos_t    bwpos_t;
 typedef struct fmdpos_t   fmdpos_t;
 typedef struct htable_t    htable_t;
@@ -102,22 +100,6 @@ struct annlist_t {
    ann_t    ann[];
 };
 
-struct sht_t {
-   uint8_t    id;
-   uint8_t    bits;
-   int        k;
-   int        d;
-   int        repeat_thr;
-   uint64_t   set_count;
-   uint64_t   collision;
-   htable_t * htable;
-};
-
-struct shtlist_t {
-   uint8_t  count;
-   sht_t    sht[];
-};
-
 struct index_t {
    uint64_t    size;
    // Gen file.
@@ -130,8 +112,6 @@ struct index_t {
    chr_t     * chr;
    // Annotations.
    annlist_t * ann;
-   // Seed tables.
-   shtlist_t * sht;
 };
 
 

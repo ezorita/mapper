@@ -61,11 +61,9 @@ char *USAGE_BUILD =
    "    genome.fasta.sar:  suffix array\n"
    "    genome.fasta.bwt:  bwt index\n"
    "    genome.fasta.ann:  annotation index\n"
-   "    genome.fasta.sht:  seed table index\n"
    "    genome.fasta.chr:  chromosome index\n"
-   "  annotation and seed table data:\n"
+   "  annotation data:\n"
    "    genome.fasta.ann.#\n"
-   "    genome.fasta.sht.#\n";
 
 void say_map_usage(void) { fprintf(stderr, "%s\n", USAGE_MAP); }
 void say_add_usage(void) { fprintf(stderr, "%s\n", USAGE_ADD); }

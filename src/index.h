@@ -20,15 +20,10 @@
 
 char       * add_suffix            (const char *, const char *);
 annlist_t  * ann_index_read        (char *);
-shtlist_t  * sht_index_read        (char *);
 int          ann_index_write       (annlist_t *, char *);
-int          sht_index_write       (shtlist_t *, char *);
 int          ann_index_load        (annlist_t *, char *);
-int          sht_index_load        (shtlist_t *, char *);
 int          ann_find_slot         (annlist_t *);
-int          sht_find_slot         (shtlist_t *);
 void         ann_print_index       (annlist_t *);
-void         sht_print_index       (shtlist_t *);
 int          index_add_annotation  (int, int, int, index_t *, char *);
 index_t    * index_load_base       (char *);
 char       * index_load_gen        (char *);
