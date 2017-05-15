@@ -40,6 +40,53 @@ job_ranges_rec
    return;
 }
 
+void
+locus_annotation
+(
+ uint8_t * info,
+ uint8_t * ann,
+ int       alnsize
+)
+{
+   // Annotation data structure:
+   // 8 bits per genomic locus.
+   //   bit 7 - Locus alignment info.
+   //   bit 6 - Locus alignment flag.
+   //   bit 5 \ 
+   //   bit 4 / Distance of closest neighbor (00: 1, 01: 2, 10: 3, 11: 4).
+   //   bit 3 \
+   //   bit 2 |
+   //   bit 1 | Num of neighbors, in dec (!bit3) or log2 (bit3).
+   //   bit 0 /
+   uint16_t  cnt = *((uint16_t *)info);
+   uint8_t   tau = *(info + sizeof(uint16_t));
+   uint8_t * aln = info + sizeof(uint16_t) + sizeof(uint8_t);
+
+   if (cnt == 0 || cnt == NO_INFO) return;
+
+   // Count.
+   if      (cnt <= 10)               *ann |= (uint8_t)cnt;
+   else if (cnt > 10 && cnt <= 20)   *ann |= 0x0B;
+   else if (cnt > 20 && cnt <= 50)   *ann |= 0x0C;
+   else if (cnt > 50 && cnt <= 100)  *ann |= 0x0D;
+   else if (cnt > 100 && cnt <= 500) *ann |= 0x0E;
+   else if (cnt > 500)               *ann |= 0x0F;
+   
+   // Tau.
+   *ann |= (tau & 0x03) << 2;
+   
+   // Alignment info.
+   if (*aln != 255) {
+      // Set alignment flag in locus.
+      *ann |= (uint8_t)1 << 6;
+      // Store alignment info.
+      for (int i = 0; i < alnsize && aln[i]; i++)
+         // Alignment values are 1-based.
+         *(ann + aln[i]-1) |= (uint8_t)1 << 7;
+   }
+
+   return;
+}
 
 annotation_t
 annotate
@@ -146,34 +193,48 @@ annotate
    ann->info = calloc(index->size/2+1, sizeof(uint8_t));
    ann->size = index->size/2+1;
 
-   // Annotation array.
-   // Information structure:
-   // 8 bits per genomic locus.
-   //   bit 7 \
-   //   bit 6 |
-   //   bit 5 | Num of neighbors, in dec (!bit3) or log2 (bit3).
-   //   bit 4 /
-   //   bit 3 - Locus alignment info.
-   //   bit 2 - Locus alignment flag.
-   //   bit 1 \ 
-   //   bit 0 / Distance of closest neighbor (00: 1, 01: 2, 10: 3, 11: 4).
-
-   // Resolve genome positions and copy values (ONLY FORWARD STRAND!!!).
+   // Compute and store annotation from info.
    uint64_t i = 1;
-   while (i < index->size) {
-      // Read SA position.
-      
-      // Get target locus.
+   uint8_t * info = tmp_info;
+   while (1) {
+      // info structure:
+      //   bytes     0-1: number of different neighbors (16bit).
+      //   byte        2: distance to closest neighbor.
+      //   byte  3-wsize: bytes encoding the mutated positions to find the closest neighbors.
+
+      while (i < index->size && (*(uint16_t *)info == NO_INFO || *(uint16_t *)info == 0)) {
+         i++;
+         info += word_size;
+      }
+
+      if (i >= index->size) break;
+
+      // Store ref to annotation info.
+      uint8_t * ref = info;
+      // Compute k-mer range in SA.
+      uint64_t size = 1;
+      while (i+size < index->size && *(uint16_t *)(info + size*word_size) == 0)
+         size++;
+      // Get SA values.
+      uint64_t * range = malloc(size*sizeof(uint64_t));
+      get_sa_range(i, size, range, index->sar);
+      for (uint64_t j = 0; j < size; j++) {
+         // Store annotation in forward strand.
+         if (range[j] >= index->size/2) continue;
+         locus_annotation(ref, ann->info + range[j], word_size-3);
+      }
+      free(range);
+
+      // Update pointer.
+      i    += size;
+      info += size*word_size;
    }
-
-   
-
    
    // Free variables.
    free(jobs);
    free(mutex);
    free(monitor);
-   return (annotation_t){.bitfield = repeat_bf};
+   return ann;
 }
 
 int
@@ -327,6 +388,13 @@ store_hits
    int tau      = job->tau + 1;
    int aln_size = job->wsize - 3;
 
+   // No matches.
+   if (stack->pos == 0) {
+      *(uint16_t *)(job->info + query.pos.fp * job->wsize) = NO_INFO;
+      *(uint16_t *)(job->info + query.pos.rp * job->wsize) = NO_INFO;
+      return;
+   }
+
    // Aggregate query alignment.
    uint64_t * qalign = calloc(ALIGN_WORD_SIZE, sizeof(uint64_t));
 
@@ -338,7 +406,11 @@ store_hits
 
       // Select lexicographically smallest between the neighbor and its revcomp.
       int64_t nptr = (path.pos.rp < path.pos.fp ? path.pos.rp : path.pos.fp);
+      int64_t rptr = (path.pos.rp >= path.pos.fp ? path.pos.rp : path.pos.fp);
       int     nrev = path.pos.rp < path.pos.fp;
+
+      // Flag smallest.
+      *(uint16_t *)(job->info + rptr * job->wsize) = NO_INFO;      
 
       // info structure:
       //   bytes     0-1: number of different neighbors (16bit).
@@ -364,7 +436,7 @@ store_hits
       }
 
       // Reset neighbor.
-      else if (*ncnt == 0 || *ntau > path.score) {
+      else if (*ncnt == 0 || *ncnt = NOT_MATCHED || *ntau > path.score) {
          // Set count to 1 and neighbor's tau to path.score.
          *ncnt = 1;
          *ntau = path.score;
@@ -405,19 +477,22 @@ store_hits
    if (*qcnt == 0 || *qtau > tau) {
       // Set tau and neighbor count.
       *qtau = (uint8_t)  tau;
-      *qcnt = (uint16_t) min(0xFFFF, hits);
+      *qcnt = (uint16_t) min(NOT_MATCHED-1, hits);
       // Compute and directly store mismatch positions for query sequence.
       compute_aln_positions(qalign, qaln, job->kmer, aln_size, qrev);
    }
    // Update query.
    else if (*qtau == tau) {
       // Update hit count.
-      *qcnt = (uint16_t) min(0xFFFF, ((uint32_t)hits)+((uint32_t)*qcnt));
-      // Compute mismatch positions for query sequence.
-      uint8_t tmp_aln[aln_size];
-      compute_aln_positions(qalign, tmp_aln, job->kmer, aln_size, qrev);
-      // Update alignments in query by merging.
-      merge_alignments(qaln, tmp_aln, aln_size);
+      *qcnt = (uint16_t) min(NOT_MATCHED-1, ((uint32_t)hits)+((uint32_t)*qcnt));
+      // Check if query has free align slots.
+      if (*qaln != 0xFF) {
+         // Compute mismatch positions for query sequence.
+         uint8_t tmp_aln[aln_size];
+         compute_aln_positions(qalign, tmp_aln, job->kmer, aln_size, qrev);
+         // Update alignments in query by merging.
+         merge_alignments(qaln, tmp_aln, aln_size);
+      }
    }
 
    free(qalign);

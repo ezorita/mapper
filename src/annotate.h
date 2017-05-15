@@ -8,9 +8,7 @@
 #ifndef _ANNOTATE_H
 #define _ANNOTATE_H
 
-#define COMPUTE_INDELS 0
-#define STORE_ANNOTATION 1
-#define STORE_SEEDTABLE  2
+#define NO_INFO 0xFFFF
 
 typedef struct {
    uint8_t    kmer;
