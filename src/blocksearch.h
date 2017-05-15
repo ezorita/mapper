@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 #include "bwtquery.h"
 #include "definitions.h"
 
@@ -12,7 +13,7 @@
 
 typedef struct {
    fmdpos_t pos;
-   uint64_t align[ALIGN_64BIT_WORDS];
+   uint64_t align[ALIGN_WORDS];
    int      score;
 } spath_t;
 
@@ -37,13 +38,17 @@ void          blocksearch_trail_rec  (uint8_t *, int, int, int, int, index_t *, 
 int           scsearch_fw            (spath_t, uint8_t *, int, int, int, int, int, int, index_t *, pathstack_t **);
 int           seqsearch_fw           (spath_t, uint8_t *, int, int, int, int, int, index_t *, pathstack_t **);
 int           seqsearch_bw           (spath_t, uint8_t *, int, int, int, int, int, index_t *, pathstack_t **);
-int           seqdash_fw             (spath_t *, uint8_t *, int, int, index_t *);
-int           seqdash_bw             (spath_t *, uint8_t *, int, int, index_t *);
+int           seqdash_fw             (spath_t, uint8_t *, int, int, index_t *, pathstack_t **);
+int           seqdash_bw             (spath_t, uint8_t *, int, int, index_t *, pathstack_t **);
 // Stack tree functions
 pathstack_t * pathstack_new          (int);
 int           path_push              (spath_t, pathstack_t **);
 pstree_t    * alloc_stack_tree       (int);
 pstree_t    * alloc_stack_tree_rec   (int);
 void          free_stack_tree        (pstree_t *);
+
+// Misc.
+void          mpos_set               (spath_t *, int);
+
 
 #endif

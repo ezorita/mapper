@@ -87,7 +87,7 @@ blocksc_trail
 
    // Split block.
    int pos_r = slen/2 + (rc_last ? slen%2 : 0);
-   int tau_l = tau_max/2 - (rc_last ? 0 : (1 - tau_max % 2));
+   int tau_l = tau/2 - (rc_last ? 0 : (1 - tau % 2));
 
    // Recursive call on left block, don't compute if current data is valid (trail).
    if (trail < pos_r) {
@@ -155,7 +155,7 @@ blocksearch_trail_rec
    // Extend left block to the right.
    for (int i = 0; i < tree->next_l->stack->pos; i++) {
       spath_t p = tree->next_l->stack->path[i];
-      seqsearch_fw(p, query, beg_r, end, blocks-1, p.score, 0, index, &(tree->stack));
+      seqsearch_fw(p, query, pos_r, end, blocks-1, p.score, 0, index, &(tree->stack));
    }
 
    // Recursive call on right block.
@@ -211,7 +211,6 @@ free_stack_tree
    free(tree);
 }
 
-inline
 void
 mpos_set
 (
@@ -261,7 +260,8 @@ seqsearch_bw
       if (ds || query[pos] == UNKNOWN_BASE) mpos_set(&p, pos);      
       // Dash if max tau is reached.
       if (s == tau) {
-         seqdash_bw(p, query, pos-1, end, index);
+         if (s - score_ref >= score_diff)
+            seqdash_bw(p, query, pos-1, end, index, hits);
          continue;
       }
       // If depth is reached.
@@ -302,7 +302,7 @@ seqsearch_fw
       if (tmp[nt].sz < 1)
          continue;
       // Update score.
-      int ds = (nt != query[depth] && query[depth] != UNKNOWN_BASE);
+      int ds = (nt != query[pos] && query[pos] != UNKNOWN_BASE);
       int  s = path.score + ds;
       // Check score boundary.
       if (s > tau)
@@ -314,7 +314,8 @@ seqsearch_fw
       if (ds || query[pos] == UNKNOWN_BASE) mpos_set(&p, pos);
       // Dash if max tau is reached.
       if (s == tau) {
-         seqdash_fw(p, query, pos+1, end, index);
+         if (s - score_ref >= score_diff)
+            seqdash_fw(p, query, pos+1, end, index, hits);
          continue;
       }
       // If depth is reached.
@@ -380,7 +381,7 @@ scsearch_fw
             path_push(p, hits);
       } else {
          // Recursive call.
-         int bnd = boundary && (nt == query[depth]);
+         int bnd = boundary && (nt == query[pos]);
          scsearch_fw(p, query, pos+1, end, tau, score_ref, score_diff, bnd, index, hits);
       }
    }
@@ -396,7 +397,7 @@ seqdash_fw
  int            pos,
  int            end,
  index_t      * index,
- pathstack_t ** hits,
+ pathstack_t ** hits
 )
 {
    fmdpos_t p = path.pos;

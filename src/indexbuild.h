@@ -22,7 +22,7 @@
 #define BUFFER_SIZE   100
 #define GENOME_SIZE   100000
 
-int          write_index      (char * filename, int def_kmer, int def_tau, int def_rthr, int threads);
+int          write_index      (char * filename, int def_kmer, int def_tau, int threads);
 int64_t    * compute_sa       (char * genome, uint64_t gsize);
 uint64_t   * compute_occ      (char * genome, uint64_t * sa, uint64_t gsize, uint64_t * occ_size);
 uint64_t   * compute_c        (uint64_t * occ);

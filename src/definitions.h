@@ -90,7 +90,6 @@ struct ann_t {
    int        k;
    int        d;
    uint64_t   size;
-   uint64_t   unique;
    uint8_t  * data;
 };
 

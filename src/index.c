@@ -177,7 +177,7 @@ index_add_annotation
    // Find slot to store annotation.
    if (ann_slot < 0) ann_slot = ann_find_slot(annlist);
 
-   fprintf(stderr, "[info] computing (%d,%d) genomic hits using %d threads.\n", kmer, tau, threads);
+   fprintf(stderr, "[info] computing (%d,%d) genomic neighborhood using %d threads.\n", kmer, tau, threads);
    annotation_t ann = annotate(kmer,tau,index,threads);
 
    // Write output file.
@@ -195,11 +195,8 @@ index_add_annotation
    free(fname);
    size_t bytes = 0;
    // Write annotation.
-   int bits = 0;
-   while ((tau >> bits) > 0) bits++;
-   size_t struct_size = ((index->size >> 4) + 1)*(bits+2);
-   fprintf(stderr,"[info] writing annotation (%ld bytes)... ",struct_size);
-   while ((bytes += write(fd,ann.bitfield+bytes,struct_size-bytes)) < struct_size);
+   fprintf(stderr,"[info] writing annotation (%ld bytes)... ", ann.size);
+   while ((bytes += write(fd,ann.info+bytes,ann.size-bytes)) < ann.size);
    fprintf(stderr,"%ld bytes written.\n",bytes);
    // Close file descriptor.
    close(fd);
@@ -211,8 +208,7 @@ index_add_annotation
       .id = ann_slot,
       .k = kmer,
       .d = tau,
-      .size = ann.ann_size,
-      .unique = ann.ann_set,
+      .size = ann.size,
       .data = NULL
    };
    ann_index_write(annlist, index_file);
@@ -435,7 +431,6 @@ index_load_chr
    return chrindex;
 }
 
-
 int
 ann_read
 (
@@ -444,6 +439,8 @@ ann_read
  int      * cnt
 )
 {
+   return 0;
+/* TO COMPILE
    int bits = 0;
    while ((ann.d >> bits) > 0) bits++;
    bits += 2;
@@ -461,7 +458,9 @@ ann_read
    }
    if (cnt != NULL) *cnt = log10cnt;
    return d;
+*/
 }
+
 
 ann_t *
 ann_find

@@ -3,9 +3,6 @@
 #include <time.h>
 
 
-// Inline functions.
-inline void send_progress_to_scheduler (int64_t, int64_t*, annjob_t*);
-
 void
 job_ranges_rec
 (
@@ -24,8 +21,8 @@ job_ranges_rec
    // If reached suffix depth, make and store job.
    if (depth == max_depth) {
       annjob_t job = {
-         .beg = pos.fw,
-         .end = pos.fw + pos.sz
+         .beg = pos.fp,
+         .end = pos.fp + pos.sz
       };
       jobs[(*jobcnt)++] = job;
       return;
@@ -52,12 +49,12 @@ locus_annotation
    // 8 bits per genomic locus.
    //   bit 7 - Locus alignment info.
    //   bit 6 - Locus alignment flag.
-   //   bit 5 \ 
-   //   bit 4 / Distance of closest neighbor (00: 1, 01: 2, 10: 3, 11: 4).
-   //   bit 3 \
-   //   bit 2 |
-   //   bit 1 | Num of neighbors, in dec (!bit3) or log2 (bit3).
-   //   bit 0 /
+   //   bit 5 *
+   //   bit 4 - Distance of closest neighbor (00: 1, 01: 2, 10: 3, 11: 4).
+   //   bit 3 *
+   //   bit 2 *
+   //   bit 1 * 
+   //   bit 0 - Neighbor count
    uint16_t  cnt = *((uint16_t *)info);
    uint8_t   tau = *(info + sizeof(uint16_t));
    uint8_t * aln = info + sizeof(uint16_t) + sizeof(uint8_t);
@@ -142,15 +139,15 @@ annotate
    job_ranges_rec(index->bwt->fmd_base, tau, 0, 0, prefix_depth, &num_jobs, jobs, index);
    // Fill constant job info.
    for (int i = 0; i < num_jobs; i++) {
-      jobs[i]->kmer     = (uint32_t) kmer;
-      jobs[i]->tau      = (uint16_t) tau;
-      jobs[i]->wsize    = (uint16_t) word_size;
-      jobs[i]->computed = &computed;
-      jobs[i]->done     = &done;
-      jobs[i]->mutex    = mutex;
-      jobs[i]->monitor  = monitor;
-      jobs[i]->index    = index;
-      jobs[i]->info     = tmp_info;
+      jobs[i].kmer     = (uint32_t) kmer;
+      jobs[i].tau      = (uint16_t) tau;
+      jobs[i].wsize    = (uint16_t) word_size;
+      jobs[i].computed = &computed;
+      jobs[i].done     = &done;
+      jobs[i].mutex    = mutex;
+      jobs[i].monitor  = monitor;
+      jobs[i].index    = index;
+      jobs[i].info     = tmp_info;
    }
 
    clock_t clk = clock();
@@ -187,11 +184,11 @@ annotate
    clk = clock();
 
    // Alloc annotation.
-   annotation_t * ann = malloc(sizeof(annotation_t));
-   ann->kmer = kmer;
-   ann->tau  = tau;
-   ann->info = calloc(index->size/2+1, sizeof(uint8_t));
-   ann->size = index->size/2+1;
+   annotation_t ann;
+   ann.kmer = kmer;
+   ann.tau  = tau;
+   ann.info = calloc(index->size/2+1, sizeof(uint8_t));
+   ann.size = index->size/2+1;
 
    // Compute and store annotation from info.
    uint64_t i = 1;
@@ -221,7 +218,7 @@ annotate
       for (uint64_t j = 0; j < size; j++) {
          // Store annotation in forward strand.
          if (range[j] >= index->size/2) continue;
-         locus_annotation(ref, ann->info + range[j], word_size-3);
+         locus_annotation(ref, ann.info + range[j], word_size-3);
       }
       free(range);
 
@@ -263,7 +260,7 @@ next_seq
       char * seq = index->genome + get_sa(*sa_ptr, index->sar);
       // Iterate over qlen nucleotides.
       for (int i = 0; i < qlen; i++) {
-         int nt = translate[(int)query[i]];
+         int nt = translate[(int)seq[i]];
          n_cnt += nt == UNKNOWN_BASE;
          // Extend BWT search.
          if (trail == i && nt == tmp[i]) 
@@ -359,11 +356,11 @@ compute_aln_positions
    for (int i = 0; i < nbits && a <= npos; i++) {
       int w = i / ALIGN_WORD_SIZE;
       int b = i % ALIGN_WORD_SIZE;
-      if ((qalign[w] >> b) & (uint64_t)1)
-         qry_aln[a++] = (reverse ? : nbits - i : i + 1);
+      if ((bits[w] >> b) & (uint64_t)1)
+         tmp[a++] = (reverse ? nbits - i : i + 1);
    }
    // If we found too many align positions, flag 0xFF.
-   if (a > pos) {
+   if (a > npos) {
       memset(pos, 0xFF, npos*sizeof(uint8_t));
    } else {
       memcpy(pos, tmp, npos*sizeof(uint8_t));
@@ -390,8 +387,8 @@ store_hits
 
    // No matches.
    if (stack->pos == 0) {
-      *(uint16_t *)(job->info + query.pos.fp * job->wsize) = NO_INFO;
-      *(uint16_t *)(job->info + query.pos.rp * job->wsize) = NO_INFO;
+      *(uint16_t *)(job->info + query.fp * job->wsize) = NO_INFO;
+      *(uint16_t *)(job->info + query.rp * job->wsize) = NO_INFO;
       return;
    }
 
@@ -406,11 +403,7 @@ store_hits
 
       // Select lexicographically smallest between the neighbor and its revcomp.
       int64_t nptr = (path.pos.rp < path.pos.fp ? path.pos.rp : path.pos.fp);
-      int64_t rptr = (path.pos.rp >= path.pos.fp ? path.pos.rp : path.pos.fp);
       int     nrev = path.pos.rp < path.pos.fp;
-
-      // Flag smallest.
-      *(uint16_t *)(job->info + rptr * job->wsize) = NO_INFO;      
 
       // info structure:
       //   bytes     0-1: number of different neighbors (16bit).
@@ -436,7 +429,7 @@ store_hits
       }
 
       // Reset neighbor.
-      else if (*ncnt == 0 || *ncnt = NOT_MATCHED || *ntau > path.score) {
+      else if (*ncnt == 0 || *ncnt == NO_INFO || *ntau > path.score) {
          // Set count to 1 and neighbor's tau to path.score.
          *ncnt = 1;
          *ntau = path.score;
@@ -451,7 +444,7 @@ store_hits
       if (path.score == tau) {
          // Update query align positions.
          for (int w = 0; w < ALIGN_WORDS; w++)
-            qalign |= path.align[w];
+            qalign[w] |= path.align[w];
          // Update hit count.
          hits++;
       } 
@@ -467,6 +460,10 @@ store_hits
    int64_t qptr = (query.rp < query.fp ? query.rp : query.fp);
    int     qrev = query.rp < query.fp;
 
+   // Flag lexicographically greater as NO_INFO.
+   if (qrev)
+      *(uint16_t *)(job->info + query.fp * job->wsize) = NO_INFO;      
+
    // Query info.
    uint8_t  * info = job->info + qptr * job->wsize;
    uint16_t * qcnt = (uint16_t *) info;
@@ -477,14 +474,14 @@ store_hits
    if (*qcnt == 0 || *qtau > tau) {
       // Set tau and neighbor count.
       *qtau = (uint8_t)  tau;
-      *qcnt = (uint16_t) min(NOT_MATCHED-1, hits);
+      *qcnt = (uint16_t) min(NO_INFO - 1, hits);
       // Compute and directly store mismatch positions for query sequence.
       compute_aln_positions(qalign, qaln, job->kmer, aln_size, qrev);
    }
    // Update query.
    else if (*qtau == tau) {
       // Update hit count.
-      *qcnt = (uint16_t) min(NOT_MATCHED-1, ((uint32_t)hits)+((uint32_t)*qcnt));
+      *qcnt = (uint16_t) min(NO_INFO-1, ((uint32_t)hits)+((uint32_t)*qcnt));
       // Check if query has free align slots.
       if (*qaln != 0xFF) {
          // Compute mismatch positions for query sequence.
@@ -498,7 +495,6 @@ store_hits
    free(qalign);
 }
 
-inline
 void
 send_progress_to_scheduler
 (
@@ -508,7 +504,7 @@ send_progress_to_scheduler
 )
 {
    // Send progress every 1M processed sequences.
-   if (__builtin_expect((computed>>20) > (sa_pos>>20),0)) {
+   if (__builtin_expect(( (*computed) >> 20) > (sa_pos>>20) , 0 )) {
       pthread_mutex_lock(job->mutex);
       *(job->computed) += sa_pos - *computed;
       pthread_cond_signal(job->monitor);
@@ -552,9 +548,9 @@ annotate_mt
       // This updates query and path, and makes sa_ptr point to the position of the next sequence in the SA.
       int trail = next_seq(kmer, tau, job->end, &sa_ptr, query, path, index);
       // Query the sequence.
-      blocksearch_trail_sc(query, path, kmer, tau, trail, index, stack_tree);
+      blocksc_trail(query, path, kmer, tau, trail, index, stack_tree);
       // Update annotation info.
-      store_hits(job, stack_tree);
+      store_hits(job, stack_tree->stack, path[kmer]);
    }
 
    // Report job end to scheduler.

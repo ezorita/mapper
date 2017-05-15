@@ -63,7 +63,7 @@ char *USAGE_BUILD =
    "    genome.fasta.ann:  annotation index\n"
    "    genome.fasta.chr:  chromosome index\n"
    "  annotation data:\n"
-   "    genome.fasta.ann.#\n"
+   "    genome.fasta.ann.#\n";
 
 void say_map_usage(void) { fprintf(stderr, "%s\n", USAGE_MAP); }
 void say_add_usage(void) { fprintf(stderr, "%s\n", USAGE_ADD); }
@@ -79,7 +79,7 @@ parse_opt_build
  char      ** gfile
  )
 {
-   int arg_k = -1, arg_d = -1, arg_t = -1, arg_r = -1;
+   int arg_k = -1, arg_d = -1, arg_t = -1;
    int c;
    while (1) {
       int option_index = 0;
@@ -87,7 +87,6 @@ parse_opt_build
          {"threads",    required_argument,      0, 't'},
          {"kmer",       required_argument,      0, 'k'},
          {"distance",   required_argument,      0, 'd'},
-         {"repeat-thr", required_argument,      0, 'r'},
          {"help",       no_argument,            0, 'h'},
          {0, 0, 0, 0}
       };
@@ -135,19 +134,6 @@ parse_opt_build
          }
          break;
 
-      case 'r':
-         if (arg_r < 0) {
-            int v = atoi(optarg);
-            if (v <= 0) {
-               fprintf(stderr, "[error] repeat_thr option (-r) must be a positive number.\n");
-               return -1;
-            }
-            arg_r = v;
-         } else {
-            fprintf(stderr,"[error] repeat_thr option (-r) set more than once.\n");
-         }
-         break;
-
       case 'h':
          say_build_usage();
          return 1;
@@ -166,7 +152,6 @@ parse_opt_build
    opt->k          = (arg_k < 0 ? 25 : arg_k);
    opt->d          = (arg_d < 0 ? 1 : arg_d);
    opt->threads    = (arg_t < 0 ? 1 : arg_t);
-   opt->repeat_thr = (arg_r < 0 ? 100 : arg_r);
 
    return 0;
 }

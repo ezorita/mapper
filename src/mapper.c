@@ -5,7 +5,6 @@
 int main(int argc, char *argv[])
 {
    int opt_verbose = 1;
-   size_t seqs_per_thread = 10000;
 
    // Without params, print help.
    if (argc == 1) {
@@ -51,7 +50,7 @@ int main(int argc, char *argv[])
             return (rval == -1 ? EXIT_FAILURE : EXIT_SUCCESS);
          }
 
-         return write_index(genome_file, opt.k, opt.d, opt.repeat_thr, opt.threads);
+         return write_index(genome_file, opt.k, opt.d, opt.threads);
       }
    }
 
@@ -67,6 +66,8 @@ int main(int argc, char *argv[])
       .sensitive_mem = 0
    };
    */
+
+   /*
    // NANOPORE 2D
    seedopt_t seedopt = { // MEM
       .min_len = 14,
@@ -179,7 +180,7 @@ int main(int argc, char *argv[])
    // Free memory.
    free(seqs);
    free(index);
-
+   */
    return EXIT_SUCCESS;
 }
 
@@ -264,6 +265,7 @@ mt_worker
  void * args
 )
 {
+/*
    mtjob_t * job = (mtjob_t *) args;
    // Get params.
    seq_t       * seq   = job->seq;
@@ -314,11 +316,11 @@ mt_worker
       for (int j = 0; j < slen; j++) query[j] = translate[(int)seq[i].seq[j]];
       // Reset matches.
       map_matches->pos = 0;
-
+*/
       /**
       *** UNIQUE SEEDS
       **/
-      /*
+/*
       while (1) {
          // Do not seed intervals.
          if (map_matches->pos) {
@@ -351,11 +353,13 @@ mt_worker
       }
 
       if (map_matches->pos) goto map_end;
-      */
+*/
 
       /**
       *** UNIQUE MEMS
       **/
+
+/* TO COMPILE
       if (VERBOSE_DEBUG) fprintf(stdout, "MEMS:\n");
       hit_t hit;
       int beg = 0;
@@ -414,11 +418,12 @@ mt_worker
             fprintf(stdout, "match[%d]: r_beg:%d, r_end:%d, hits:%d, a:%d, score:%d, mapQ=%d, maxQ=%d, gap_id:%.2f, next_beg:%d\n", j, m.read_s, m.read_e, m.hits, m.ann_d, m.score, m.mapq, m.maxq, m.gap_id, beg);
          }
       }
-
+*/
       /**
       *** MEM/THRESHOLD ALIGNMENT
       **/
 
+/* TO COMPILE
       // Recompute unmapped intervals.
       mem_intv->pos = 0;
       mem_intervals(map_matches, slen, target_q,opt->filter.min_gap_id, opt->filter.min_interval_size, &mem_intv);
@@ -483,11 +488,12 @@ mt_worker
          }
          free(hits);
       }
-
+*/
       /**
       *** MISMATCHED MEMS
       **/
 
+/* TO COMPILE
       // Recompute seed intervals.
       mem_intv->pos = 0;
       mem_intervals(map_matches, slen, target_q,opt->filter.min_gap_id, opt->filter.min_interval_size, &mem_intv);
@@ -556,11 +562,11 @@ mt_worker
 
       goto map_end;
 
-
+*/
       /**
       *** MEM SEEDING ON GAPS
       **/
-      /*
+/*
       seeds->pos = 0;
       for (int s = 0; s < mem_intv->pos; s += 2) {
          int beg = mem_intv->val[s];
@@ -684,7 +690,7 @@ mt_worker
          }
          free(resd);
       }
-      */
+*/
 
       /**
       *** NON-UNIQUE AND NOT FOUND
@@ -778,7 +784,7 @@ mt_worker
          }
       }
       */
-
+/* TO COMPILE
       // DEBUG.
       if (VERBOSE_DEBUG) {
          for (int k = 0; k < map_matches->pos; k++) {
@@ -786,13 +792,13 @@ mt_worker
             fprintf(stdout, "match[%d]: read_s:%d, read_e:%d, ref_s:%ld, hits:%d, s_hits:%d (%d), ann:%d\n", k, m.read_s, m.read_e, m.ref_s, m.hits, m.s_hits, m.s_hits_cnt, m.ann_d);
          }
       }
-
    map_end:
       // Score and output.
       //      map_score(map_matches,cumlog);
       mapped += print_and_free(seq[i], map_matches, index, opt->format);
       free(query);
       free(value);
+
    }
 
    // Free data structures.
@@ -810,6 +816,7 @@ mt_worker
 
    // Free args.
    free(args);
+*/
    return NULL;
 }
 

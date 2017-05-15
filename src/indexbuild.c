@@ -21,7 +21,6 @@ write_index
  char * filename,
  int    def_kmer,
  int    def_tau,
- int    def_rthr,
  int    threads
 )
 {
@@ -133,8 +132,8 @@ write_index
    close(fsa);
    free(sa);
    fprintf(stderr, " %ld bytes written.\n",bytes);
-   fprintf(stderr, "[info] index base created successfully. %ld bytes written.\n", stot);
-   fprintf(stderr, "[info] default genome annotation: k:%d, d:%d, repeat_thr:%d.\n", def_kmer, def_tau, def_rthr);
+   fprintf(stderr, "[info] fm-index created successfully. %ld bytes written.\n", stot);
+   fprintf(stderr, "[info] default genome annotation: k:%d, d:%d.\n", def_kmer, def_tau);
    fprintf(stderr, "[proc] reading index... ");
    index_t * index = index_load_base(filename);
    if (index == NULL)
