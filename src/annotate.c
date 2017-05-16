@@ -156,7 +156,7 @@ annotate
       pthread_t thread;
       pthread_create(&thread,NULL,annotate_mt,jobs+i);
       pthread_detach(thread);
-      //      annotate_mt(job[i]);
+//      annotate_mt(jobs+i);
    }
    // Sleep and wait for thread signals.
    int runcount = threads;
@@ -231,6 +231,7 @@ annotate
    free(jobs);
    free(mutex);
    free(monitor);
+   free(tmp_info);
    return ann;
 }
 
@@ -385,15 +386,21 @@ store_hits
    int tau      = job->tau + 1;
    int aln_size = job->wsize - 3;
 
-   // No matches.
-   if (stack->pos == 0) {
-      *(uint16_t *)(job->info + query.fp * job->wsize) = NO_INFO;
-      *(uint16_t *)(job->info + query.rp * job->wsize) = NO_INFO;
+   // No matches (self hit only).
+   if (stack->pos == 1) {
+      pthread_mutex_lock(job->mutex);
+      // If there is no previous info, set smaller as NO_INFO.
+      if (*(uint16_t *)(job->info + min(query.fp,query.rp) * job->wsize) == 0)
+         *(uint16_t *)(job->info + min(query.fp,query.rp) * job->wsize) = NO_INFO;
+      // Set greater as NO_INFO, as it will never carry information.
+      if (query.fp != query.rp)
+         *(uint16_t *)(job->info + max(query.fp,query.rp) * job->wsize) = NO_INFO;
+      pthread_mutex_unlock(job->mutex);
       return;
    }
 
    // Aggregate query alignment.
-   uint64_t * qalign = calloc(ALIGN_WORD_SIZE, sizeof(uint64_t));
+   uint64_t * qalign = calloc(ALIGN_WORDS, sizeof(uint64_t));
 
    // Store hits info in their SA start position.
    for (int i = 0; i < stack->pos; i++) {
@@ -416,6 +423,7 @@ store_hits
 
       // Update neighbor.
       if (*ntau == path.score) {
+         pthread_mutex_lock(job->mutex);
          // Add one to neighbor count.
          *ncnt = (uint16_t) min(0xFFFF, ((uint32_t) *ncnt) + 1);
          // Check if neighbor has free align slots.
@@ -426,10 +434,12 @@ store_hits
             // Merge mismatch positions and store in neighbor memory (naln).
             merge_alignments(naln, hit_aln, aln_size);
          }
+         pthread_mutex_unlock(job->mutex);
       }
 
       // Reset neighbor.
       else if (*ncnt == 0 || *ncnt == NO_INFO || *ntau > path.score) {
+         pthread_mutex_lock(job->mutex);
          // Set count to 1 and neighbor's tau to path.score.
          *ncnt = 1;
          *ntau = path.score;
@@ -438,6 +448,7 @@ store_hits
          compute_aln_positions(path.align, hit_aln, job->kmer, aln_size, nrev);
          // Store mismatch positions.
          memcpy(naln, hit_aln, aln_size);
+         pthread_mutex_unlock(job->mutex);
       }
 
       // Update query info.
@@ -471,15 +482,18 @@ store_hits
    uint8_t  * qaln = qtau + 1;
 
    // If query is empty or tau < qtau, reset query.
-   if (*qcnt == 0 || *qtau > tau) {
+   if (*qcnt == 0 || *qcnt == NO_INFO || *qtau > tau) {
+      pthread_mutex_lock(job->mutex);
       // Set tau and neighbor count.
       *qtau = (uint8_t)  tau;
       *qcnt = (uint16_t) min(NO_INFO - 1, hits);
       // Compute and directly store mismatch positions for query sequence.
       compute_aln_positions(qalign, qaln, job->kmer, aln_size, qrev);
+      pthread_mutex_unlock(job->mutex);
    }
    // Update query.
    else if (*qtau == tau) {
+      pthread_mutex_lock(job->mutex);
       // Update hit count.
       *qcnt = (uint16_t) min(NO_INFO-1, ((uint32_t)hits)+((uint32_t)*qcnt));
       // Check if query has free align slots.
@@ -490,6 +504,7 @@ store_hits
          // Update alignments in query by merging.
          merge_alignments(qaln, tmp_aln, aln_size);
       }
+      pthread_mutex_unlock(job->mutex;)
    }
 
    free(qalign);
