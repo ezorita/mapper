@@ -21,12 +21,8 @@ char *USAGE_ADD =
    "\n"
    "  options:\n"
    "    -k --kmer:       sequence length. [required]\n"
-   "    -d --distance:   sequence mismatches for annotation. [required]\n"
-   "    -s --seed_dist:  set different distance for seed table.\n"
-   "    -r --repeat-thr: repeat threshold. (default 100)\n"
-   "    -t --threads:    number of threads. (default 1)\n"
-   "    --seed-save:     store the seed hash table.\n"
-   "    --seed-only:     store only the seed hash table.\n";
+   "    -d --distance:   sequence mismatches. [required]\n"
+   "    -t --threads:    number of threads. (default 1)\n";
 
 char *USAGE_INDEX =
    "\n"
@@ -48,12 +44,11 @@ char *USAGE_BUILD =
    "\n"
    "  creates a new index for the specified genome file.\n"
    "  the index will be created along with a default\n"
-   "  annotation and seed table.\n"
+   "  neighbor annotation.\n"
    "\n"
    "  options:\n"
    "    -k --kmer:       sequence length for default annotation. (default 25)\n"
    "    -d --distance:   sequence mismatches for default annotation. (default 1)\n"
-   "    -r --repeat-thr: repeat threshold for default annotation. (default 20)\n"
    "    -t --threads:    number of threads. (default 1)\n"
    "\n"
    "  files that will be generated:\n"
@@ -166,19 +161,14 @@ parse_opt_add
  char      ** ifile
 )
 {
-   int arg_k = -1, arg_d = -1, arg_t = -1, arg_r = -1, arg_s = -1;
-   static int arg_m = 1;
+   int arg_k = -1, arg_d = -1, arg_t = -1;
    int c;
    while (1) {
       int option_index = 0;
       static struct option long_options[] = {
-         {"seed-save",  no_argument,       &arg_m,  3 },
-         {"seed-only",  no_argument,       &arg_m,  2 },
          {"threads",    required_argument,      0, 't'},
          {"kmer",       required_argument,      0, 'k'},
          {"distance",   required_argument,      0, 'd'},
-         {"seed_dist",  required_argument,      0, 's'},
-         {"repeat-thr", required_argument,      0, 'r'},
          {"help",       no_argument,            0, 'h'},
          {0, 0, 0, 0}
       };
@@ -226,32 +216,6 @@ parse_opt_add
          }
          break;
 
-      case 's':
-         if (arg_s < 0) {
-            int v = atoi(optarg);
-            if (v < 0) {
-               fprintf(stderr, "[error] seed_dist option (-s) must be a non-negative number.\n");
-               return -1;
-            }
-            arg_s = v;
-         } else {
-            fprintf(stderr,"[error] seed_dist option (-s) set more than once.\n");
-         }
-         break;
-
-      case 'r':
-         if (arg_r < 0) {
-            int v = atoi(optarg);
-            if (v <= 0) {
-               fprintf(stderr, "[error] repeat_thr option (-r) must be a positive number.\n");
-               return -1;
-            }
-            arg_r = v;
-         } else {
-            fprintf(stderr,"[error] repeat_thr option (-r) set more than once.\n");
-         }
-         break;
-
       case 'h':
          say_add_usage();
          return 1;
@@ -274,10 +238,7 @@ parse_opt_add
 
    opt->k          = arg_k;
    opt->d          = arg_d;
-   opt->sd         = (arg_s < 0 ? arg_d :arg_s);
    opt->threads    = (arg_t < 0 ? 1 : arg_t);
-   opt->repeat_thr = (arg_r < 0 ? 20 : arg_r);
-   opt->mode       = arg_m;
 
    return 0;
 }
