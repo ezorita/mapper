@@ -52,6 +52,13 @@ ann_index_read
    char * fname = add_suffix(index_file, ".ann");
 
    if (fname == NULL) return NULL;
+   
+   // If file does not exist, create a new annotation index.
+   if (access(fname, F_OK)) {
+      annlist_t * list = malloc(sizeof(annlist_t) + 10 * sizeof(ann_t));
+      list->count = 0;
+      return list;
+   }
    // Open file.
    int fd = open(fname, O_RDONLY);
    free(fname);

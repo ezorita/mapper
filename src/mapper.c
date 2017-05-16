@@ -14,7 +14,7 @@ int main(int argc, char *argv[])
 
    if (strcmp(argv[1],"index") == 0) {
       // Without params, print help.    
-      if (argc == 2) {
+      if (argc == 2 || (argc == 3 && !strcmp(argv[2],"-h"))) {
          say_index_usage();
          return EXIT_SUCCESS;
       } else if (strcmp(argv[2], "add") == 0) {
