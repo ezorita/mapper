@@ -46,7 +46,6 @@ int           path_push              (spath_t, pathstack_t **);
 pstree_t    * alloc_stack_tree       (int);
 pstree_t    * alloc_stack_tree_rec   (int);
 void          free_stack_tree        (pstree_t *);
-
 // Misc.
 void          mpos_set               (spath_t *, int);
 

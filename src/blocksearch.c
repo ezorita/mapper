@@ -136,7 +136,7 @@ blocksearch_trail_rec
    // Compute single block and return.
    if (blocks == 1) {
       spath_t empty = {.pos = index->bwt->fmd_base, .score = 0};
-      seqsearch_bw(empty, query, pos, end, 0, 0, 0, index, &(tree->stack));
+      seqsearch_bw(empty, query, end, pos, 0, 0, 0, index, &(tree->stack));
       return;
    }
 
@@ -163,7 +163,7 @@ blocksearch_trail_rec
    // Extend right block to the left.
    for (int i = 0; i < tree->next_r->stack->pos; i++) {
       spath_t p = tree->next_r->stack->path[i];
-      seqsearch_bw(p, query, end_l, 0, blocks-1, p.score, blk_l, index, &(tree->stack));
+      seqsearch_bw(p, query, end_l, pos, blocks-1, p.score, blk_l, index, &(tree->stack));
    }
 
    return;
