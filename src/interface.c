@@ -11,7 +11,7 @@ char *USAGE_MAP =
    "    -q --quality: do not print reads with mapping quality below [quality].\n"
    "    -e --eval:    do not print reads with significance below [e-value].\n"
    "\n"
-   " to build/edit/extend an index-file type:\n"
+   " to build/edit/extend an index-file, type:\n"
    "  \"mapper index -h\"\n";
 
 char *USAGE_ADD =
