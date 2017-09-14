@@ -9,8 +9,10 @@
 #include <string.h>
 #include <errno.h>
 #include <unistd.h>
+#include <glob.h>
 #include "definitions.h"
 #include "annotate.h"
+
 
 #ifndef _INDEX_H
 #define _INDEX_H

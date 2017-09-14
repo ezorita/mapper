@@ -48,80 +48,48 @@ ann_index_read
  char * index_file
 )
 {
-   // File name.
-   char * fname = add_suffix(index_file, ".ann");
+   // Annotation files
+   char * pattern = add_suffix(index_file, ".ann.*");
+   glob_t gbuf;
+   glob(pattern,NULL,NULL,&gbuf);
+   free(pattern);
 
-   if (fname == NULL) return NULL;
+   // Alloc list.
+   annlist_t * list = malloc(sizeof(annlist_t) + gbuf.gl_pathc * sizeof(ann_t));
+   list->count = 0;
    
-   // If file does not exist, create a new annotation index.
-   if (access(fname, F_OK)) {
-      annlist_t * list = malloc(sizeof(annlist_t) + 10 * sizeof(ann_t));
-      list->count = 0;
-      return list;
-   }
-   // Open file.
-   int fd = open(fname, O_RDONLY);
-   free(fname);
-   if (fd == -1) {
-      fprintf(stderr, "error opening '%s': %s\n", fname, strerror(errno));
-      return NULL;
-   }
-   // Read table size.
-   uint8_t count = 0;
-   if (read(fd, &count, sizeof(uint8_t)) < 1) {
-      fprintf(stderr, "[error] could not read data from annotation index.\n");
-      return NULL;
-   }
-   // Alloc structure.
-   annlist_t * list = malloc(sizeof(annlist_t) + count * sizeof(ann_t));
-   if (list == NULL) return NULL;
-   // Read headers.
-   list->count = count;
-   size_t bytes = 0, total = count*sizeof(ann_t);
-   while ((bytes += read(fd,((uint8_t*)list->ann)+bytes,total-bytes)) < total);
+   // Iterate matching files.
+   for (int i = 0; i < gbuf.gl_pathc; i++) {
+      // Open file.
+      char * fname = gbuf.gl_pathv[i];
+      int fd = open(fname, O_RDONLY);
+      if (fd == -1) {
+         fprintf(stderr, "[error] opening '%s': %s\n", fname, strerror(errno));
+         free(list);
+         return NULL;
+      }
+      // mmap.
+      anndata_t * data = mmap(NULL, f_len, PROT_READ, MAP_SHARED, fd, 0);
 
+      if (index->ann[i].data == NULL) {
+         fprintf(stderr, "[error] mmaping '%s' index file: %s.\n", fname, strerror(errno));
+         free(list);
+         return NULL;
+      }
+
+      // Check file content.
+      if (data->magic != ANN_MAGICNO) {
+         fprintf(stderr, "[error] Wrong magic numer for '%s'. Ignoring file.\n",fname);
+         continue;
+      }
+      list->ann[list->count++] = (ann_t){strdup(fname), data};
+      close(fd);
+   }
    // Sort annotations by ascending k.
    qsort(list->ann, list->count, sizeof(ann_t), compar_ann_k_asc);
    return list;
 }
 
-int
-ann_index_load
-(
- annlist_t * index,
- char      * index_file
-)
-{
-   for (int i = 0; i < index->count; i++) {
-      // Generate file names.
-      char * suffix = malloc(9);
-      if (suffix == NULL)
-         return -1;
-      sprintf(suffix, ".ann.%d", index->ann[i].id);
-      char * fname = add_suffix(index_file, suffix);
-      if (fname == NULL)
-         return -1;
-      // Open file.
-      int fd = open(fname, O_RDONLY);
-      if (fd == -1) {
-         fprintf(stderr, "[error] opening '%s': %s\n", fname, strerror(errno));
-         return -1;
-      }
-      // mmap.
-      size_t f_len = lseek(fd, 0, SEEK_END);
-      lseek(fd, 0, SEEK_SET);
-      index->ann[i].data = mmap(NULL, f_len, PROT_READ, MMAP_FLAGS, fd, 0);
-      if (index->ann[i].data == NULL) {
-         fprintf(stderr, "[error] mmaping '%s' index file: %s.\n", fname, strerror(errno));
-         return -1;
-      }
-      close(fd);
-      free(fname);
-      free(suffix);
-   }
-      
-   return 0;
-}
 
 int
 ann_find_slot
@@ -498,5 +466,5 @@ compar_ann_k_asc
 {
    ann_t * a = (ann_t *)aa;
    ann_t * b = (ann_t *)ab;
-   return (a->k > b->k ? 1 : -1);
+   return (a->data->k > b->data->k ? 1 : -1);
 }
