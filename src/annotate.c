@@ -156,7 +156,6 @@ annotate
       pthread_t thread;
       pthread_create(&thread,NULL,annotate_mt,jobs+i);
       pthread_detach(thread);
-//      annotate_mt(jobs+i);
    }
    // Sleep and wait for thread signals.
    int runcount = threads;
@@ -180,7 +179,7 @@ annotate
    // Report time.
    double elapsed = ((clock()-clk)*1.0/CLOCKS_PER_SEC);
    fprintf(stderr, "\r[proc] computing neighbors... done [%.3fs with %d threads (%.3fs/thread)]\n", elapsed, threads, elapsed/threads);
-   fprintf(stderr, "[proc] compressing annotation...");
+   fprintf(stderr, "[proc] compressing annotation...\n");
    clk = clock();
 
    // Alloc annotation.
@@ -504,7 +503,7 @@ store_hits
          // Update alignments in query by merging.
          merge_alignments(qaln, tmp_aln, aln_size);
       }
-      pthread_mutex_unlock(job->mutex;)
+      pthread_mutex_unlock(job->mutex);
    }
 
    free(qalign);
