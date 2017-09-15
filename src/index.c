@@ -14,34 +14,6 @@ add_suffix
    return new;
 }
 
-int
-ann_index_write
-(
- annlist_t * list,
- char * index_file
-)
-{
-   // File name.
-   char * fname = add_suffix(index_file, ".ann");
-   if (fname == NULL) return -1;
-   // Open file to write.
-   int fd = open(fname,O_WRONLY | O_CREAT | O_TRUNC,0644);
-   free(fname);
-   if (fd == -1) {
-      fprintf(stderr, "error opening '%s': %s\n", fname, strerror(errno));
-      return -1;
-   }
-   // Write table.
-   if (write(fd, &(list->count), 1) < 1) {
-      fprintf(stderr,"[error] could not write annotation index.\n");
-      return -1;
-   }
-   size_t bytes = 0, total = list->count*sizeof(ann_t);
-   while ((bytes += write(fd, ((uint8_t *)list->ann) + bytes, total-bytes)) < total);
-
-   return 0;
-}
-
 annlist_t *
 ann_index_read
 (
@@ -110,7 +82,7 @@ ann_new_filename
    int i = 0;
    while (access(path,F_OK) == 0) {
       free(path);
-      sprintf(suffix, ".ann.%d%d.%d",k,d,i);
+      sprintf(suffix, ".ann.%d%d.%d",k,d,i++);
       path = add_suffix(index_file,suffix);
    }
 
