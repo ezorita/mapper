@@ -108,7 +108,7 @@ ann_new_filename
    
    // Check whether file exists.
    int i = 0;
-   while (access(path,F_OK)) {
+   while (access(path,F_OK) == 0) {
       free(path);
       sprintf(suffix, ".ann.%d%d.%d",k,d,i);
       path = add_suffix(index_file,suffix);
@@ -166,6 +166,7 @@ index_add_annotation
       return EXIT_FAILURE;
 
    // Open file.
+   fprintf(stderr,"[info] opening annotation file: '%s'.\n", fname);
    int fd = open(fname,O_WRONLY | O_CREAT | O_TRUNC,0644);
    if (fd == -1) {
       fprintf(stderr, "error opening file to write: '%s'\n", fname);
@@ -178,7 +179,6 @@ index_add_annotation
    annotation_t ann = annotate(kmer,tau,index,threads);
 
    // Write header. (magic number, k, tau, size).
-   fprintf(stderr,"[info] new annotation file: '%s'. ", fname);
    size_t bytes = 0;
    uint64_t magicno = ANN_MAGICNO;
    bytes = write(fd,&magicno,sizeof(uint64_t));
