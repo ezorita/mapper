@@ -91,18 +91,28 @@ ann_index_read
 }
 
 
-int
-ann_find_slot
+char *
+ann_new_filename
 (
- annlist_t * list
+ int    k,
+ int    d,
+ char * index_file
 )
 {
-   uint8_t * idlist = calloc(257,1);
-   for (int i = 0; i < list->count; i++)
-      idlist[list->ann[i].id] = 1;
-   int id = 0;
-   while (idlist[id]) id++;
-   return id;
+   // Default suffix.
+   char suffix[12];
+   sprintf(suffix, ".ann.%d%d",k,d);
+   char * path = add_suffix(index_file,suffix);
+   
+   // Check whether file exists.
+   int i = 0;
+   while (access(path,F_OK)) {
+      free(path);
+      sprintf(suffix, ".ann.%d%d.%d",k,d,i);
+      path = add_suffix(index_file,suffix);
+   }
+
+   return path;
 }
 
 void
@@ -149,32 +159,27 @@ index_add_annotation
          }
       }
    }
-   // Find slot to store annotation.
-   if (ann_slot < 0) ann_slot = ann_find_slot(annlist);
-
    fprintf(stderr, "[info] computing (%d,%d) genomic neighborhood using %d threads.\n", kmer, tau, threads);
    annotation_t ann = annotate(kmer,tau,index,threads);
 
-   // Write output file.
    // Generate file name.
-   char * suffix = malloc(9);
-   if (suffix == NULL)
-      return EXIT_FAILURE;
-   sprintf(suffix, ".ann.%d", ann_slot);
-   char * fname = add_suffix(index_file, suffix);
+   char * fname  = ann_new_filename(kmer,tau,index_file);
    if (fname == NULL)
       return EXIT_FAILURE;
-   free(suffix);
+
    // Open file.
    int fd = open(fname,O_WRONLY | O_CREAT | O_TRUNC,0644);
    free(fname);
    size_t bytes = 0;
+
    // Write annotation.
    fprintf(stderr,"[info] writing annotation (%ld bytes)... ", ann.size);
    while ((bytes += write(fd,ann.info+bytes,ann.size-bytes)) < ann.size);
    fprintf(stderr,"%ld bytes written.\n",bytes);
+
    // Close file descriptor.
    close(fd);
+
    // Update table.
    fprintf(stderr,"[info] updating annotation index... ");
    annlist = realloc(annlist, sizeof(annlist_t) + (annlist->count + 1)*sizeof(ann_t));

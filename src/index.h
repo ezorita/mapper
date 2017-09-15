@@ -23,8 +23,7 @@
 char       * add_suffix            (const char *, const char *);
 annlist_t  * ann_index_read        (char *);
 int          ann_index_write       (annlist_t *, char *);
-int          ann_index_load        (annlist_t *, char *);
-int          ann_find_slot         (annlist_t *);
+int          ann_new_filename      (int, int, char*);
 void         ann_print_index       (annlist_t *);
 int          index_add_annotation  (int, int, int, index_t *, char *);
 index_t    * index_load_base       (char *);
