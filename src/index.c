@@ -51,7 +51,7 @@ ann_index_read
    // Annotation files
    char * pattern = add_suffix(index_file, ".ann.*");
    glob_t gbuf;
-   glob(pattern,NULL,NULL,&gbuf);
+   glob(pattern,GLOB_TILDE,NULL,&gbuf);
    free(pattern);
 
    // Alloc list.
@@ -69,9 +69,11 @@ ann_index_read
          return NULL;
       }
       // mmap.
-      anndata_t * data = mmap(NULL, f_len, PROT_READ, MAP_SHARED, fd, 0);
+      struct stat sb;
+      fstat(fd, &sb);
+      anndata_t * data = mmap(NULL, sb.st_size, PROT_READ, MAP_SHARED, fd, 0);
 
-      if (index->ann[i].data == NULL) {
+      if (list->ann[i].data == NULL) {
          fprintf(stderr, "[error] mmaping '%s' index file: %s.\n", fname, strerror(errno));
          free(list);
          return NULL;
@@ -123,7 +125,7 @@ ann_print_index
 {
    fprintf(stderr,"[info] existing annotations:\nk\td\tpath\n");
    for (int i = 0; i < list->count; i++) {
-      fprintf(stderr, "d\t%d\t%s\n", list->ann[i]->data.kmer, list->ann[i]->data.tau, list->ann[i].file);
+      fprintf(stderr, "%d\t%d\t%s\n", list->ann[i].data->kmer, list->ann[i].data->tau, list->ann[i].file);
    }
    fprintf(stderr, "[info] total: %d annotations.\n", list->count);
 }
@@ -139,7 +141,6 @@ index_add_annotation
  char    * index_file
 )
 {
-   int ann_pos = -1;
    annlist_t * annlist = NULL;
    // Load annotation files.
    annlist = ann_index_read(index_file);
@@ -151,8 +152,8 @@ index_add_annotation
 
    // Check existing annotations.
    for (int i = 0; i < annlist->count; i++) {
-      if (kmer == annlist->ann[i]->data.kmer) {
-         if (tau <= annlist->ann[i]->data.tau) {
+      if (kmer == annlist->ann[i].data->kmer) {
+         if (tau <= annlist->ann[i].data->tau) {
             fprintf(stderr, "[warning] the index has a (%d,%d) annotation in '%s'.\n",kmer,tau,annlist->ann[i].file);
          }
       }
@@ -178,15 +179,15 @@ index_add_annotation
 
    // Write header. (magic number, k, tau, size).
    fprintf(stderr,"[info] new annotation file: '%s'. ", fname);
+   size_t bytes = 0;
    uint64_t magicno = ANN_MAGICNO;
-   write(fd,&magicno,sizeof(uint64_t));
-   write(fd,&(ann.kmer),sizeof(uint32_t));
-   write(fd,&(ann.tau),sizeof(uint32_t));
-   write(fd,&(ann.size),sizeof(size_t));
+   bytes = write(fd,&magicno,sizeof(uint64_t));
+   bytes = write(fd,&(ann.kmer),sizeof(uint32_t));
+   bytes = write(fd,&(ann.tau),sizeof(uint32_t));
+   bytes = write(fd,&(ann.size),sizeof(size_t));
 
    // Write annotation.
    fprintf(stderr,"[info] writing annotation (%ld bytes)... ", ann.size);
-   size_t bytes = 0;
    while ((bytes += write(fd,ann.info+bytes,ann.size-bytes)) < ann.size);
    fprintf(stderr,"%ld bytes written.\n",bytes);
 
@@ -452,7 +453,7 @@ ann_find
    if (list->count == 0) return NULL;
    int idx = -1;
    for (int i = 0; i < list->count; i++) {
-      if (list->ann[i].k > k)
+      if (list->ann[i].data->kmer > k)
          break;
       else
          idx = i;
@@ -471,5 +472,5 @@ compar_ann_k_asc
 {
    ann_t * a = (ann_t *)aa;
    ann_t * b = (ann_t *)ab;
-   return (a->data->k > b->data->k ? 1 : -1);
+   return (a->data->kmer > b->data->kmer ? 1 : -1);
 }
