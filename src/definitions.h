@@ -91,8 +91,8 @@ struct sar_t {
 
 struct anndata_t {
    int64_t    magic;
-   int        k;
-   int        d;
+   int        kmer;
+   int        tau;
    uint64_t   size;
    uint8_t  * data;
 };

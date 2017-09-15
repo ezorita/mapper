@@ -121,11 +121,11 @@ ann_print_index
  annlist_t * list
 )
 {
-   fprintf(stderr,"[info] annotation index content:\n");
+   fprintf(stderr,"[info] existing annotations:\nk\td\tpath\n");
    for (int i = 0; i < list->count; i++) {
-      fprintf(stderr, "[info] {%d} k:%d, d:%d\n", list->ann[i].id, list->ann[i].k, list->ann[i].d);
+      fprintf(stderr, "d\t%d\t%s\n", list->ann[i]->data.kmer, list->ann[i]->data.tau, list->ann[i].file);
    }
-   fprintf(stderr, "[info] %d annotations.\n", list->count);
+   fprintf(stderr, "[info] total: %d annotations.\n", list->count);
 }
 
 
@@ -139,28 +139,25 @@ index_add_annotation
  char    * index_file
 )
 {
-   int ann_slot = -1, ann_pos = -1;
+   int ann_pos = -1;
    annlist_t * annlist = NULL;
-   // Check current annotations.
+   // Load annotation files.
    annlist = ann_index_read(index_file);
-   ann_print_index(annlist);
    if (annlist == NULL)
       return EXIT_FAILURE;
+   
+   // Print index.
+   ann_print_index(annlist);
+
+   // Check existing annotations.
    for (int i = 0; i < annlist->count; i++) {
-      if (kmer == annlist->ann[i].k) {
-         if (tau <= annlist->ann[i].d) {
-            fprintf(stderr, "[warning] the index already has a (%d,%d) annotation.\n",kmer,tau);
-            return EXIT_SUCCESS;
-         } else {
-            ann_slot = annlist->ann[i].id;
-            ann_pos  = i;
-            fprintf(stderr, "[warning] the existing (%d,%d) annotation will be overwritten (id=%d).\n",kmer,annlist->ann[i].d,ann_slot);
-            break;
+      if (kmer == annlist->ann[i]->data.kmer) {
+         if (tau <= annlist->ann[i]->data.tau) {
+            fprintf(stderr, "[warning] the index has a (%d,%d) annotation in '%s'.\n",kmer,tau,annlist->ann[i].file);
          }
       }
    }
-   fprintf(stderr, "[info] computing (%d,%d) genomic neighborhood using %d threads.\n", kmer, tau, threads);
-   annotation_t ann = annotate(kmer,tau,index,threads);
+   free(annlist);
 
    // Generate file name.
    char * fname  = ann_new_filename(kmer,tau,index_file);
@@ -169,30 +166,33 @@ index_add_annotation
 
    // Open file.
    int fd = open(fname,O_WRONLY | O_CREAT | O_TRUNC,0644);
+   if (fd == -1) {
+      fprintf(stderr, "error opening file to write: '%s'\n", fname);
+      return EXIT_FAILURE;
+   }
    free(fname);
-   size_t bytes = 0;
+
+   // Compute neighbors.
+   fprintf(stderr, "[info] computing (%d,%d) genomic neighborhood using %d threads.\n", kmer, tau, threads);
+   annotation_t ann = annotate(kmer,tau,index,threads);
+
+   // Write header. (magic number, k, tau, size).
+   fprintf(stderr,"[info] new annotation file: '%s'. ", fname);
+   uint64_t magicno = ANN_MAGICNO;
+   write(fd,&magicno,sizeof(uint64_t));
+   write(fd,&(ann.kmer),sizeof(uint32_t));
+   write(fd,&(ann.tau),sizeof(uint32_t));
+   write(fd,&(ann.size),sizeof(size_t));
 
    // Write annotation.
    fprintf(stderr,"[info] writing annotation (%ld bytes)... ", ann.size);
+   size_t bytes = 0;
    while ((bytes += write(fd,ann.info+bytes,ann.size-bytes)) < ann.size);
    fprintf(stderr,"%ld bytes written.\n",bytes);
 
    // Close file descriptor.
    close(fd);
 
-   // Update table.
-   fprintf(stderr,"[info] updating annotation index... ");
-   annlist = realloc(annlist, sizeof(annlist_t) + (annlist->count + 1)*sizeof(ann_t));
-   if (ann_pos < 0) ann_pos = annlist->count++;
-   annlist->ann[ann_pos] = (ann_t) {
-      .id = ann_slot,
-      .k = kmer,
-      .d = tau,
-      .size = ann.size,
-      .data = NULL
-   };
-   ann_index_write(annlist, index_file);
-   free(annlist);
    fprintf(stderr,"done.\n");
 
    return EXIT_SUCCESS;
