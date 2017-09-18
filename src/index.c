@@ -34,6 +34,7 @@ ann_index_read
    for (int i = 0; i < gbuf.gl_pathc; i++) {
       // Open file.
       char * fname = gbuf.gl_pathv[i];
+      fprintf(stderr,"[info] loading glob result: '%s'.\n",fname);
       int fd = open(fname, O_RDONLY);
       if (fd == -1) {
          fprintf(stderr, "[error] opening '%s': %s\n", fname, strerror(errno));
@@ -43,6 +44,10 @@ ann_index_read
       // mmap.
       struct stat sb;
       fstat(fd, &sb);
+      if (sb.st_size <= 24) {
+         fprintf(stderr, "[error] Found empty annotation in '%s', file size is %ld bytes. Ignoring file.\n",fname,sb.st_size);
+         continue;
+      }
       anndata_t * data = mmap(NULL, sb.st_size, PROT_READ, MAP_SHARED, fd, 0);
 
       if (list->ann[i].data == NULL) {
@@ -95,11 +100,15 @@ ann_print_index
  annlist_t * list
 )
 {
-   fprintf(stderr,"[info] existing annotations:\nk\td\tpath\n");
-   for (int i = 0; i < list->count; i++) {
-      fprintf(stderr, "%d\t%d\t%s\n", list->ann[i].data->kmer, list->ann[i].data->tau, list->ann[i].file);
+   if (! list->count) {
+      fprintf(stderr,"[info] 0 existing annotations found\n");
+   } else {
+      fprintf(stderr,"[info] existing annotations:\nk\td\tpath\n");
+      for (int i = 0; i < list->count; i++) {
+         fprintf(stderr, "%d\t%d\t%s\n", list->ann[i].data->kmer, list->ann[i].data->tau, list->ann[i].file);
+      }
+      fprintf(stderr, "[info] total: %d annotations.\n", list->count);
    }
-   fprintf(stderr, "[info] total: %d annotations.\n", list->count);
 }
 
 
