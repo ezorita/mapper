@@ -1,19 +1,4 @@
 #include "indexbuild.h"
-#include <signal.h>
-#include <execinfo.h>
-
-void SIGSEGV_handler(int sig) {
-   void *array[10];
-   size_t size;
-
-   // get void*'s for all entries on the stack
-   size = backtrace(array, 10);
-
-   // print out all the frames to stderr
-   fprintf(stderr, "Error: signal %d:\n", sig);
-   backtrace_symbols_fd(array, size, STDERR_FILENO);
-   exit(1);
-}
 
 int
 write_index
@@ -28,13 +13,11 @@ write_index
    char * sarfile = add_suffix(filename, ".sar");
    char * bwtfile = add_suffix(filename, ".bwt");
    char * genfile = add_suffix(filename, ".gen");
-   char * annfile = add_suffix(filename, ".ann");
 
    // Open files.
    int fsa = open(sarfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
    int fbw = open(bwtfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
    int fgn = open(genfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-   int fan = open(annfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 
    // Error control.
    if (fsa == -1) {
@@ -49,15 +32,10 @@ write_index
       fprintf(stderr, "[error] opening '%s' file: %s.\n", genfile, strerror(errno));
       exit(EXIT_FAILURE);
    }
-   if (fan == -1) {
-      fprintf(stderr, "[error] opening '%s' file: %s.\n", annfile, strerror(errno));
-      return EXIT_FAILURE;
-   }
    
    free(sarfile);
    free(bwtfile);
    free(genfile);
-   free(annfile);
 
 
    clock_t tstart;
@@ -138,14 +116,6 @@ write_index
    index_t * index = index_load_base(filename);
    if (index == NULL)
       return EXIT_FAILURE;
-   fprintf(stderr, "done.\n");
-   fprintf(stderr, "[proc] creating annotation index... ");
-   uint8_t count = 0;
-   if (write(fan, &count, sizeof(uint8_t)) < 1) {
-      fprintf(stderr, "\n[error] could not write annotation index.\n");
-      return EXIT_FAILURE;
-   }
-   close(fan);
    fprintf(stderr, "done.\n");
    index_add_annotation(def_kmer,def_tau,threads,index,filename);
    return 0;

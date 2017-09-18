@@ -34,17 +34,21 @@ static const char uppercase[256] = {[0 ... 255] = 'e',
 // Index params.
 #define MMAP_FLAGS        (MAP_PRIVATE | MAP_POPULATE)
 
+// File definitions
+#define ANN_MAGICNO 0x1010000010100000
+
 // General sequence definitions.
 #define EOS            -1
 
-typedef struct index_t    index_t;
-typedef struct bwt_t      bwt_t;
-typedef struct sar_t      sar_t;
-typedef struct chr_t      chr_t;
+typedef struct index_t     index_t;
+typedef struct bwt_t       bwt_t;
+typedef struct sar_t       sar_t;
+typedef struct chr_t       chr_t;
 typedef struct ann_t       ann_t;
+typedef struct anndata_t   anndata_t;
 typedef struct annlist_t   annlist_t;
-typedef struct bwpos_t    bwpos_t;
-typedef struct fmdpos_t   fmdpos_t;
+typedef struct bwpos_t     bwpos_t;
+typedef struct fmdpos_t    fmdpos_t;
 typedef struct htable_t    htable_t;
 
 struct htable_t {
@@ -85,14 +89,18 @@ struct sar_t {
    uint64_t * sa;
 };
 
-struct ann_t {
-   uint8_t    id;
-   int        k;
-   int        d;
+struct anndata_t {
+   int64_t    magic;
+   int        kmer;
+   int        tau;
    uint64_t   size;
    uint8_t  * data;
 };
 
+struct ann_t {
+   char      * file;
+   anndata_t * data;
+};
 
 struct annlist_t {
    uint8_t  count;

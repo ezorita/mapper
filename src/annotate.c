@@ -157,6 +157,7 @@ annotate
       pthread_create(&thread,NULL,annotate_mt,jobs+i);
       pthread_detach(thread);
    }
+
    // Sleep and wait for thread signals.
    int runcount = threads;
    pthread_mutex_lock(mutex);
@@ -261,6 +262,11 @@ next_seq
       // Iterate over qlen nucleotides.
       for (int i = 0; i < qlen; i++) {
          int nt = translate[(int)seq[i]];
+         // Do not query sequences containing '$'.
+         if (nt == 5) {
+            pos[qlen].sz = 0;
+            break;
+         }
          n_cnt += nt == UNKNOWN_BASE;
          // Extend BWT search.
          if (trail == i && nt == tmp[i]) 
@@ -272,7 +278,12 @@ next_seq
          tmp[i] = nt;
       }
       // Update sa_ptr (point the start of the next suffix).
-      *sa_ptr += pos[qlen].sz;
+      if (pos[qlen].sz > 0) {
+         *sa_ptr += pos[qlen].sz;
+      } else {
+         *sa_ptr += 1;
+         continue;
+      }
       
       // Return -1 if we're already out of segment.
       if (pos[qlen].fp >= max_sa) {

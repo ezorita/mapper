@@ -11,8 +11,8 @@
 #define NO_INFO 0xFFFF
 
 typedef struct {
-   uint8_t    kmer;
-   uint8_t    tau;
+   uint32_t    kmer;
+   uint32_t    tau;
    uint8_t  * info;
    size_t     size;
 } annotation_t;

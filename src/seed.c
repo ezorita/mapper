@@ -399,7 +399,7 @@ mem_unique
    if (ann == NULL) return 0;
    // Check neighbors for all k-mers.
    int max_d = 0;
-   for (int i = 0; i <= k - ann->k; i++) {
+   for (int i = 0; i <= k - ann->data->kmer; i++) {
       max_d = max(max_d, ann_read(*ann, loc + i, NULL));
    }
    if (max_d > 1) {

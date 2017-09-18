@@ -278,9 +278,9 @@ check_neighbor_info
    int idx = -1, k = 0;
    for (int a = 0; a < index->ann->count; a++) {
       ann_t ann = index->ann->ann[a];
-      if (span - ann.k > 0 && ann.k > k) {
+      if (span - ann.data->kmer > 0 && ann.data->kmer > k) {
          idx = a;
-         k = ann.k;
+         k = ann.data->kmer;
       }
    }
 
@@ -288,21 +288,21 @@ check_neighbor_info
    int max_d = 0, cnt_d = 0, last = -k, span_d = 0;
    if (idx >= 0) {
       ann_t ann = index->ann->ann[idx];
-      for (int64_t n = 0; n <= span - ann.k; n++) {
+      for (int64_t n = 0; n <= span - ann.data->kmer; n++) {
          int log10cnt;
          int d = ann_read(ann, ref_start + n, &log10cnt); 
          if (d > max_d) {
             max_d = d;
             cnt_d = log10cnt;
-            span_d = ann.k;
+            span_d = ann.data->kmer;
             last = n;
          } else if (d == max_d) {
             if (log10cnt > cnt_d) cnt_d = log10cnt;
-            span_d += min(n - last, ann.k);
+            span_d += min(n - last, ann.data->kmer);
             last = n;
          }
       }
-      aln->ann_d   = (int)max_d*(span_d*1.0/ann.k);
+      aln->ann_d   = (int)max_d*(span_d*1.0/ann.data->kmer);
       aln->ann_cnt = 1;
       for (int n = 0; n < cnt_d; n++) aln->ann_cnt *= 10;
    } else {

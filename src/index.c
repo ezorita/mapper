@@ -14,127 +14,84 @@ add_suffix
    return new;
 }
 
-int
-ann_index_write
-(
- annlist_t * list,
- char * index_file
-)
-{
-   // File name.
-   char * fname = add_suffix(index_file, ".ann");
-   if (fname == NULL) return -1;
-   // Open file to write.
-   int fd = open(fname,O_WRONLY | O_CREAT | O_TRUNC,0644);
-   free(fname);
-   if (fd == -1) {
-      fprintf(stderr, "error opening '%s': %s\n", fname, strerror(errno));
-      return -1;
-   }
-   // Write table.
-   if (write(fd, &(list->count), 1) < 1) {
-      fprintf(stderr,"[error] could not write annotation index.\n");
-      return -1;
-   }
-   size_t bytes = 0, total = list->count*sizeof(ann_t);
-   while ((bytes += write(fd, ((uint8_t *)list->ann) + bytes, total-bytes)) < total);
-
-   return 0;
-}
-
 annlist_t *
 ann_index_read
 (
  char * index_file
 )
 {
-   // File name.
-   char * fname = add_suffix(index_file, ".ann");
+   // Annotation files
+   char * pattern = add_suffix(index_file, ".ann.*");
+   glob_t gbuf;
+   glob(pattern,GLOB_TILDE,NULL,&gbuf);
+   free(pattern);
 
-   if (fname == NULL) return NULL;
+   // Alloc list.
+   annlist_t * list = malloc(sizeof(annlist_t) + gbuf.gl_pathc * sizeof(ann_t));
+   list->count = 0;
    
-   // If file does not exist, create a new annotation index.
-   if (access(fname, F_OK)) {
-      annlist_t * list = malloc(sizeof(annlist_t) + 10 * sizeof(ann_t));
-      list->count = 0;
-      return list;
-   }
-   // Open file.
-   int fd = open(fname, O_RDONLY);
-   free(fname);
-   if (fd == -1) {
-      fprintf(stderr, "error opening '%s': %s\n", fname, strerror(errno));
-      return NULL;
-   }
-   // Read table size.
-   uint8_t count = 0;
-   if (read(fd, &count, sizeof(uint8_t)) < 1) {
-      fprintf(stderr, "[error] could not read data from annotation index.\n");
-      return NULL;
-   }
-   // Alloc structure.
-   annlist_t * list = malloc(sizeof(annlist_t) + count * sizeof(ann_t));
-   if (list == NULL) return NULL;
-   // Read headers.
-   list->count = count;
-   size_t bytes = 0, total = count*sizeof(ann_t);
-   while ((bytes += read(fd,((uint8_t*)list->ann)+bytes,total-bytes)) < total);
+   // Iterate matching files.
+   for (int i = 0; i < gbuf.gl_pathc; i++) {
+      // Open file.
+      char * fname = gbuf.gl_pathv[i];
+      fprintf(stderr,"[info] loading glob result: '%s'.\n",fname);
+      int fd = open(fname, O_RDONLY);
+      if (fd == -1) {
+         fprintf(stderr, "[error] opening '%s': %s\n", fname, strerror(errno));
+         free(list);
+         return NULL;
+      }
+      // mmap.
+      struct stat sb;
+      fstat(fd, &sb);
+      if (sb.st_size <= 24) {
+         fprintf(stderr, "[error] Found empty annotation in '%s', file size is %ld bytes. Ignoring file.\n",fname,sb.st_size);
+         continue;
+      }
+      anndata_t * data = mmap(NULL, sb.st_size, PROT_READ, MAP_SHARED, fd, 0);
 
+      if (list->ann[i].data == NULL) {
+         fprintf(stderr, "[error] mmaping '%s' index file: %s.\n", fname, strerror(errno));
+         free(list);
+         return NULL;
+      }
+
+      // Check file content.
+      if (data->magic != ANN_MAGICNO) {
+         fprintf(stderr, "[error] Wrong magic numer for '%s'. Ignoring file.\n",fname);
+         continue;
+      }
+      list->ann[list->count++] = (ann_t){strdup(fname), data};
+      close(fd);
+   }
    // Sort annotations by ascending k.
    qsort(list->ann, list->count, sizeof(ann_t), compar_ann_k_asc);
    return list;
 }
 
-int
-ann_index_load
-(
- annlist_t * index,
- char      * index_file
-)
-{
-   for (int i = 0; i < index->count; i++) {
-      // Generate file names.
-      char * suffix = malloc(9);
-      if (suffix == NULL)
-         return -1;
-      sprintf(suffix, ".ann.%d", index->ann[i].id);
-      char * fname = add_suffix(index_file, suffix);
-      if (fname == NULL)
-         return -1;
-      // Open file.
-      int fd = open(fname, O_RDONLY);
-      if (fd == -1) {
-         fprintf(stderr, "[error] opening '%s': %s\n", fname, strerror(errno));
-         return -1;
-      }
-      // mmap.
-      size_t f_len = lseek(fd, 0, SEEK_END);
-      lseek(fd, 0, SEEK_SET);
-      index->ann[i].data = mmap(NULL, f_len, PROT_READ, MMAP_FLAGS, fd, 0);
-      if (index->ann[i].data == NULL) {
-         fprintf(stderr, "[error] mmaping '%s' index file: %s.\n", fname, strerror(errno));
-         return -1;
-      }
-      close(fd);
-      free(fname);
-      free(suffix);
-   }
-      
-   return 0;
-}
 
-int
-ann_find_slot
+char *
+ann_new_filename
 (
- annlist_t * list
+ int    k,
+ int    d,
+ char * index_file
 )
 {
-   uint8_t * idlist = calloc(257,1);
-   for (int i = 0; i < list->count; i++)
-      idlist[list->ann[i].id] = 1;
-   int id = 0;
-   while (idlist[id]) id++;
-   return id;
+   // Default suffix.
+   char suffix[12];
+   sprintf(suffix, ".ann.%d%d",k,d);
+   char * path = add_suffix(index_file,suffix);
+   
+   // Check whether file exists.
+   int i = 0;
+   while (access(path,F_OK) == 0) {
+      free(path);
+      sprintf(suffix, ".ann.%d%d.%d",k,d,i++);
+      path = add_suffix(index_file,suffix);
+   }
+
+   return path;
 }
 
 void
@@ -143,11 +100,15 @@ ann_print_index
  annlist_t * list
 )
 {
-   fprintf(stderr,"[info] annotation index content:\n");
-   for (int i = 0; i < list->count; i++) {
-      fprintf(stderr, "[info] {%d} k:%d, d:%d\n", list->ann[i].id, list->ann[i].k, list->ann[i].d);
+   if (! list->count) {
+      fprintf(stderr,"[info] 0 existing annotations found\n");
+   } else {
+      fprintf(stderr,"[info] existing annotations:\nk\td\tpath\n");
+      for (int i = 0; i < list->count; i++) {
+         fprintf(stderr, "%d\t%d\t%s\n", list->ann[i].data->kmer, list->ann[i].data->tau, list->ann[i].file);
+      }
+      fprintf(stderr, "[info] total: %d annotations.\n", list->count);
    }
-   fprintf(stderr, "[info] %d annotations.\n", list->count);
 }
 
 
@@ -161,65 +122,59 @@ index_add_annotation
  char    * index_file
 )
 {
-   int ann_slot = -1, ann_pos = -1;
    annlist_t * annlist = NULL;
-   // Check current annotations.
+   // Load annotation files.
    annlist = ann_index_read(index_file);
-   ann_print_index(annlist);
    if (annlist == NULL)
       return EXIT_FAILURE;
+   
+   // Print index.
+   ann_print_index(annlist);
+
+   // Check existing annotations.
    for (int i = 0; i < annlist->count; i++) {
-      if (kmer == annlist->ann[i].k) {
-         if (tau <= annlist->ann[i].d) {
-            fprintf(stderr, "[warning] the index already has a (%d,%d) annotation.\n",kmer,tau);
-            return EXIT_SUCCESS;
-         } else {
-            ann_slot = annlist->ann[i].id;
-            ann_pos  = i;
-            fprintf(stderr, "[warning] the existing (%d,%d) annotation will be overwritten (id=%d).\n",kmer,annlist->ann[i].d,ann_slot);
-            break;
+      if (kmer == annlist->ann[i].data->kmer) {
+         if (tau <= annlist->ann[i].data->tau) {
+            fprintf(stderr, "[warning] the index has a (%d,%d) annotation in '%s'.\n",kmer,tau,annlist->ann[i].file);
          }
       }
    }
-   // Find slot to store annotation.
-   if (ann_slot < 0) ann_slot = ann_find_slot(annlist);
+   free(annlist);
 
+   // Generate file name.
+   char * fname  = ann_new_filename(kmer,tau,index_file);
+   if (fname == NULL)
+      return EXIT_FAILURE;
+
+   // Open file.
+   fprintf(stderr,"[info] opening annotation file: '%s'.\n", fname);
+   int fd = open(fname,O_WRONLY | O_CREAT | O_TRUNC,0644);
+   if (fd == -1) {
+      fprintf(stderr, "error opening file to write: '%s'\n", fname);
+      return EXIT_FAILURE;
+   }
+   free(fname);
+
+   // Compute neighbors.
    fprintf(stderr, "[info] computing (%d,%d) genomic neighborhood using %d threads.\n", kmer, tau, threads);
    annotation_t ann = annotate(kmer,tau,index,threads);
 
-   // Write output file.
-   // Generate file name.
-   char * suffix = malloc(9);
-   if (suffix == NULL)
-      return EXIT_FAILURE;
-   sprintf(suffix, ".ann.%d", ann_slot);
-   char * fname = add_suffix(index_file, suffix);
-   if (fname == NULL)
-      return EXIT_FAILURE;
-   free(suffix);
-   // Open file.
-   int fd = open(fname,O_WRONLY | O_CREAT | O_TRUNC,0644);
-   free(fname);
+   // Write header. (magic number, k, tau, size).
    size_t bytes = 0;
+   uint64_t magicno = ANN_MAGICNO;
+   bytes = write(fd,&magicno,sizeof(uint64_t));
+   bytes = write(fd,&(ann.kmer),sizeof(uint32_t));
+   bytes = write(fd,&(ann.tau),sizeof(uint32_t));
+   bytes = write(fd,&(ann.size),sizeof(size_t));
+
    // Write annotation.
    fprintf(stderr,"[info] writing annotation (%ld bytes)... ", ann.size);
    while ((bytes += write(fd,ann.info+bytes,ann.size-bytes)) < ann.size);
    fprintf(stderr,"%ld bytes written.\n",bytes);
+
    // Close file descriptor.
    close(fd);
-   // Update table.
-   fprintf(stderr,"[info] updating annotation index... ");
-   annlist = realloc(annlist, sizeof(annlist_t) + (annlist->count + 1)*sizeof(ann_t));
-   if (ann_pos < 0) ann_pos = annlist->count++;
-   annlist->ann[ann_pos] = (ann_t) {
-      .id = ann_slot,
-      .k = kmer,
-      .d = tau,
-      .size = ann.size,
-      .data = NULL
-   };
-   ann_index_write(annlist, index_file);
-   free(annlist);
+
    fprintf(stderr,"done.\n");
 
    return EXIT_SUCCESS;
@@ -479,7 +434,7 @@ ann_find
    if (list->count == 0) return NULL;
    int idx = -1;
    for (int i = 0; i < list->count; i++) {
-      if (list->ann[i].k > k)
+      if (list->ann[i].data->kmer > k)
          break;
       else
          idx = i;
@@ -498,5 +453,5 @@ compar_ann_k_asc
 {
    ann_t * a = (ann_t *)aa;
    ann_t * b = (ann_t *)ab;
-   return (a->k > b->k ? 1 : -1);
+   return (a->data->kmer > b->data->kmer ? 1 : -1);
 }
