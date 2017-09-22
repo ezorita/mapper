@@ -93,8 +93,8 @@ struct anndata_t {
    int64_t    magic;
    int        kmer;
    int        tau;
-   uint64_t   size;
-   uint8_t  * data;
+   size_t     size;
+   uint8_t    data[];
 };
 
 struct ann_t {
