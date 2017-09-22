@@ -8,6 +8,8 @@ GSOURCE_FILES= gbrowser.c algs.c
 GHEADER_FILES= bwmapper.h algs.h
 ASOURCE_FILES= aligner.c align.c
 AHEADER_FILES= align.h
+DSOURCE_FILES = ann_dump.c index.c annotate.c bwtquery.c blocksearch.c
+DHEADER_FILES = $(HEADER_FILES)
 OTHER_FILES = Makefile
 
 OBJECTS= $(addprefix $(OBJ_DIR)/,$(OBJECT_FILES))
@@ -17,6 +19,8 @@ GSOURCES= $(addprefix $(SRC_DIR)/,$(GSOURCE_FILES))
 GHEADERS= $(addprefix $(INC_DIR)/,$(GHEADER_FILES))
 ASOURCES= $(addprefix $(SRC_DIR)/,$(ASOURCE_FILES))
 AHEADERS= $(addprefix $(INC_DIR)/,$(AHEADER_FILES))
+DSOURCES= $(addprefix $(SRC_DIR)/,$(DSOURCE_FILES))
+DHEADERS= $(addprefix $(INC_DIR)/,$(DHEADER_FILES))
 INCLUDES= $(addprefix -I, $(INC_DIR))
 
 #CFLAGS= -std=c99 -Wall -O3 -mpopcnt
@@ -29,6 +33,9 @@ all: mapper
 
 mapper: $(OBJECTS) $(SOURCES) $(HEADERS) $(OTHER_FILES)
 	$(CC) $(CFLAGS) $(SOURCES) $(OBJECTS) $(LDLIBS) -o $@
+
+anndump: $(DSOURCES) $(DHEADERS) $(OTHER_FILES)
+	$(CC) $(CFLAGS) $(DSOURCES) $(LDLIBS) -o $@
 
 gbrowser: $(GSOURCES) $(GHEADERS) $(OTHER_FILES)
 	$(CC) $(CFLAGS) $(GSOURCES) $(LDLIBS) -o $@
