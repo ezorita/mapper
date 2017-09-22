@@ -169,6 +169,7 @@ index_add_annotation
 
    // Write annotation.
    fprintf(stderr,"[info] writing annotation (%ld bytes)... ", ann.size);
+   bytes = 0;
    while ((bytes += write(fd,ann.info+bytes,ann.size-bytes)) < ann.size);
    fprintf(stderr,"%ld bytes written.\n",bytes);
 

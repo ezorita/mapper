@@ -13,8 +13,8 @@
 typedef struct {
    uint32_t    kmer;
    uint32_t    tau;
-   uint8_t  * info;
-   size_t     size;
+   uint8_t   * info;
+   size_t      size;
 } annotation_t;
 
 typedef struct {
