@@ -105,6 +105,7 @@ get_occ_nt
 )
 {
    if (ptr == -1) return occ[nt];
+   // Get word and bit pointers.
    int64_t wrdnum = ptr/OCC_WORD_SIZE;
    int64_t wrdptr = (wrdnum + wrdnum/OCC_MARK_INTERVAL + 1)*NUM_BASES + nt;
    int64_t mrkptr = (((wrdnum + OCC_MARK_INTERVAL/2)/OCC_MARK_INTERVAL)*(OCC_MARK_INTERVAL+1))*NUM_BASES + nt;
@@ -158,8 +159,8 @@ extend_bw
       tot += sz[j];
    }
    // Intervals of the reverse strand pointer.
-   // T (wilcard '$' is inside this interval if tot < pos.sz)
-   rp[3] = pos.rp + (tot < pos.sz);
+   // T (wildcard '$' is inside this interval if tot < pos.sz)
+   rp[3] = pos.rp + (pos.sz - tot);
    // G-C-A
    for (int j = 2; j >= 0; j--) rp[j] = rp[j+1] + sz[j+1];
    // N
@@ -205,8 +206,8 @@ extend_bw_all
       tot += new[j].sz;
    }
    // Intervals of the reverse strand pointer.
-   // T (wilcard '$' is inside this interval if tot < pos.sz)
-   new[3].rp = pos.rp + (tot < pos.sz);
+   // T (wildcard '$' is inside this interval if tot < pos.sz)
+   new[3].rp = pos.rp + (pos.sz - tot);
    // G-C-A
    for (int j = 2; j >= 0; j--) new[j].rp = new[j+1].rp + new[j+1].sz;
    // N
@@ -243,7 +244,7 @@ suffix_string
  bwpos_t * newpos,
  bwt_t   * bwt
 )
-// Extends from *suf until *(suf+slen-1) is reached or loci < minloci.
+// Extends from suf[0] until suf[slen-1] is reached or loci < minloci.
 {
    int64_t loci;
    int len = slen-1;

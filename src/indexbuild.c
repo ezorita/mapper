@@ -52,9 +52,9 @@ write_index
    fprintf(stderr, " done [%.3fs]\n", (clock()-tstart)*1.0/CLOCKS_PER_SEC);
 
    // Compute OCC.
-   uint64_t occ_size;
+   uint64_t occ_size, wildcard_cnt;
    fprintf(stderr, "[proc] computing    occ table    ..."); tstart = clock();
-   uint64_t * occ = compute_occ(genome, sa, gsize, &occ_size);
+   uint64_t * occ = compute_occ(genome, sa, gsize, &occ_size, &wildcard_cnt);
    fprintf(stderr, " done [%.3fs]\n", (clock()-tstart)*1.0/CLOCKS_PER_SEC);
 
    // Compress suffix array.
@@ -67,7 +67,7 @@ write_index
 
    // Compute C.
    fprintf(stderr, "[proc] computing    C table      ..."); tstart = clock();
-   uint64_t * c = compute_c(occ + occ_size - NUM_BASES);
+   uint64_t * c = compute_c(occ + occ_size - NUM_BASES, wildcard_cnt);
    fprintf(stderr, " done [%.3fs]\n", (clock()-tstart)*1.0/CLOCKS_PER_SEC);
 
    // Write .BWT file
@@ -143,7 +143,8 @@ compute_occ
  char     * genome,
  uint64_t * sa,
  uint64_t   gsize,
- uint64_t * occ_size
+ uint64_t * occ_size,
+ uint64_t * wildcard_cnt
 )
 {
    // Words, marks and intervals.
@@ -158,6 +159,7 @@ compute_occ
    uint64_t occ_tmp[NUM_BASES+1];
 
    // Initial values.
+   *wildcard_cnt = 0;
    for (int i = 0; i < NUM_BASES; i++) {
       occ_abs[i] = 0;
       occ_tmp[i] = 0;
@@ -170,6 +172,10 @@ compute_occ
    for (uint64_t i = 0; i < gsize; i++) {
       // Set occ bit.
       int base = translate[(uint8_t)genome[(sa[i] > 0 ? sa[i] - 1 : gsize - 1)]];
+      // Count wildcard.
+      if (base == NUM_BASES)
+         (*wildcard_cnt)++;
+      // Set bit and update total count.
       occ_tmp[base] |= 1;
       occ_abs[base]++;
       // Next word.
@@ -211,14 +217,15 @@ compute_occ
 uint64_t *
 compute_c
 (
- uint64_t * occ
+ uint64_t * occ,
+ uint64_t   wildcard_cnt
 )
 {
    // Fill C.
    uint64_t * C = malloc((NUM_BASES+1)*sizeof(uint64_t));
    if (C == NULL) return NULL;
-   // Count the wildcard before 'A'.
-   C[0] = 1;
+   // Count the wildcards before 'A'.
+   C[0] = wildcard_cnt;
    for (int i = 1; i <= NUM_BASES; i++) C[i] = C[i-1] + occ[i-1];
    return C;
 }
@@ -292,6 +299,16 @@ compact_genome
 
    while ((rlen = getline(&buffer, &sz, input)) != -1) {
       if (buffer[0] == '>') {
+         // Separate chromosomes with '$'.
+         if (gbufsize == *genomesize) {
+            genome = realloc(genome, ++gbufsize);
+            if (genome == NULL) {
+               fprintf(stderr, "error in 'compact_genome' (realloc): %s\n", strerror(errno));
+               exit(EXIT_FAILURE);
+            }
+         }
+         genome[(*genomesize)++] = '$';
+         // Store chromosome name (up to the first space) and start nucleotide.
          buffer[rlen-1] = 0;
          int k = 0;
          while (buffer[k] != ' ' && buffer[k] != 0) k++;
@@ -299,6 +316,7 @@ compact_genome
          fprintf(output,"%ld\t%s\n",*genomesize,buffer+1);
       }
       else {
+         // Realloc if genome buffer cannot allocate the new line.
          if (gbufsize < *genomesize + rlen) {
             while (gbufsize < *genomesize + rlen) gbufsize *= 2;
             genome = realloc(genome, gbufsize);
@@ -307,30 +325,35 @@ compact_genome
                exit(EXIT_FAILURE);
             }
          }
+         // Copy the new line.
          int newline = buffer[rlen-1] == '\n';
          strncpy(genome + *genomesize, buffer, rlen-newline);
          *genomesize += rlen-newline;
       }
    }
 
+   // Add '$' at the end of the last chromosome.
+   genome[(*genomesize)++] = '$';
+
    // Realloc buffer.
-   genome = realloc(genome, 2*(*genomesize)+2);
+   genome = realloc(genome, 2*(*genomesize));
    if (genome == NULL) {
       fprintf(stderr, "error in 'compact_genome' (realloc): %s\n", strerror(errno));
       exit(EXIT_FAILURE);
    }
 
    // Reverse complement.
-   uint64_t div = *genomesize;
-   for (int i = 0 ; i < div; i++)
-      genome[div + i] = revcomp[(int)genome[div-i-1]];
+   uint64_t div = *genomesize - 1;
+   for (int i = 0 ; i <= div; i++)
+      genome[div + i] = revcomp[(int)genome[div-i]];
 
-   *genomesize = *genomesize * 2 + 1;
-
-   // Insert wildcard at the end.
-   genome[2*div] = '$';
+   // Insert null character at the end.
    genome[2*div+1] = 0;
 
+   // Update genome size to fit reverse complement, ignore null character \0.
+   *genomesize = *genomesize * 2 - 1;
+
+   // Flush buffers.
    fclose(input);
    fclose(output);
 

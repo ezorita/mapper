@@ -24,8 +24,8 @@
 
 int          write_index      (char * filename, int def_kmer, int def_tau, int threads);
 int64_t    * compute_sa       (char * genome, uint64_t gsize);
-uint64_t   * compute_occ      (char * genome, uint64_t * sa, uint64_t gsize, uint64_t * occ_size);
-uint64_t   * compute_c        (uint64_t * occ);
+uint64_t   * compute_occ      (char * genome, uint64_t * sa, uint64_t gsize, uint64_t * occ_size, uint64_t * wildcard_cnt);
+uint64_t   * compute_c        (uint64_t * occ, uint64_t wildcard_cnt);
 uint64_t     compact_array    (uint64_t * array, uint64_t len, int bits);
 char       * compact_genome   (char * filename, uint64_t * genomesize);
 
