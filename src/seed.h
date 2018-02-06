@@ -68,6 +68,7 @@ int            extend_lr_bp   (uint8_t *, int, int, int, fmdpos_t *, index_t *);
 int            seed_thr       (uint8_t *, int, int, int, index_t *, seedstack_t **);
 int            extend_lr_thr  (uint8_t *, int *, int, int, fmdpos_t *, index_t *);
 int            seed_interv    (uint8_t *, int, int, int, int, index_t *, seedstack_t **);
+void           seq_neighbors  (char *, size_t, int, int, seedstack_t **, bwpos_t, index_t*);
 int            seed_mismatch  (char *, size_t, int, seedstack_t **, index_t *);
 int            find_mismatch  (char *, size_t, int, seedstack_t **, index_t *);
 int            seed_the_right_way (char *, seedstack_t **, index_t *);
@@ -89,13 +90,7 @@ int            compar_hit_errors_qsort (const void * a, const void * b);
 // Aux functions.
 char *         rev_comp         (char * seq);
 
-int
-count_mismatch
-(
- char         * seq,
- size_t         slen,
- index_t      * index
- );
+int            count_mismatch   (char* seq, size_t slen, index_t* index);
 
 
 #endif

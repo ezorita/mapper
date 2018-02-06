@@ -70,6 +70,44 @@ int main(int argc, char *argv[])
 
          return write_index(genome_file, opt.k, opt.d, opt.threads);
       }
+   } else if (strcmp(argv[1],"neigh") == 0) {
+      if (argc != 5) {
+         fprintf(stderr,"Find neighbors of a sequence:\n\n  mapper neigh [index] [dist] [sequence]\n");
+         return EXIT_FAILURE;
+      }
+      // Load index.
+      index_t * index = index_load_base(argv[2]);
+      if (index == NULL) {
+         fprintf(stderr, "error loading index.\n");
+         exit(1);
+      }
+      int slen = strlen(argv[4]);
+      // Sequence and exact repeats.
+      fprintf(stdout, "%s in %s:\n", argv[4], argv[2]);
+      bwpos_t repeat_pos;
+      if(suffix_string(argv[4], slen, 0, &repeat_pos, index->bwt))
+         fprintf(stdout, "[!] Sequence not found!\n");
+      else
+         fprintf(stdout, "Exact repeats: %ld\n", repeat_pos.ep - repeat_pos.sp + 1);
+         
+      // 1- neighbors.
+      seedstack_t * stack = seedstack_new(10);
+      seq_neighbors(argv[4], slen, 0, atoi(argv[3]), &stack, index->bwt->bwt_base, index);
+      if (stack->pos == 0) {
+         fprintf(stdout, "[!] No %d-neighbors found!\n", atoi(argv[3]));
+         return EXIT_SUCCESS;
+      }
+      fprintf(stdout, "%d-neighbors of %s in %s:\n", atoi(argv[3]), argv[4], argv[2]);
+      // Alloc buffer for neigh sequence.
+      char * nseq = malloc(slen+1);
+      nseq[slen] = 0;
+      for (int i = 0; i < stack->pos; i++) {
+         seed_t s = stack->seed[i];
+         uint64_t sa = get_sa(s.ref_pos.sp, index->sar);
+         memcpy(nseq, index->genome + sa, slen);
+         fprintf(stdout, "%s\td=%d\tn=%ld\tsp=%ld\tsar[0]=%ld\n", nseq, s.errors, s.ref_pos.ep - s.ref_pos.sp + 1, s.ref_pos.sp, sa);
+      }
+      free(nseq);
    }
 
    // DEFAULT Options.

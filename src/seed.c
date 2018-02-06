@@ -99,6 +99,37 @@ find_mismatch
    return 0;
 }
 
+void
+seq_neighbors
+(
+ char         * seq,
+ size_t         slen,
+ int            tau,
+ int            maxtau,
+ seedstack_t ** stack,
+ bwpos_t        pos,
+ index_t      * index
+)
+{
+   if (pos.sp > pos.ep) return;
+   // Store hit if end.
+   if (pos.depth == slen) {
+      seed_t seed = (seed_t) {.errors = tau, .qry_pos = 0, .ref_pos = pos};
+      seedstack_push(seed, stack);
+      return;
+   }
+
+   for (int i = 0; i < NUM_BASES; i++) {
+      int nt = translate[(int)seq[slen-1-pos.depth]];
+      int newtau = tau + (nt != i);
+      if (newtau > maxtau) continue;
+      bwpos_t newpos;
+      suffix_extend(i, pos, &newpos, index->bwt);
+      seq_neighbors(seq, slen, newtau, maxtau, stack, newpos, index);
+   }
+}
+ 
+
 int
 seed_mismatch
 (
