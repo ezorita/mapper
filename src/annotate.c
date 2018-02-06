@@ -50,7 +50,7 @@ locus_annotation
    //   bit 7 - Locus alignment info.
    //   bit 6 - Locus alignment flag.
    //   bit 5 *
-   //   bit 4 - Distance of closest neighbor (00: 1, 01: 2, 10: 3, 11: 4).
+   //   bit 4 - Distance to closest neighbor (00: 1, 01: 2, 10: 3, 11: 4).
    //   bit 3 *
    //   bit 2 *
    //   bit 1 * 
@@ -158,6 +158,7 @@ annotate
       pthread_detach(thread);
    }
 
+
    // Sleep and wait for thread signals.
    int runcount = threads;
    pthread_mutex_lock(mutex);
@@ -247,15 +248,16 @@ next_seq
  int32_t    tau,
  int64_t    sa_ptr,
  int64_t  * next_sa,
- uint8_t  * query,
+ int32_t  * last_fragment,
+ uint8_t  * query_1,
+ uint8_t  * query_2,
  fmdpos_t * pos,
  index_t  * index
 )
 {
    int n_cnt = 0;
-   int trail = 0;
+   int trail_1 = 0, trail_2 = 0;
    uint8_t * tmp = malloc(qlen*sizeof(uint8_t));
-   memcpy(tmp, query, qlen*sizeof(uint8_t));
    // Get sa_ptr sequence from genome.
    char * seq = index->genome + get_sa(sa_ptr, index->sar);
    // Iterate over qlen nucleotides.
@@ -267,17 +269,19 @@ next_seq
          break;
       }
       n_cnt += nt == UNKNOWN_BASE;
+      // Track trail.
+      if (trail_1 == i && nt == query_1[i])
+         trail_1++;
+      if (trail_2 == i && nt == query_2[i])
+         trail_2++;
       // Extend BWT search.
-      if (trail == i && nt == tmp[i])
-         trail++;
-      else
-         pos[i+1] = extend_fw(nt, pos[i], index->bwt);
+      pos[i+1] = extend_fw(nt, pos[i], index->bwt);
 
       // Update tmp query.
       tmp[i] = nt;
    }
 
-   // Check whether sequence is valid.
+   // Check whether sequence is valid (all in same strand).
    if (pos[qlen].sz == 0) {
       *next_sa = sa_ptr + 1;
       free(tmp);
@@ -294,13 +298,19 @@ next_seq
    }
 
    // Copy tmp to query.
-   memcpy(query, tmp, qlen*sizeof(uint8_t));
+   if (pos[qlen].fp >= pos[qlen].rp) {
+      *last_fragment = 1;
+      memcpy(query_2, tmp, qlen*sizeof(uint8_t));
+   } else {
+      *last_fragment = 0;
+      memcpy(query_1, tmp, qlen*sizeof(uint8_t));
+   }
 
    // Free memory.
    free(tmp);
 
    // Return trail.
-   return trail;
+   return *last_fragment ? trail_2 : trail_1;
 }
 
 void
@@ -392,18 +402,19 @@ store_hits
    int tau      = job->tau + 1;
    int aln_size = job->wsize - 3;
 
-   // Set greater as NO_INFO, as it will never carry information.
-   pthread_mutex_lock(job->mutex);
-   if (query.fp != query.rp)
-      *(uint16_t *)(job->info + max(query.fp,query.rp) * job->wsize) = NO_INFO;
-   pthread_mutex_unlock(job->mutex);
+   // Flag lexicographically greater as NO_INFO.
+   if (query.fp > query.rp) {
+      pthread_mutex_lock(job->mutex);
+      *(uint16_t *)(job->info + query.fp * job->wsize) = NO_INFO;
+      pthread_mutex_unlock(job->mutex);
+   }
 
    // No matches (self hit only).
    if (stack->pos < 2) {
       pthread_mutex_lock(job->mutex);
       // If there is no previous info, set smaller as NO_INFO.
-      if (*(uint16_t *)(job->info + min(query.fp,query.rp) * job->wsize) == 0)
-         *(uint16_t *)(job->info + min(query.fp,query.rp) * job->wsize) = NO_INFO;
+      if (*(uint16_t *)(job->info + min(query.fp,query.rp) * (size_t)(job->wsize)) == 0)
+         *(uint16_t *)(job->info + min(query.fp,query.rp) * (size_t)(job->wsize)) = NO_INFO;
       pthread_mutex_unlock(job->mutex);
       return;
    }
@@ -425,15 +436,15 @@ store_hits
       //   bytes     0-1: number of different neighbors (16bit).
       //   byte        2: distance to closest neighbor.
       //   byte  3-wsize: bytes encoding the mutated positions to find the closest neighbors.
-      uint8_t  * info = job->info + nptr * job->wsize;
-      uint16_t * ncnt = (uint16_t *) info;
-      uint8_t  * ntau = info + sizeof(uint16_t);
-      uint8_t  * naln = ntau + 1;
+      uint8_t  * ninfo = job->info + nptr * job->wsize;
+      uint16_t * ncnt  = (uint16_t *) ninfo;
+      uint8_t  * ntau  = ninfo + sizeof(uint16_t);
+      uint8_t  * naln  = ntau + 1;
 
       // Remote updates (neighbor).
+      pthread_mutex_lock(job->mutex);
       // Update neighbor.
       if (*ntau == path.score) {
-         pthread_mutex_lock(job->mutex);
          // Add one to neighbor count.
          *ncnt = (uint16_t) min(0xFFFE, ((uint32_t) *ncnt) + 1);
          // Check if neighbor has free align slots.
@@ -444,12 +455,9 @@ store_hits
             // Merge mismatch positions and store in neighbor memory (naln).
             merge_alignments(naln, hit_aln, aln_size);
          }
-         pthread_mutex_unlock(job->mutex);
       }
-
       // Reset neighbor.
       else if (*ncnt == 0 || *ncnt == NO_INFO || *ntau > path.score) {
-         pthread_mutex_lock(job->mutex);
          // Set count to 1 and neighbor's tau to path.score.
          *ncnt = 1;
          *ntau = path.score;
@@ -458,8 +466,8 @@ store_hits
          compute_aln_positions(path.align, hit_aln, job->kmer, aln_size, nrev);
          // Store mismatch positions.
          memcpy(naln, hit_aln, aln_size);
-         pthread_mutex_unlock(job->mutex);
       }
+      pthread_mutex_unlock(job->mutex);
 
       // Local updates (query).
       // Update query info.
@@ -482,10 +490,6 @@ store_hits
    int64_t qptr = (query.rp < query.fp ? query.rp : query.fp);
    int     qrev = query.rp < query.fp;
 
-   // Flag lexicographically greater as NO_INFO.
-   if (qrev)
-      *(uint16_t *)(job->info + query.fp * job->wsize) = NO_INFO;      
-
    // Query info.
    uint8_t  * info = job->info + qptr * job->wsize;
    uint16_t * qcnt = (uint16_t *) info;
@@ -493,18 +497,16 @@ store_hits
    uint8_t  * qaln = qtau + 1;
 
    // If query is empty or tau < qtau, reset query.
+   pthread_mutex_lock(job->mutex);
    if (*qcnt == 0 || *qcnt == NO_INFO || *qtau > tau) {
-      pthread_mutex_lock(job->mutex);
       // Set tau and neighbor count.
       *qtau = (uint8_t)  tau;
       *qcnt = (uint16_t) min(NO_INFO - 1, hits);
       // Compute and directly store mismatch positions for query sequence.
       compute_aln_positions(qalign, qaln, job->kmer, aln_size, qrev);
-      pthread_mutex_unlock(job->mutex);
    }
    // Update query.
    else if (*qtau == tau) {
-      pthread_mutex_lock(job->mutex);
       // Update hit count.
       *qcnt = (uint16_t) min(NO_INFO-1, ((uint32_t)hits)+((uint32_t)*qcnt));
       // Check if query has free align slots.
@@ -515,8 +517,8 @@ store_hits
          // Update alignments in query by merging.
          merge_alignments(qaln, tmp_aln, aln_size);
       }
-      pthread_mutex_unlock(job->mutex);
    }
+   pthread_mutex_unlock(job->mutex);
 
    free(qalign);
 }
@@ -554,35 +556,41 @@ annotate_mt
    int        tau    = job->tau;
 
    // Translated query.
-   uint8_t * query = malloc(kmer*sizeof(uint8_t));
-   memset(query, NUM_BASES, kmer*sizeof(uint8_t));
-
+   uint8_t * query_1 = malloc(kmer*sizeof(uint8_t));
+   uint8_t * query_2 = malloc(kmer*sizeof(uint8_t));
+   memset(query_1, NUM_BASES, kmer*sizeof(uint8_t));
+   memset(query_2, NUM_BASES, kmer*sizeof(uint8_t));
    // BWT path.
    fmdpos_t * path = malloc((kmer+1)*sizeof(fmdpos_t));
    path[0] = index->bwt->fmd_base;
 
    // Hit stack.
-   pstree_t * stack_tree = alloc_stack_tree(tau);
+   pstree_t * stack_tree_1 = alloc_stack_tree(tau);
+   pstree_t * stack_tree_2 = alloc_stack_tree(tau);
 
    // Aux vars.
    int64_t computed = sa_ptr;
    int64_t next_sa;
+   int32_t last_fragment;
 
    // Iterate over all kmers.
    while (sa_ptr < job->end) {
       // Report progress to scheduler.
       send_progress_to_scheduler(sa_ptr, &computed, job);
       // This updates query and path, and makes sa_ptr point to the position of the next sequence in the SA.
-      int trail = next_seq(kmer, tau, sa_ptr, &next_sa, query, path, index);
+      int trail = next_seq(kmer, tau, sa_ptr, &next_sa, &last_fragment, query_1, query_2, path, index);
       // Check valid query sequence.
       if (trail < 0) {
          // Flag 'sa_ptr' as NO_INFO.
          *(uint16_t *)(job->info + sa_ptr * job->wsize) = NO_INFO;
       } else {
          // Query the sequence.
-         blocksc_trail(query, path, kmer, tau, trail, index, stack_tree);
+         if (last_fragment)
+            blocksc_trail(query_2, path, kmer, tau, trail, index, stack_tree_2);
+         else
+            blocksc_trail(query_1, path, kmer, tau, trail, index, stack_tree_1);
          // Update annotation info.
-         store_hits(job, stack_tree->stack, path[kmer]);
+         store_hits(job, (last_fragment ? stack_tree_2->stack : stack_tree_1->stack), path[kmer]);
       }
       sa_ptr = next_sa;
    }
@@ -595,8 +603,10 @@ annotate_mt
    pthread_mutex_unlock(job->mutex);
 
    // Free memory.
-   free_stack_tree(stack_tree);
-   free(query);
+   free_stack_tree(stack_tree_1);
+   free_stack_tree(stack_tree_2);
+   free(query_1);
+   free(query_2);
    free(path);
 
    return NULL;

@@ -54,7 +54,7 @@ blocksc_trail
 // Seeq & Construct version of blocksearch algorithm over a Forward/Reverse index.
 // This version shall only be used for exhaustive genome neighbors computaion.
 
-// Out of the tau mismatches, make first division and assign mismatches as follows:
+// Out of tau mismatches, make first division and assign mismatches as follows:
 // 
 //  - Sequence is lexicographically smaller compared to its revcomp:
 //     Left block:
@@ -74,7 +74,7 @@ blocksc_trail
    tree->stack->pos = 0;
 
    // Which strand.
-   int rc_last = qarray[slen].fp >= qarray[slen].rp;
+   int last_fragment = qarray[slen].fp >= qarray[slen].rp;
 
    // If the query contains N in either block (left or right), reduce the value of
    // tau by num(N) mismatches.
@@ -83,11 +83,11 @@ blocksc_trail
 
    // Return if num(N) > tau or tau == 0 and not in last strand.
    tau -= n_cnt;
-   if (tau < 0 || (tau == 0 && !rc_last)) return;
+   if (tau < 0 || (tau == 0 && !last_fragment)) return;
 
    // Split block.
-   int pos_r = slen/2 + (rc_last ? slen%2 : 0);
-   int tau_l = tau/2 - (rc_last ? 0 : (1 - tau % 2));
+   int pos_r = slen/2 + (last_fragment ? slen%2 : 0);
+   int tau_l =  tau/2 - (last_fragment ? 0 : (1 - tau % 2));
 
    // Recursive call on left block, don't compute if current data is valid (trail).
    if (trail < pos_r) {

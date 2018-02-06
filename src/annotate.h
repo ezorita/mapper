@@ -39,7 +39,7 @@ void          * annotate_mt                 (void*);
 void            job_ranges_rec              (fmdpos_t, int, int, int, int, int*, annjob_t*, index_t*);
 
 // Thread helper functions.
-int             next_seq                    (int32_t, int32_t, int64_t, int64_t*, uint8_t*, fmdpos_t*, index_t*);
+int             next_seq                    (int32_t, int32_t, int64_t, int64_t*, int32_t*, uint8_t*, uint8_t*, fmdpos_t*, index_t*);
 void            store_hits                  (annjob_t*, pathstack_t*, fmdpos_t);
 void            merge_alignments            (uint8_t *, uint8_t *, int);
 void            compute_aln_positions       (uint64_t *, uint8_t  *, int, int, int);
