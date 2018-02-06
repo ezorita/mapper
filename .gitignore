@@ -6,6 +6,7 @@
 *.out
 bwmapper
 mapper
+anndump
 gbrowser
 aligner
 buildindex
