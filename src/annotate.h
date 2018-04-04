@@ -34,6 +34,7 @@ typedef struct {
 // Annotation core functions.
 annotation_t    annotate                    (int, int, index_t*, int);
 void          * annotate_mt                 (void*);
+void            locus_annotation            (uint8_t *, uint8_t *, int, int);
 
 // Multithreading scheduler functions.
 void            job_ranges_rec              (fmdpos_t, int, int, int, int, int*, annjob_t*, index_t*);

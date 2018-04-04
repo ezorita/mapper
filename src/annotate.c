@@ -42,7 +42,8 @@ locus_annotation
 (
  uint8_t * info,
  uint8_t * ann,
- int       alnsize
+ int       alnsize,
+ int       reverse_kmer
 )
 {
    // Annotation data structure:
@@ -55,10 +56,12 @@ locus_annotation
    //   bit 2 *
    //   bit 1 * 
    //   bit 0 - Neighbor count
+
    uint16_t  cnt = *((uint16_t *)info);
    uint8_t   tau = *(info + sizeof(uint16_t));
    uint8_t * aln = info + sizeof(uint16_t) + sizeof(uint8_t);
 
+   // Return if kmer has perfect match or no info.
    if (cnt == 0 || cnt == NO_INFO) return;
 
    // Count.
@@ -74,12 +77,23 @@ locus_annotation
    
    // Alignment info.
    if (*aln != 255) {
+      // Copy alignment data.
+      aln = malloc(alnsize);
+      memcpy(aln, info + sizeof(uint16_t) + sizeof(uint8_t), alnsize);
+
+      // Update alignments from reverse strand.
+      if (reverse_kmer)
+         for (int k = 0; k < alnsize && aln[k]; k++)
+            aln[k] = reverse_kmer + 1 - aln[k];
+
       // Set alignment flag in locus.
       *ann |= (uint8_t)1 << 6;
       // Store alignment info.
       for (int i = 0; i < alnsize && aln[i]; i++)
          // Alignment values are 1-based.
          *(ann + aln[i]-1) |= (uint8_t)1 << 7;
+
+      free(aln);
    }
 
    return;
@@ -214,25 +228,18 @@ annotate
       size_t * range = malloc(size*sizeof(size_t));
       get_sa_range(i, size, range, index->sar);
       
-      // Alloc temp info word.
-      uint8_t * tmp_info = malloc(word_size);
+      // Store info on all SA occurrences.
       for (uint64_t j = 0; j < size; j++) {
-         memcpy(tmp_info, info, word_size);
-         uint64_t r = range[j];
          // Store annotation in forward strand.
-         if (r >= index->size/2) {
+         if (range[j] >= index->size/2)
             // Convert reverse to fw strand.
-            r = index->size - range[j] - kmer;
-            // Reverse positions of bits set to '1'.
-            uint8_t * aln = tmp_info + (sizeof(uint16_t) + sizeof(uint8_t));
-            for (int k = 0; k < word_size - 3 && aln[k]; k++)
-               aln[k] = kmer + 1 - aln[k];
-         }
-         locus_annotation(tmp_info, ann.info + r, word_size-3);
+            locus_annotation(info, ann.info + index->size - range[j] - kmer, word_size-3, kmer);
+         else
+            locus_annotation(info, ann.info + range[j], word_size-3, 0);
+
       }
 
       // Free temp memory.
-      free(tmp_info);
       free(range);
 
       // Update pointer.
