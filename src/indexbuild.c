@@ -293,11 +293,14 @@ compact_genome
    // Genome storage vars
    char * genome = malloc(GENOME_SIZE);
    uint64_t gbufsize = GENOME_SIZE;
+   int seq_cnt = 0;
+   uint64_t lineno = 0;
 
    // Initialize size
    *genomesize = 0;
 
    while ((rlen = getline(&buffer, &sz, input)) != -1) {
+      lineno++;
       if (buffer[0] == '>') {
          // Separate chromosomes with '$'.
          if (gbufsize == *genomesize) {
@@ -313,7 +316,13 @@ compact_genome
          int k = 0;
          while (buffer[k] != ' ' && buffer[k] != 0) k++;
          buffer[k] = 0;
+         if (k == 1) {
+            fprintf(stderr, "error while reading input file '%s' (line %ld): empty sequence names are not allowed.\n", filename, lineno);
+            exit(EXIT_FAILURE);
+         }
          fprintf(output,"%ld\t%s\n",*genomesize,buffer+1);
+         // Increase sequence count.
+         seq_cnt++;
       }
       else {
          // Realloc if genome buffer cannot allocate the new line.
@@ -330,6 +339,11 @@ compact_genome
          strncpy(genome + *genomesize, buffer, rlen-newline);
          *genomesize += rlen-newline;
       }
+   }
+
+   if (seq_cnt == 0) {
+      fprintf(stderr, "error while reading input file '%s': incorrect FASTA format (sequence names must start with '>').\n", filename);
+      exit(EXIT_FAILURE);
    }
 
    // Add '$' at the end of the last chromosome.
