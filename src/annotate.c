@@ -213,19 +213,26 @@ annotate
       // Get SA values.
       size_t * range = malloc(size*sizeof(size_t));
       get_sa_range(i, size, range, index->sar);
+      
+      // Alloc temp info word.
+      uint8_t * tmp_info = malloc(word_size);
       for (uint64_t j = 0; j < size; j++) {
+         memcpy(tmp_info, info, word_size);
+         uint64_t r = range[j];
          // Store annotation in forward strand.
-
-         if (range[j] >= index->size/2) {
+         if (r >= index->size/2) {
             // Convert reverse to fw strand.
-            range[j] = index->size - range[j] - kmer - 1;
+            r = index->size - range[j] - kmer;
             // Reverse positions of bits set to '1'.
-            uint8_t * aln = info + (sizeof(uint16_t) + sizeof(uint8_t));
+            uint8_t * aln = tmp_info + (sizeof(uint16_t) + sizeof(uint8_t));
             for (int k = 0; k < word_size - 3 && aln[k]; k++)
                aln[k] = kmer + 1 - aln[k];
          }
-         locus_annotation(info, ann.info + range[j], word_size-3);
+         locus_annotation(tmp_info, ann.info + r, word_size-3);
       }
+
+      // Free temp memory.
+      free(tmp_info);
       free(range);
 
       // Update pointer.
