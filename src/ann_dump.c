@@ -3,7 +3,8 @@
 int main(int argc, char *argv[])
 {
    if (argc != 4) {
-      fprintf(stderr, "usage: %s index-file\n", argv[0]);
+      fprintf(stderr, "usage: %s beg end index-file\n", argv[0]);
+      exit(1);
    }
 
    int beg = atoi(argv[1]);
