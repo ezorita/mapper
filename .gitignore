@@ -13,6 +13,8 @@ buildindex
 tmp/*
 genomes/*
 old_src/*
+test/*.gc*
+test/.*
 *.o
 input/*
 out/*
