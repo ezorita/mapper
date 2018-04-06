@@ -34,7 +34,6 @@ ann_index_read
    for (int i = 0; i < gbuf.gl_pathc; i++) {
       // Open file.
       char * fname = gbuf.gl_pathv[i];
-      fprintf(stderr,"[info] loading glob result: '%s'.\n",fname);
       int fd = open(fname, O_RDONLY);
       if (fd == -1) {
          fprintf(stderr, "[error] opening '%s': %s\n", fname, strerror(errno));
@@ -55,6 +54,9 @@ ann_index_read
          free(list);
          return NULL;
       }
+
+      // Verbose annotation info.
+      fprintf(stderr,"[info] annotation (%d,%d): '%s'.\n", data->kmer, data->tau, fname);
 
       // Check file content.
       if (data->magic != ANN_MAGICNO) {
