@@ -46,14 +46,185 @@ void
 test_compute_occ
 (void)
 {
-   char   * seq_1   = "TAGCNTCGACA$";
-   int64_t  sar_1[] = {11,10,8,1,9,6,3,7,2,0,5,4};
-   char   * seq_2   = "TGNGA$TCGAT$";
-   int64_t  sar_2[] = {11,5,4,9,7,3,8,1,10,6,0,2};
-   char   * seq_3   = "$TgAgcatGGC$acTCGA$";
-   int64_t  sar_3[] = {18,11,0,17,12,3,6,10,5,15,13,16,2,9,4,8,14,1,7};
+   char    * seq_1   = "TAGCNTCGACA$";
+   uint64_t  sar_1[] = {11,10,8,1,9,6,3,7,2,0,5,4};
+   uint64_t  occ_1[] = {0x8880000000000000,
+                       0x4110000000000000,
+                       0x2200000000000000,
+                       0x1400000000000000,
+                       0x0020000000000000};
+
+   char    * seq_2   = "TGNGA$TCGAT$";
+   uint64_t  sar_2[] = {11,5,4,9,7,3,8,1,10,6,0,2};
+   uint64_t  occ_2[] = {0x4080000000000000,
+                       0x0200000000000000,
+                       0x3010000000000000,
+                       0x8900000000000000,
+                       0x0400000000000000};
+
+   char    * seq_3   = "$TgAgcatGGC$acTCGA$";
+   uint64_t  sar_3[] = {18,11,0,17,12,3,6,10,5,15,13,16,2,9,4,8,14,1,7};
+   uint64_t  occ_3[] = {0x8022200000000000,
+                       0x4210800000000000,
+                       0x1584000000000000,
+                       0x0049000000000000,
+                       0x0000000000000000};
    
+   uint64_t wildcard_cnt, occ_size;
+   uint64_t * occ;
+
+   occ = compute_occ(seq_1, sar_1, strlen(seq_1), &occ_size, &wildcard_cnt);
+   test_assert_critical(occ != NULL);
+   test_assert(wildcard_cnt == 1);
+   test_assert(occ_size == (OCC_MARK_INTERVAL+2)*NUM_BASES);
+   test_assert(memcmp(occ + NUM_BASES, occ_1, sizeof(int64_t)*NUM_BASES) == 0);
+   test_assert(occ[(OCC_MARK_INTERVAL+1)*NUM_BASES + 0] == 3); // A cnt
+   test_assert(occ[(OCC_MARK_INTERVAL+1)*NUM_BASES + 1] == 3); // C cnt
+   test_assert(occ[(OCC_MARK_INTERVAL+1)*NUM_BASES + 2] == 2); // G cnt
+   test_assert(occ[(OCC_MARK_INTERVAL+1)*NUM_BASES + 3] == 2); // T cnt
+   test_assert(occ[(OCC_MARK_INTERVAL+1)*NUM_BASES + 4] == 1); // N cnt
+   free(occ);
+
+   occ = compute_occ(seq_2, sar_2, strlen(seq_2), &occ_size, &wildcard_cnt);
+   test_assert_critical(occ != NULL);
+   test_assert(wildcard_cnt == 2);
+   test_assert(occ_size == (OCC_MARK_INTERVAL+2)*NUM_BASES);
+   test_assert(memcmp(occ + NUM_BASES, occ_2, sizeof(int64_t)*NUM_BASES) == 0);
+   test_assert(occ[(OCC_MARK_INTERVAL+1)*NUM_BASES + 0] == 2); // A cnt
+   test_assert(occ[(OCC_MARK_INTERVAL+1)*NUM_BASES + 1] == 1); // C cnt
+   test_assert(occ[(OCC_MARK_INTERVAL+1)*NUM_BASES + 2] == 3); // G cnt
+   test_assert(occ[(OCC_MARK_INTERVAL+1)*NUM_BASES + 3] == 3); // T cnt
+   test_assert(occ[(OCC_MARK_INTERVAL+1)*NUM_BASES + 4] == 1); // N cnt
+   free(occ);
+
+   occ = compute_occ(seq_3, sar_3, strlen(seq_3), &occ_size, &wildcard_cnt);
+   test_assert_critical(occ != NULL);
+   test_assert(wildcard_cnt == 3);
+   test_assert(occ_size == (OCC_MARK_INTERVAL+2)*NUM_BASES);
+   test_assert(memcmp(occ + NUM_BASES, occ_3, sizeof(int64_t)*NUM_BASES) == 0);
+   test_assert(occ[(OCC_MARK_INTERVAL+1)*NUM_BASES + 0] == 4); // A cnt
+   test_assert(occ[(OCC_MARK_INTERVAL+1)*NUM_BASES + 1] == 4); // C cnt
+   test_assert(occ[(OCC_MARK_INTERVAL+1)*NUM_BASES + 2] == 5); // G cnt
+   test_assert(occ[(OCC_MARK_INTERVAL+1)*NUM_BASES + 3] == 3); // T cnt
+   test_assert(occ[(OCC_MARK_INTERVAL+1)*NUM_BASES + 4] == 0); // N cnt
+   free(occ);
+}
+
+
+void
+test_compute_c
+(void)
+{
+   char * seq_1   = "TAGCNTCGACA$";
+   uint64_t c_1[] = {1,4,7,9,11,12};
+   char * seq_2   = "aaaAaAaCcCcGGGgGGGGTtTtt$";
+   uint64_t c_2[] = {1,8,12,20,25,25};
+   char * seq_3   = "AGTAGCAT$GATCNNAGCTATCGCATC$GAANGGGCGCNGG$";
+   uint64_t c_3[] = {3,12,20,32,38,42};
+   char * seq_4   = "AAAAAAAAAAAAAAAAAAAA$";
+   uint64_t c_4[] = {1,21,21,21,21,21};
+   char * seq_5   = "CCCCCCCCCCCCCCCCCCCC$";
+   uint64_t c_5[] = {1,1,21,21,21,21};
+   char * seq_6   = "GGGGGGGGGGGGGGGGGGGG$";
+   uint64_t c_6[] = {1,1,1,21,21,21};
+   char * seq_7   = "TTTTTTTTTTTTTTTTTTTT$";
+   uint64_t c_7[] = {1,1,1,1,21,21};
+   char * seq_8   = "NNNNNNNNNNNNNNNNNNNN$";
+   uint64_t c_8[] = {1,1,1,1,1,21};
+
+
+  
+   int64_t  * sar;
+   uint64_t * occ, * c;
+   uint64_t wildcard_cnt, occ_size;
    
+   sar = compute_sa(seq_1, strlen(seq_1));
+   test_assert_critical(sar != NULL);
+   occ = compute_occ(seq_1, (uint64_t *) sar, strlen(seq_1), &occ_size, &wildcard_cnt);
+   test_assert_critical(occ != NULL);
+   c   = compute_c(occ + occ_size - NUM_BASES, wildcard_cnt);
+   test_assert(wildcard_cnt == 1);
+   test_assert(memcmp(c,c_1,(NUM_BASES+1)*sizeof(uint64_t)) == 0);
+   free(sar);
+   free(occ);
+   free(c);
+
+   sar = compute_sa(seq_2, strlen(seq_2));
+   test_assert_critical(sar != NULL);
+   occ = compute_occ(seq_2, (uint64_t *) sar, strlen(seq_2), &occ_size, &wildcard_cnt);
+   test_assert_critical(occ != NULL);
+   c   = compute_c(occ + occ_size - NUM_BASES, wildcard_cnt);
+   test_assert(wildcard_cnt == 1);
+   test_assert(memcmp(c,c_2,(NUM_BASES+1)*sizeof(uint64_t)) == 0);
+   free(sar);
+   free(occ);
+   free(c);
+
+   sar = compute_sa(seq_3, strlen(seq_3));
+   test_assert_critical(sar != NULL);
+   occ = compute_occ(seq_3, (uint64_t *) sar, strlen(seq_3), &occ_size, &wildcard_cnt);
+   test_assert_critical(occ != NULL);
+   c   = compute_c(occ + occ_size - NUM_BASES, wildcard_cnt);
+   test_assert(wildcard_cnt == 3);
+   test_assert(memcmp(c,c_3,(NUM_BASES+1)*sizeof(uint64_t)) == 0);
+   free(sar);
+   free(occ);
+   free(c);
+
+   sar = compute_sa(seq_4, strlen(seq_4));
+   test_assert_critical(sar != NULL);
+   occ = compute_occ(seq_4, (uint64_t *) sar, strlen(seq_4), &occ_size, &wildcard_cnt);
+   test_assert_critical(occ != NULL);
+   c   = compute_c(occ + occ_size - NUM_BASES, wildcard_cnt);
+   test_assert(wildcard_cnt == 1);
+   test_assert(memcmp(c,c_4,(NUM_BASES+1)*sizeof(uint64_t)) == 0);
+   free(sar);
+   free(occ);
+   free(c);
+
+   sar = compute_sa(seq_5, strlen(seq_5));
+   test_assert_critical(sar != NULL);
+   occ = compute_occ(seq_5, (uint64_t *) sar, strlen(seq_5), &occ_size, &wildcard_cnt);
+   test_assert_critical(occ != NULL);
+   c   = compute_c(occ + occ_size - NUM_BASES, wildcard_cnt);
+   test_assert(wildcard_cnt == 1);
+   test_assert(memcmp(c,c_5,(NUM_BASES+1)*sizeof(uint64_t)) == 0);
+   free(sar);
+   free(occ);
+   free(c);
+
+   sar = compute_sa(seq_6, strlen(seq_6));
+   test_assert_critical(sar != NULL);
+   occ = compute_occ(seq_6, (uint64_t *) sar, strlen(seq_6), &occ_size, &wildcard_cnt);
+   test_assert_critical(occ != NULL);
+   c   = compute_c(occ + occ_size - NUM_BASES, wildcard_cnt);
+   test_assert(wildcard_cnt == 1);
+   test_assert(memcmp(c,c_6,(NUM_BASES+1)*sizeof(uint64_t)) == 0);
+   free(sar);
+   free(occ);
+   free(c);
+
+   sar = compute_sa(seq_7, strlen(seq_7));
+   test_assert_critical(sar != NULL);
+   occ = compute_occ(seq_7, (uint64_t *) sar, strlen(seq_7), &occ_size, &wildcard_cnt);
+   test_assert_critical(occ != NULL);
+   c   = compute_c(occ + occ_size - NUM_BASES, wildcard_cnt);
+   test_assert(wildcard_cnt == 1);
+   test_assert(memcmp(c,c_7,(NUM_BASES+1)*sizeof(uint64_t)) == 0);
+   free(sar);
+   free(occ);
+   free(c);
+
+   sar = compute_sa(seq_8, strlen(seq_8));
+   test_assert_critical(sar != NULL);
+   occ = compute_occ(seq_8, (uint64_t *) sar, strlen(seq_8), &occ_size, &wildcard_cnt);
+   test_assert_critical(occ != NULL);
+   c   = compute_c(occ + occ_size - NUM_BASES, wildcard_cnt);
+   test_assert(wildcard_cnt == 1);
+   test_assert(memcmp(c,c_8,(NUM_BASES+1)*sizeof(uint64_t)) == 0);
+   free(sar);
+   free(occ);
+   free(c);
 }
 
 /*
@@ -160,5 +331,7 @@ test_case_6
 // Define test cases to be run (for export).
 const test_case_t test_cases_from_file_1[] = {
    {"indexbuild/compute_sa",  test_compute_sa},
+   {"indexbuild/compute_occ", test_compute_occ},
+   {"indexbuild/compute_c",   test_compute_c},
    {NULL, NULL}, // Sentinel. //
 };
