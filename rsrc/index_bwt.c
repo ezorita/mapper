@@ -2,11 +2,11 @@
 
 // Interface data types.
 struct bwt_t {
-   int32_t    n_symbols;
-   int32_t    rev_symbols; // How many symbols are reversible. (4 in DNA)
-   uint64_t   seq_length;
+   int32_t    sym_cnt;
+   int32_t    rev_cnt;
+   uint64_t   txt_length;
    uint64_t   occ_length;
-   uint64_t   occ_mark_int;
+   uint64_t   occ_mark_intv;
    uint64_t   occ_word_size;
    uint64_t   occ_mark_bits;
    uint64_t * c;
@@ -46,7 +46,7 @@ bwt_new_query
    // Fill query of depth 0.
    q->fp  = 0;
    q->rp  = 0;
-   q->sz  = bwt->seq_length;
+   q->sz  = bwt->txt_length;
    q->dp  = 0;
    q->bwt = bwt;
 
@@ -88,12 +88,12 @@ bwt_new_vec
    if (bwt == NULL)
       return NULL;
    
-   bwtquery_t ** qv = malloc(bwt->n_symbols*sizeof(void *));
+   bwtquery_t ** qv = malloc(bwt->sym_cnt*sizeof(void *));
    if (qv == NULL)
       return NULL;
 
    // Initialize queries.
-   for (int i = 0; i < bwt->n_symbols; i++) {
+   for (int i = 0; i < bwt->sym_cnt; i++) {
       qv[i] = bwt_new_query(bwt);
       if (qv[i] == NULL)
          return NULL;
@@ -119,13 +119,13 @@ bwt_dup_vec
       return NULL;
 
    // Alloc new vector.
-   bwtquery_t ** qvdup = malloc(bwt->n_symbols*sizeof(void *));
+   bwtquery_t ** qvdup = malloc(bwt->sym_cnt*sizeof(void *));
    if (qvdup == NULL)
       return NULL;
    
 
    // Duplicate all queries.
-   for (int i = 0; i < bwt->n_symbols; i++) {
+   for (int i = 0; i < bwt->sym_cnt; i++) {
       qvdup[i] = bwt_dup_query(qv[i]);
       if (qvdup[i] == NULL)
          return NULL;
@@ -152,7 +152,7 @@ bwt_free_vec
       return -1;
 
    // Free queries.
-   for (int i = 0; i < bwt->n_symbols; i++) {
+   for (int i = 0; i < bwt->sym_cnt; i++) {
       free(qv[i]);
    }
    
@@ -179,17 +179,17 @@ bwt_query_all
    if (bwt == NULL)
       return -1;
 
-   for (int j = 0; j < bwt->n_symbols; j++) {
+   for (int j = 0; j < bwt->sym_cnt; j++) {
       if (qv[j] == NULL)
          return -1;
    }
       
    // Alloc temp pointers for each symbol.
-   int64_t * occ_sp = malloc(bwt->n_symbols * sizeof(int64_t));
-   int64_t * occ_ep = malloc(bwt->n_symbols * sizeof(int64_t));
-   int64_t * fp     = malloc(bwt->n_symbols * sizeof(int64_t));
-   int64_t * rp     = malloc(bwt->n_symbols * sizeof(int64_t));
-   int64_t * sz     = malloc(bwt->n_symbols * sizeof(int64_t));
+   int64_t * occ_sp = malloc(bwt->sym_cnt * sizeof(int64_t));
+   int64_t * occ_ep = malloc(bwt->sym_cnt * sizeof(int64_t));
+   int64_t * fp     = malloc(bwt->sym_cnt * sizeof(int64_t));
+   int64_t * rp     = malloc(bwt->sym_cnt * sizeof(int64_t));
+   int64_t * sz     = malloc(bwt->sym_cnt * sizeof(int64_t));
 
    // Fetch occ values to update pointers.
    get_occ_all(q->fp - 1, bwt, occ_sp);
@@ -197,7 +197,7 @@ bwt_query_all
 
    // Update forward pointers and result sizes.
    int64_t tot = 0;
-   for (int j = 0; j < bwt->n_symbols; j++) {
+   for (int j = 0; j < bwt->sym_cnt; j++) {
       fp[j]  = bwt->c[j] + occ_sp[j];
       sz[j]  = occ_ep[j] - occ_sp[j];
       // Sum total span.
@@ -207,11 +207,11 @@ bwt_query_all
    // Since wildcards '$' are the lexicographically smallest they will reduce
    // the interval size of the first symbol of fp, hence impacting on the last reversible
    // element of rp.
-   if (bwt->rev_symbols > 1) {
-      rp[bwt->rev_symbols-1] = q->rp + (q->sz - tot);
-      for (int j = bwt->rev_symbols-2; j >= 0; j--) rp[j] = rp[j+1] + sz[j+1];
+   if (bwt->rev_cnt > 1) {
+      rp[bwt->rev_cnt-1] = q->rp + (q->sz - tot);
+      for (int j = bwt->rev_cnt-2; j >= 0; j--) rp[j] = rp[j+1] + sz[j+1];
       // The first reversible symbol goes after the first fp symbol (hence the last in rp).
-      rp[bwt->rev_symbols] = rp[0] + sz[0];
+      rp[bwt->rev_cnt] = rp[0] + sz[0];
    }
    // If there are no reversible symbols, the wildcards impact directly on the first symbol.
    else {
@@ -219,25 +219,25 @@ bwt_query_all
    }
 
    // The rest of non-reversible symbols are updated sequentially.
-   if (bwt->n_symbols > bwt->rev_symbols) {
-      for (int j = bwt->rev_symbols + 1; j < bwt->n_symbols; j++) {
+   if (bwt->sym_cnt > bwt->rev_cnt) {
+      for (int j = bwt->rev_cnt + 1; j < bwt->sym_cnt; j++) {
          rp[j] = rp[j-1] + sz[j-1];
       }
    }
 
    if (end == BWT_QUERY_PREFIX) {
       // Store pointers to qv vector.
-      for (int j = 0; j < bwt->n_symbols; j++) {
+      for (int j = 0; j < bwt->sym_cnt; j++) {
          *(qv[j]) = (bwtquery_t){fp[j], rp[j], sz[j], q->dp+1};
       }
    } else {
       // Reverse again forward and backward pointers and reversible symbols.
-      int nr = bwt->rev_symbols-1;
+      int nr = bwt->rev_cnt-1;
       int j  = 0;
       for (; j <= nr; j++) {
          *(qv[j]) = (bwtquery_t){rp[nr-j], fp[nr-j], sz[nr-j], q->dp+1};
       }
-      for (; j < bwt->n_symbols; j++) {
+      for (; j < bwt->sym_cnt; j++) {
          *(qv[j]) = (bwtquery_t){rp[j], fp[j], sz[j], q->dp+1};
       }
    }
@@ -266,7 +266,7 @@ bwt_query
       return -1;
    
    bwt_t * bwt = q->bwt;
-   if (bwt == NULL || sym < 0 || sym >= bwt->n_symbols)
+   if (bwt == NULL || sym < 0 || sym >= bwt->sym_cnt)
       return -1;
 
    // Alloc query vector.
@@ -302,7 +302,7 @@ bwt_prefix
       return -1;
    
    bwt_t * bwt = q->bwt;
-   if (bwt == NULL || sym < 0 || sym >= bwt->n_symbols)
+   if (bwt == NULL || sym < 0 || sym >= bwt->sym_cnt)
       return -1;
 
    // Update start pointer.
@@ -337,14 +337,14 @@ bwt_prefix_all
 
    bwt_t * bwt = q->bwt;
    
-   for (int j = 0; j < bwt->n_symbols; j++) {
+   for (int j = 0; j < bwt->sym_cnt; j++) {
       if (qv[j] == NULL)
          return -1;
    }
    
    // Compute occs for all nt in one call (1 cache miss).
-   int64_t * occ_sp = malloc(bwt->n_symbols * sizeof(int64_t));
-   int64_t * occ_ep = malloc(bwt->n_symbols * sizeof(int64_t));
+   int64_t * occ_sp = malloc(bwt->sym_cnt * sizeof(int64_t));
+   int64_t * occ_ep = malloc(bwt->sym_cnt * sizeof(int64_t));
 
    // Compute occ.
    if (get_occ_all(q->fp - 1, bwt, occ_sp)) {
@@ -358,7 +358,7 @@ bwt_prefix_all
       return -1;
    }
    // Update pointers.
-   for (int j = 0; j < bwt->n_symbols; j++) {
+   for (int j = 0; j < bwt->sym_cnt; j++) {
       qv[j]->fp = bwt->c[j] + occ_sp[j];
       qv[j]->sz = bwt->c[j] + occ_ep[j] - qv[j]->fp;
       qv[j]->sz = (qv[j]->sz < 0 ? 0 : qv[j]->sz);
@@ -372,6 +372,133 @@ bwt_prefix_all
 }
 
 
+bwt_t *
+bwt_build
+(
+  txt_t  * txt,
+  sar_t  * sar
+)
+{
+   return bwt_build_opt(txt, sar, BWT_OCC_MARK_INTV_DEF, BWT_OCC_WORD_SIZE_DEF, BWT_OCC_MARK_BITS_DEF);
+}
+
+
+bwt_t *
+bwt_build_opt
+(
+  txt_t     * txt,
+  sar_t     * sar,
+  uint64_t    mark_intv,
+  uint64_t    word_size,
+  uint64_t    mark_bits
+)
+{
+   // Check arguments.
+   if (!txt || !sar)
+      return NULL;
+
+   if (mark_intv < 1 || word_size % 8 != 0 || mark_bits < word_size)
+      return NULL;
+
+   // Alloc bwt structure.
+   bwt_t * bwt = malloc(sizeof(bwt_t));
+   if (bwt == NULL)
+      return NULL;
+
+   // Inherits info from text.
+   bwt->sym_cnt       = txt_sym_count(txt);
+   bwt->rev_cnt       = txt_rev_count(txt);
+   bwt->txt_length    = txt_length(txt);
+   bwt->occ_mark_intv = mark_intv;
+   bwt->occ_word_size = word_size;
+   bwt->occ_mark_bits = mark_bits;
+
+   // Words, marks and intervals.
+   uint64_t n_intv = (bwt->txt_length + mark_bits - 1) / mark_bits;
+   uint64_t n_word = n_intv * mark_intv;
+   uint64_t n_mark = n_intv + 1;
+
+   // Alloc OCC and C structures.
+   bwt->occ = malloc((n_word + n_mark) * bwt->sym_cnt * sizeof(uint64_t));
+   if (bwt->occ == NULL) 
+      return NULL;
+
+   bwt->c = malloc((bwt->sym_cnt+1)*sizeof(uint64_t));
+   if (bwt->c == NULL)
+      return NULL;
+
+   // Alloc buffers.
+   uint64_t * occ_abs = malloc((bwt->sym_cnt + 1) * sizeof(uint64_t));
+   uint64_t * occ_tmp = malloc((bwt->sym_cnt + 1) * sizeof(uint64_t));
+
+   // Initial values.
+   for (int i = 0; i < bwt->sym_cnt; i++) {
+      occ_abs[i]  = 0;
+      occ_tmp[i]  = 0;
+      bwt->occ[i] = 0;
+   }
+
+   // Compute OCC. (MSB FIRST encoding)
+   uint64_t word = bwt->sym_cnt, interval = 0;
+
+   for (uint64_t i = 0; i < bwt->txt_length; i++) {
+      // Get symbol at Suffix Array predecessor.
+      int64_t txt_ptr = sar_get(i, sar);
+      int     sym     = txt_get_sym(txt_ptr > 0 ? txt_ptr - 1 : bwt->txt_length - 1, txt);
+      // Set bit and update total count.
+      occ_tmp[sym] |= 1;
+      occ_abs[sym]++;
+      // Next word.
+      if (i % word_size == word_size - 1) {
+         for (int j = 0; j < bwt->sym_cnt; j++) {
+            bwt->occ[word++] = occ_tmp[j];
+            occ_tmp[j] = 0;
+         }
+         interval++;
+         // Write Mark.
+         if (interval == mark_intv) {
+            for (int j = 0; j < bwt->sym_cnt; j++) bwt->occ[word++] = occ_abs[j];
+            interval = 0;
+         }
+      }
+      // Shift words.
+      for (int j = 0; j < bwt->sym_cnt; j++) occ_tmp[j] <<= 1;
+   }
+   // Shift last word.
+   if (bwt->txt_length % word_size) {
+      interval++;
+      for (int j = 0; j < bwt->sym_cnt; j++)
+         bwt->occ[word++] = occ_tmp[j] << (word_size - 1 - (bwt->txt_length % word_size));
+   }
+   // Add last mark.
+   if (interval > 0) {
+      // Fill the last interval with 0.
+      for (int i = interval; i < mark_intv; i++)
+         for (int j = 0; j < bwt->sym_cnt; j++) bwt->occ[word++] = 0;
+      // Add mark.
+      for (int j = 0; j < bwt->sym_cnt; j++) bwt->occ[word++] = occ_abs[j];
+   }
+   // Set occ size.
+   bwt->occ_length = word;
+
+   // Free buffers.
+   free(occ_tmp);
+   free(occ_abs);
+
+   // C array.
+
+   // Count the wildcards before 'A'.
+   bwt->c[0] = txt_wildcard_count(txt);
+
+   // C is the cumulative sum of symbol counts.
+   uint64_t * sym_count = bwt->occ + bwt->occ_length - bwt->sym_cnt;
+
+   for (int j = 1; j <= bwt->sym_cnt; j++) {
+      bwt->c[j] = bwt->c[j-1] + sym_count[j-1];
+   }
+
+   return bwt;
+}
 
 
 // Private function source.
@@ -389,45 +516,45 @@ get_occ_all
 
    // Depth 0 pointer, return full span.
    if (ptr == -1) {
-      for (int j = 0; j < bwt->n_symbols; j++) occ[j] = bwt->occ[j];
+      for (int j = 0; j < bwt->sym_cnt; j++) occ[j] = bwt->occ[j];
       return 0;
    }
 
    // Compute word, bit and absolute marker positions.
    int64_t wrdnum = ptr/bwt->occ_word_size;
-   int64_t wrdptr = (wrdnum + wrdnum/bwt->occ_mark_int + 1) * bwt->n_symbols;
-   int64_t mrkptr = (((wrdnum + bwt->occ_mark_int/2)/bwt->occ_mark_int) * (bwt->occ_mark_int+1)) * bwt->n_symbols;
+   int64_t wrdptr = (wrdnum + wrdnum/bwt->occ_mark_intv + 1) * bwt->sym_cnt;
+   int64_t mrkptr = (((wrdnum + bwt->occ_mark_intv/2)/bwt->occ_mark_intv) * (bwt->occ_mark_intv+1)) * bwt->sym_cnt;
    int64_t bit    = ptr % bwt->occ_word_size;
 
-   uint64_t * offset = calloc(bwt->n_symbols, sizeof(uint64_t));
+   uint64_t * offset = calloc(bwt->sym_cnt, sizeof(uint64_t));
    if (offset == NULL) {
       return 1;
    }
 
    if (wrdptr > mrkptr) {
       // Sum bit offsets.
-      uint64_t i = mrkptr + bwt->n_symbols;
+      uint64_t i = mrkptr + bwt->sym_cnt;
       while (i < wrdptr) 
-         for (int j = 0; j < bwt->n_symbols; j++)
+         for (int j = 0; j < bwt->sym_cnt; j++)
             offset[j] += __builtin_popcountl(bwt->occ[i++]);
       // Sum partial word.
-      for (int j = 0; j < bwt->n_symbols; j++)
+      for (int j = 0; j < bwt->sym_cnt; j++)
          offset[j] += __builtin_popcountl(bwt->occ[wrdptr++] >> (bwt->occ_word_size - 1 - bit));
       // Return sum.
-      for (int j = 0; j < bwt->n_symbols; j++)
+      for (int j = 0; j < bwt->sym_cnt; j++)
          occ[j] = bwt->occ[mrkptr++] + offset[j];
    } else {
       // Sum partial word.
       if (bit < bwt->occ_word_size - 1)
-         for (int j = 0; j < bwt->n_symbols; j++)
+         for (int j = 0; j < bwt->sym_cnt; j++)
             offset[j] += __builtin_popcountl(bwt->occ[wrdptr++] << (bit+1));
-      else wrdptr += bwt->n_symbols;
+      else wrdptr += bwt->sym_cnt;
       // Sum bit offsets.
       while (wrdptr < mrkptr)
-         for (int j = 0; j < bwt->n_symbols; j++)
+         for (int j = 0; j < bwt->sym_cnt; j++)
             offset[j] += __builtin_popcountl(bwt->occ[wrdptr++]);
       // Return subtraction.
-      for (int j = 0; j < bwt->n_symbols; j++)
+      for (int j = 0; j < bwt->sym_cnt; j++)
          occ[j] = bwt->occ[mrkptr++] - offset[j];
    }
 
@@ -449,22 +576,22 @@ get_occ
    if (bwt == NULL)
       return -1;
    
-   if (sym < 0 || sym >= bwt->n_symbols)
+   if (sym < 0 || sym >= bwt->sym_cnt)
       return -1;
 
    // Depth 0 pointer, return full span.
    if (ptr == -1) return bwt->occ[sym];
    // Compute word, bit and absolute marker positions.
    int64_t wrdnum = ptr / bwt->occ_word_size;
-   int64_t wrdptr = (wrdnum + wrdnum/bwt->occ_mark_int + 1) * bwt->n_symbols + sym;
-   int64_t mrkptr = (((wrdnum + bwt->occ_mark_int/2)/bwt->occ_mark_int) * (bwt->occ_mark_int+1))*bwt->n_symbols + sym;
+   int64_t wrdptr = (wrdnum + wrdnum/bwt->occ_mark_intv + 1) * bwt->sym_cnt + sym;
+   int64_t mrkptr = (((wrdnum + bwt->occ_mark_intv/2)/bwt->occ_mark_intv) * (bwt->occ_mark_intv+1))*bwt->sym_cnt + sym;
    int64_t bit    = ptr % bwt->occ_word_size;
 
    uint64_t occ = bwt->occ[mrkptr];
    if (wrdptr > mrkptr) {
       int64_t  offset = 0;
       // Sum bit offsets.
-      for (uint64_t i = mrkptr + bwt->n_symbols; i < wrdptr; i+= bwt->n_symbols)
+      for (uint64_t i = mrkptr + bwt->sym_cnt; i < wrdptr; i+= bwt->sym_cnt)
             offset += __builtin_popcountl(bwt->occ[i]);
       // Sum partial word.
       offset += __builtin_popcountl(bwt->occ[wrdptr] >> (bwt->occ_word_size - 1 - bit));
@@ -476,7 +603,7 @@ get_occ
       if (bit < bwt->occ_word_size - 1)
          offset += __builtin_popcountl(bwt->occ[wrdptr] << (bit+1));
       // Sum bit offsets.
-      for (uint64_t i = wrdptr + bwt->n_symbols; i < mrkptr; i+= bwt->n_symbols)
+      for (uint64_t i = wrdptr + bwt->sym_cnt; i < mrkptr; i+= bwt->sym_cnt)
          offset += __builtin_popcountl(bwt->occ[i]);
       // Return subtraction.
       occ -= offset;
