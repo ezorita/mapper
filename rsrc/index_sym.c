@@ -21,7 +21,8 @@ sym_new
 ** Creates a new symbol alphabet.
 **
 **  alphabet:
-**    must be an array of strings terminated with a NULL pointer. 
+**    must be an array of strings terminated with a NULL pointer.
+**    Alphabets must have at least 2 different symbols.
 **    Each position of the array points to a string and represents a different symbol.
 **    The string contains the valid characters that represent each symbol.
 **    The canonical representation of each symbol is the first character of the string.
@@ -78,22 +79,35 @@ sym_new
    if (sym_default >= sym_count)
       return NULL;
 
+   // Check symbol consistency.
+   uint8_t * used = calloc(SYM_TABLE_SIZE, 1);
+   for (int i = 0; i < sym_count; i++) {
+      int j = 0;
+      while (alphabet[i][j] != '\0') {
+         if (used[(uint8_t)alphabet[i][j]]) {
+            free(used);
+            return NULL;
+         }
+         used[(uint8_t)alphabet[i][j++]] = 1;
+      }
+   }
+   free(used);
+
    // Alloc sym.
    sym_t * sym = malloc(sizeof(sym_t));
    if (sym == NULL)
       return NULL;
-   // Set symbol count.
-   sym->sym_count = sym_count;
+   
+   // Initialize sym_t.
+   *sym = (sym_t){sym_count, NULL, NULL, NULL};
 
    // (Re)alloc canonical symbol array.
-   if (sym->sym_canon == NULL) {
-      sym->sym_canon = malloc(sym_count+1);
-   } else {
-      sym->sym_canon = realloc(sym->sym_canon, sym_count+1);
-   }
+   sym->sym_canon = malloc(sym_count+1);
    
-   if (sym->sym_canon == NULL)
+   if (sym->sym_canon == NULL) {
+      sym_free(sym);
       return NULL;
+   }
 
    // Fill canonicals (The first character representing each symbol).
    for (int i = 0; i < sym_count; i++) {
@@ -102,8 +116,11 @@ sym_new
    sym->sym_canon[sym->sym_count] = 0;
 
    // Fill sym table.
+   sym->sym_table = malloc(SYM_TABLE_SIZE);
+
    if (sym->sym_table == NULL) {
-      sym->sym_table = malloc(SYM_TABLE_SIZE);
+      sym_free(sym);
+      return NULL;
    }
 
    // Fill all characters with default symbol.
@@ -115,24 +132,18 @@ sym_new
       while (alphabet[i][j] != '\0') sym->sym_table[(uint8_t)alphabet[i][j++]] = i;
    }
 
-   // (Re)alloc complement table.
-   if (sym->com_table == NULL) {
-      sym->com_table = malloc(sym_count + 1);
-   } else {
-      sym->com_table = realloc(sym->com_table, sym_count + 1);
-   }
+   // Alloc complements table.
+   sym->com_table = malloc(sym_count + 1);
 
-   if (sym->com_table == NULL)
+   if (sym->com_table == NULL) {
+      sym_free(sym);
       return NULL;
+   }
    
-   // Set complement, identity if not set.
-   if (complement == NULL) {
-      for (int i = 0; i < sym_count; i++) {
-         sym->com_table[i] = i;
-      }
-   } else {
-      if (sym_set_complement(complement, sym))
-         return NULL;
+   // Set complements, identity if not set.
+   if (sym_set_complement(complement, sym)) {
+      sym_free(sym);
+      return NULL;
    }
 
    return sym;
@@ -182,11 +193,19 @@ sym_set_complement
 */
 {
    // Check arguments.
-   if (sym == NULL || complement == NULL)
+   if (sym == NULL)
       return -1;
 
    if (sym->com_table == NULL)
       return -1;
+
+   // Set identity base.
+   for (int i = 0; i < sym->sym_count; i++) {
+      sym->com_table[i] = i;
+   }
+   
+   if (complement == NULL)
+      return 0;
 
    // Check all relationships before applying them.
    int i = 0;
@@ -274,4 +293,19 @@ sym_is_canonical
          return 1;
    
    return 0;
+}
+
+
+int
+sym_count
+(
+  sym_t * sym
+)
+{
+   // Check arguments.
+   if (sym == NULL)
+      return 0;
+   
+   // Return symbol count.
+   return sym->sym_count;
 }

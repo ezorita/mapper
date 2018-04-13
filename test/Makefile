@@ -2,12 +2,12 @@ vpath %.c lib
 vpath %.h lib
 
 P= runtests
-SOURCE_DIR= ../src
+SOURCE_DIR= ../rsrc
 HEADER_DIR= $(SOURCE_DIR)
 
-OBJECTS= test_indexbuild.o libunittest.so
-SOURCE= indexbuild.c index.c divsufsort.c bwtquery.c annotate.c blocksearch.c
-HEADER= indexbuild.h index.h divsufsort.h bwtquery.h annotate.h blocksearch.h definitions.h
+OBJECTS= test_index_sym.o libunittest.so
+SOURCE= index_sym.c
+HEADER= index_sym.h
 INCLUDE= lib $(SOURCE_DIR) $(HEADER_DIR)
 
 CC= gcc

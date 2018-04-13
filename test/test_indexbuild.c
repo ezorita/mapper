@@ -329,7 +329,7 @@ test_case_6
 */
 
 // Define test cases to be run (for export).
-const test_case_t test_cases_from_file_1[] = {
+const test_case_t test_cases_from_file_2[] = {
    {"indexbuild/compute_sa",  test_compute_sa},
    {"indexbuild/compute_occ", test_compute_occ},
    {"indexbuild/compute_c",   test_compute_c},

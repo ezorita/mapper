@@ -23,5 +23,8 @@ uint8_t    sym_complement     (uint8_t s, sym_t * sym);
 uint8_t    sym_index          (char c, sym_t * sym);
 int        sym_is_canonical   (char c, sym_t * sym);
 
+// Helper functions.
+int        sym_count          (sym_t * sym);
+
 
 #endif
