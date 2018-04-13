@@ -226,6 +226,24 @@ sym_character
 }
 
 uint8_t
+sym_complement
+(
+  uint8_t   s,
+  sym_t   * sym
+)
+{
+   // Check arguments.
+   if (sym == NULL)
+      return -1;
+
+   if (s >= sym->sym_count)
+      return -1;
+
+   // Return symbol complement.
+   return sym->com_table[s];
+}
+
+uint8_t
 sym_index
 (
   char     c,
