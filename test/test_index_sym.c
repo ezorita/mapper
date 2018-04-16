@@ -526,6 +526,195 @@ test_sym_count
    sym_free(sym);
 }
 
+void
+test_sym_file
+(void)
+{
+   char * alph0[] = {"Aa","Bb","Cc","Dd",NULL};
+   char * alph1[] = {"k", "Jm", "Ti", "jCd", "Nn", NULL};
+   char * comp00[] = {"AB","CD",NULL};
+   char * comp10[] = {"kT","Jj","jk","TJ",NULL};
+
+   sym_t * sym_o, * sym_i;
+   sym_o = sym_new(alph0, NULL, 0);
+   test_assert_critical(sym_o != NULL);
+   test_assert(sym_count(sym_o) == 4);
+   test_assert(sym_character(0, sym_o) == 'A');
+   test_assert(sym_character(1, sym_o) == 'B');
+   test_assert(sym_character(2, sym_o) == 'C');
+   test_assert(sym_character(3, sym_o) == 'D');
+   test_assert(sym_character(4, sym_o) == -1);
+   test_assert(sym_index('A', sym_o) == 0);
+   test_assert(sym_index('a', sym_o) == 0);
+   test_assert(sym_index('B', sym_o) == 1);
+   test_assert(sym_index('b', sym_o) == 1);
+   test_assert(sym_index('C', sym_o) == 2);
+   test_assert(sym_index('c', sym_o) == 2);
+   test_assert(sym_index('D', sym_o) == 3);
+   test_assert(sym_index('d', sym_o) == 3);
+   test_assert(sym_index('E', sym_o) == 0);
+   test_assert(sym_index('e', sym_o) == 0);
+   test_assert(sym_index('%', sym_o) == 0);
+   test_assert(sym_index('9', sym_o) == 0);
+   test_assert(sym_complement(0, sym_o) == 0);
+   test_assert(sym_complement(1, sym_o) == 1);
+   test_assert(sym_complement(2, sym_o) == 2);
+   test_assert(sym_complement(3, sym_o) == 3);
+
+
+   test_assert(sym_file_write(NULL, sym_o) == -1);
+   test_assert(sym_file_write("test00.sym", NULL) == -1);
+   test_assert(sym_file_read("test-1.sym") == NULL);
+   test_assert(sym_file_read(NULL) == NULL);
+
+   test_assert_critical(sym_file_write("test00.sym", sym_o) == 0);
+   sym_free(sym_o);
+
+   sym_i = sym_file_read("test00.sym");
+   test_assert_critical(sym_i != NULL);
+   test_assert(sym_count(sym_i) == 4);
+   test_assert(sym_character(0, sym_i) == 'A');
+   test_assert(sym_character(1, sym_i) == 'B');
+   test_assert(sym_character(2, sym_i) == 'C');
+   test_assert(sym_character(3, sym_i) == 'D');
+   test_assert(sym_character(4, sym_i) == -1);
+   test_assert(sym_index('A', sym_i) == 0);
+   test_assert(sym_index('a', sym_i) == 0);
+   test_assert(sym_index('B', sym_i) == 1);
+   test_assert(sym_index('b', sym_i) == 1);
+   test_assert(sym_index('C', sym_i) == 2);
+   test_assert(sym_index('c', sym_i) == 2);
+   test_assert(sym_index('D', sym_i) == 3);
+   test_assert(sym_index('d', sym_i) == 3);
+   test_assert(sym_index('E', sym_i) == 0);
+   test_assert(sym_index('e', sym_i) == 0);
+   test_assert(sym_index('%', sym_i) == 0);
+   test_assert(sym_index('9', sym_i) == 0);
+   test_assert(sym_complement(0, sym_i) == 0);
+   test_assert(sym_complement(1, sym_i) == 1);
+   test_assert(sym_complement(2, sym_i) == 2);
+   test_assert(sym_complement(3, sym_i) == 3);
+   sym_free(sym_i);
+
+
+   sym_o = sym_new(alph0, comp00, 3);
+   test_assert_critical(sym_o != NULL);
+   test_assert(sym_count(sym_o) == 4);
+   test_assert(sym_character(0, sym_o) == 'A');
+   test_assert(sym_character(1, sym_o) == 'B');
+   test_assert(sym_character(2, sym_o) == 'C');
+   test_assert(sym_character(3, sym_o) == 'D');
+   test_assert(sym_character(4, sym_o) == -1);
+   test_assert(sym_index('A', sym_o) == 0);
+   test_assert(sym_index('a', sym_o) == 0);
+   test_assert(sym_index('B', sym_o) == 1);
+   test_assert(sym_index('b', sym_o) == 1);
+   test_assert(sym_index('C', sym_o) == 2);
+   test_assert(sym_index('c', sym_o) == 2);
+   test_assert(sym_index('D', sym_o) == 3);
+   test_assert(sym_index('d', sym_o) == 3);
+   test_assert(sym_index('E', sym_o) == 3);
+   test_assert(sym_index('e', sym_o) == 3);
+   test_assert(sym_index('%', sym_o) == 3);
+   test_assert(sym_index('9', sym_o) == 3);
+   test_assert(sym_complement(0, sym_o) == 1);
+   test_assert(sym_complement(1, sym_o) == 1);
+   test_assert(sym_complement(2, sym_o) == 3);
+   test_assert(sym_complement(3, sym_o) == 3);
+
+   test_assert_critical(sym_file_write("test01.sym", sym_o) == 0);
+   sym_free(sym_o);
+
+   sym_i = sym_file_read("test01.sym");
+   test_assert_critical(sym_i != NULL);
+   test_assert(sym_count(sym_i) == 4);
+   test_assert(sym_character(0, sym_i) == 'A');
+   test_assert(sym_character(1, sym_i) == 'B');
+   test_assert(sym_character(2, sym_i) == 'C');
+   test_assert(sym_character(3, sym_i) == 'D');
+   test_assert(sym_character(4, sym_i) == -1);
+   test_assert(sym_index('A', sym_i) == 0);
+   test_assert(sym_index('a', sym_i) == 0);
+   test_assert(sym_index('B', sym_i) == 1);
+   test_assert(sym_index('b', sym_i) == 1);
+   test_assert(sym_index('C', sym_i) == 2);
+   test_assert(sym_index('c', sym_i) == 2);
+   test_assert(sym_index('D', sym_i) == 3);
+   test_assert(sym_index('d', sym_i) == 3);
+   test_assert(sym_index('E', sym_i) == 3);
+   test_assert(sym_index('e', sym_i) == 3);
+   test_assert(sym_index('%', sym_i) == 3);
+   test_assert(sym_index('9', sym_i) == 3);
+   test_assert(sym_complement(0, sym_i) == 1);
+   test_assert(sym_complement(1, sym_i) == 1);
+   test_assert(sym_complement(2, sym_i) == 3);
+   test_assert(sym_complement(3, sym_i) == 3);
+   sym_free(sym_i);
+
+
+   sym_o = sym_new(alph1, comp10, 4);
+   test_assert_critical(sym_o != NULL);
+   test_assert(sym_count(sym_o) == 5);
+   test_assert(sym_character(0, sym_o) == 'k');
+   test_assert(sym_character(1, sym_o) == 'J');
+   test_assert(sym_character(2, sym_o) == 'T');
+   test_assert(sym_character(3, sym_o) == 'j');
+   test_assert(sym_character(4, sym_o) == 'N');
+   test_assert(sym_character(5, sym_o) == -1);
+   test_assert(sym_index('k', sym_o) == 0);
+   test_assert(sym_index('J', sym_o) == 1);
+   test_assert(sym_index('m', sym_o) == 1);
+   test_assert(sym_index('T', sym_o) == 2);
+   test_assert(sym_index('i', sym_o) == 2);
+   test_assert(sym_index('j', sym_o) == 3);
+   test_assert(sym_index('C', sym_o) == 3);
+   test_assert(sym_index('d', sym_o) == 3);
+   test_assert(sym_index('N', sym_o) == 4);
+   test_assert(sym_index('n', sym_o) == 4);
+   test_assert(sym_index('%', sym_o) == 4);
+   test_assert(sym_index('9', sym_o) == 4);
+   test_assert(sym_index('^', sym_o) == 4);
+   test_assert(sym_index('Q', sym_o) == 4);
+   test_assert(sym_complement(0, sym_o) == 2);
+   test_assert(sym_complement(1, sym_o) == 3);
+   test_assert(sym_complement(2, sym_o) == 1);
+   test_assert(sym_complement(3, sym_o) == 0);
+   test_assert(sym_complement(4, sym_o) == 4);
+
+   test_assert_critical(sym_file_write("test10.sym", sym_o) == 0);
+   sym_free(sym_o);
+
+   sym_i = sym_file_read("test10.sym");
+   test_assert_critical(sym_i != NULL);
+   test_assert(sym_count(sym_i) == 5);
+   test_assert(sym_character(0, sym_i) == 'k');
+   test_assert(sym_character(1, sym_i) == 'J');
+   test_assert(sym_character(2, sym_i) == 'T');
+   test_assert(sym_character(3, sym_i) == 'j');
+   test_assert(sym_character(4, sym_i) == 'N');
+   test_assert(sym_character(5, sym_i) == -1);
+   test_assert(sym_index('k', sym_i) == 0);
+   test_assert(sym_index('J', sym_i) == 1);
+   test_assert(sym_index('m', sym_i) == 1);
+   test_assert(sym_index('T', sym_i) == 2);
+   test_assert(sym_index('i', sym_i) == 2);
+   test_assert(sym_index('j', sym_i) == 3);
+   test_assert(sym_index('C', sym_i) == 3);
+   test_assert(sym_index('d', sym_i) == 3);
+   test_assert(sym_index('N', sym_i) == 4);
+   test_assert(sym_index('n', sym_i) == 4);
+   test_assert(sym_index('%', sym_i) == 4);
+   test_assert(sym_index('9', sym_i) == 4);
+   test_assert(sym_index('^', sym_i) == 4);
+   test_assert(sym_index('Q', sym_i) == 4);
+   test_assert(sym_complement(0, sym_i) == 2);
+   test_assert(sym_complement(1, sym_i) == 3);
+   test_assert(sym_complement(2, sym_i) == 1);
+   test_assert(sym_complement(3, sym_i) == 0);
+   test_assert(sym_complement(4, sym_i) == 4);
+   sym_free(sym_i);
+}
+
 // Define test cases to be run (for export).
 const test_case_t test_cases_from_file_1[] = {
    {"index_sym/sym_new",             test_sym_new},
@@ -535,5 +724,6 @@ const test_case_t test_cases_from_file_1[] = {
    {"index_sym/sym_index",           test_sym_index},
    {"index_sym/sym_is_canonical",    test_sym_is_canonical},
    {"index_sym/sym_count",           test_sym_count},
+   {"index_sym/sym_file",            test_sym_file},
    {NULL, NULL}, // Sentinel. //
 };
