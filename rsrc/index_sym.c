@@ -312,3 +312,168 @@ sym_count
    // Return symbol count.
    return sym->sym_count;
 }
+
+
+// I/O functions
+/* File structure:
+** uint64_t x 1			magic_no  
+** uint8_t  x 1			sym_count
+** char     x sym_count+1	sym_canonicals
+** uint8_t  x 256		sym_table
+** uint8_t  x sym_count+1	com_table
+*/
+
+int
+sym_file_write
+(
+  char   * filename,
+  sym_t  * sym
+)
+{
+   // Check arguments.
+   if (filename == NULL || sym == NULL)
+      return -1;
+   
+   // Open file.
+   int fd = creat(filename, 0644);
+   if (fd == -1)
+      return -1;
+
+   // Write data.
+   ssize_t  e_cnt = 0;
+   ssize_t  b_cnt = 0;
+   uint64_t magic = SYM_FILE_MAGICNO;
+
+   // Write magic.
+   if (write(fd, &magic, sizeof(uint64_t)) == -1)
+      goto close_and_error;
+
+   // Write sym_count.
+   if (write(fd, (uint8_t *)&(sym->sym_count), sizeof(uint8_t)) == -1)
+      goto close_and_error;
+
+   // Write sym_canon array.
+   e_cnt = 0;
+   do {
+      b_cnt  = write(fd, (char *)sym->sym_canon + e_cnt, (sym->sym_count + 1 - e_cnt)*sizeof(char));
+      if (b_cnt == -1)
+         goto close_and_error;
+      e_cnt += b_cnt / sizeof(char);
+   } while (e_cnt < sym->sym_count + 1);
+
+   // Write sym_table array.
+   e_cnt = 0;
+   do {
+      b_cnt  = write(fd, (uint8_t *)sym->sym_table + e_cnt, (SYM_TABLE_SIZE - e_cnt)*sizeof(uint8_t));
+      if (b_cnt == -1)
+         goto close_and_error;
+      e_cnt += b_cnt / sizeof(uint8_t);
+   } while (e_cnt < SYM_TABLE_SIZE);
+
+   // Write com_table array.
+   e_cnt = 0;
+   do {
+      b_cnt  = write(fd, (uint8_t *)sym->com_table + e_cnt, (sym->sym_count + 1 - e_cnt)*sizeof(uint8_t));
+      if (b_cnt == -1)
+         goto close_and_error;
+      e_cnt += b_cnt / sizeof(uint8_t);
+   } while (e_cnt < sym->sym_count + 1);
+
+
+   close(fd);
+   return 0;
+
+ close_and_error:
+   close(fd);
+   return -1;
+}
+
+sym_t * 
+sym_file_read
+(
+  char * filename
+)
+{
+   // Check arguments.
+   if (filename == NULL)
+      return NULL;
+
+   // Open file.
+   int fd = open(filename, O_RDONLY);
+   if (fd == -1)
+      return NULL;
+
+   // Alloc memory.
+   sym_t * sym = malloc(sizeof(sym_t));
+   if (sym == NULL)
+      return NULL;
+   // Set NULL pointers.
+   sym->sym_canon = NULL;
+   sym->sym_table = sym->com_table = NULL;
+   
+   // Read file.
+   uint64_t magic;
+   ssize_t b_cnt;
+   ssize_t e_cnt;
+
+   if (read(fd, &magic, sizeof(uint64_t)) < sizeof(uint64_t))
+      goto free_and_return;
+   if (magic != SYM_FILE_MAGICNO)
+      goto free_and_return;
+
+   if (read(fd, &(sym->sym_count), sizeof(uint8_t)) < sizeof(uint8_t))
+      goto free_and_return;
+   if (sym->sym_count < 2)
+      goto free_and_return;
+
+   // Alloc canonical symbol array.
+   sym->sym_canon = malloc((sym->sym_count + 1) * sizeof(uint8_t));
+   if (sym->sym_canon == NULL)
+      goto free_and_return;
+
+   // Read symbol canonicals.
+   e_cnt = 0;
+   do {
+      b_cnt = read(fd, (char *)sym->sym_canon + e_cnt, (sym->sym_count + 1 - e_cnt) * sizeof(char));
+      if (b_cnt == -1)
+         goto free_and_return;
+      e_cnt += b_cnt / sizeof(uint8_t);
+   } while (e_cnt < sym->sym_count + 1);
+
+   // Alloc symbol table.
+   sym->sym_table = malloc(SYM_TABLE_SIZE * sizeof(uint8_t));
+   if (sym->sym_table == NULL)
+      goto free_and_return;
+
+   // Read symbol table.
+   e_cnt = 0;
+   do {
+      b_cnt = read(fd, (uint8_t *)sym->sym_table + e_cnt, (SYM_TABLE_SIZE - e_cnt) * sizeof(uint8_t));
+      if (b_cnt == -1)
+         goto free_and_return;
+      e_cnt += b_cnt / sizeof(uint8_t);
+   } while (e_cnt < SYM_TABLE_SIZE);
+
+   // Alloc symbol complement table.
+   sym->com_table = malloc((sym->sym_count + 1) * sizeof(uint8_t));
+   if (sym->com_table == NULL)
+      goto free_and_return;
+
+   // Read symbol table.
+   e_cnt = 0;
+   do {
+      b_cnt = read(fd, (uint8_t *)sym->com_table + e_cnt, (sym->sym_count + 1 - e_cnt) * sizeof(uint8_t));
+      if (b_cnt == -1)
+         goto free_and_return;
+      e_cnt += b_cnt / sizeof(uint8_t);
+   } while (e_cnt < sym->sym_count + 1);
+
+   close(fd);
+   return sym;
+
+ free_and_return:
+   close(fd);
+   sym_free(sym);
+   return NULL;
+}
+

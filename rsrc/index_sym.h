@@ -1,9 +1,20 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 
 #ifndef _INDEX_SYM_H
 #define _INDEX_SYM_H
+
+/* Magic number:
+** bits 32-63 (mapper): 0x0fcb0fcb
+** bits 16-31 (index_sym): 0x0001
+** bits 00-15 (file type/version): 0x001
+*/ 
+#define SYM_FILE_MAGICNO      0x0fcb0fcb00010001
 
 #define SYM_TABLE_SIZE        256
 #define SYM_MAX_ALPHABET_SIZE 255
@@ -25,6 +36,11 @@ int        sym_is_canonical   (char c, sym_t * sym);
 
 // Helper functions.
 int        sym_count          (sym_t * sym);
+
+// I/O functions.
+int        sym_file_write     (char * filename, sym_t * sym);
+sym_t    * sym_file_read      (char * filename);
+
 
 
 #endif
