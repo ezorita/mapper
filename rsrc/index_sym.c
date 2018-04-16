@@ -179,6 +179,9 @@ sym_set_complement
 **  complement:
 **    An array of strings which defines the complement relationships between symbols,
 **    terminated with a NULL pointer.
+**    If complement is set to NULL, an identity relationship will be used, i.e. each 
+**    symbol is its own complement.
+**    Relationships of symbols not defined in complement are set to indentity.
 **    Each string must contain two characters representing the complementary relationship.
 **    Only canonical representations of symbols may be used.
 **
@@ -237,7 +240,7 @@ sym_character
    if (sym == NULL)
       return -1;
 
-   if (s >= sym->sym_count)
+   if (sym->sym_canon == NULL || s >= sym->sym_count)
       return -1;
 
    // Return symbol representation.
@@ -255,7 +258,7 @@ sym_complement
    if (sym == NULL)
       return -1;
 
-   if (s >= sym->sym_count)
+   if (sym->com_table == NULL || s >= sym->sym_count)
       return -1;
 
    // Return symbol complement.
