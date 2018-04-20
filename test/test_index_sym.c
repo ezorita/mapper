@@ -1,10 +1,6 @@
 #include "unittest.h"
 #include "index_sym.h"
 
-// EDUARD ELS TESTS NOMES HAURIEN DE TESTEJAR LA INTERFICIE!!!!
-// PENSA QUE SI CANVIES ALGUNES MINUCIES INTERNES DELS TEST HAS DE CANVIAR-LOS TOTS.
-// LA IDEA ES QUE EL CONTINGUT SIGUI INDIFERENT, PERO QUE ELS RESULTATS SEMPRE SIGUIN ELS ESPERATS! COMPRENDE?
-
 void
 test_sym_new
 (void)
@@ -336,7 +332,7 @@ test_sym_index
    char * alph0[] = {"Aa","Bb","Cc","Dd","Ee",NULL};
    char * alph1[] = {"aA","Bb","cC","Dd","eE",NULL};
 
-   test_assert(sym_index(0, NULL) == (uint8_t)-1);
+   test_assert(sym_index(0, NULL) == -1);
    
    sym = sym_new(alph0, NULL, 0);
    test_assert_critical(sym != NULL);
@@ -447,8 +443,8 @@ test_sym_complement
    test_assert(sym_complement(2, sym) == 2);
    test_assert(sym_complement(3, sym) == 3);
 
-   test_assert(sym_complement(4, sym) == (uint8_t)-1);
-   test_assert(sym_complement(-1, sym) == (uint8_t)-1);
+   test_assert(sym_complement(4, sym) == -1);
+   test_assert(sym_complement(-1, sym) == -1);
 
    test_assert(sym_set_complement(comp00, sym) == 0);
    test_assert(sym_complement(0, sym) == 1);
@@ -456,8 +452,8 @@ test_sym_complement
    test_assert(sym_complement(2, sym) == 3);
    test_assert(sym_complement(3, sym) == 3);
 
-   test_assert(sym_complement(4, sym) == (uint8_t)-1);
-   test_assert(sym_complement(-1, sym) == (uint8_t)-1);
+   test_assert(sym_complement(4, sym) == -1);
+   test_assert(sym_complement(-1, sym) == -1);
 
    test_assert(sym_set_complement(comp01, sym) == 0);
    test_assert(sym_complement(0, sym) == 2);
@@ -465,8 +461,8 @@ test_sym_complement
    test_assert(sym_complement(2, sym) == 2);
    test_assert(sym_complement(3, sym) == 3);
 
-   test_assert(sym_complement(4, sym) == (uint8_t)-1);
-   test_assert(sym_complement(-1, sym) == (uint8_t)-1);
+   test_assert(sym_complement(4, sym) == -1);
+   test_assert(sym_complement(-1, sym) == -1);
 
    test_assert(sym_set_complement(comp02, sym) == 0);
    test_assert(sym_complement(0, sym) == 1);
@@ -474,8 +470,8 @@ test_sym_complement
    test_assert(sym_complement(2, sym) == 3);
    test_assert(sym_complement(3, sym) == 2);
 
-   test_assert(sym_complement(4, sym) == (uint8_t)-1);
-   test_assert(sym_complement(-1, sym) == (uint8_t)-1);
+   test_assert(sym_complement(4, sym) == -1);
+   test_assert(sym_complement(-1, sym) == -1);
 
    test_assert(sym_set_complement(comp03, sym) == 0);
    test_assert(sym_complement(0, sym) == 0);
@@ -483,8 +479,8 @@ test_sym_complement
    test_assert(sym_complement(2, sym) == 2);
    test_assert(sym_complement(3, sym) == 3);
 
-   test_assert(sym_complement(4, sym) == (uint8_t)-1);
-   test_assert(sym_complement(-1, sym) == (uint8_t)-1);
+   test_assert(sym_complement(4, sym) == -1);
+   test_assert(sym_complement(-1, sym) == -1);
 
    sym_free(sym);
 }
@@ -716,7 +712,7 @@ test_sym_file
 }
 
 // Define test cases to be run (for export).
-const test_case_t test_cases_from_file_1[] = {
+const test_case_t test_cases_index_sym[] = {
    {"index_sym/sym_new",             test_sym_new},
    {"index_sym/sym_set_complement",  test_sym_set_complement},
    {"index_sym/sym_character",       test_sym_character},
