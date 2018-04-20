@@ -9,6 +9,13 @@
 #ifndef _INDEX_BWT_H
 #define _INDEX_BWT_H
 
+/* Magic number:
+** bits 32-63 (mapper): 0x0fcb0fcb
+** bits 16-31 (index_txt): 0x0003
+** bits 00-15 (file type/version): 0x001
+*/ 
+#define BWT_FILE_MAGICNO      0x0fcb0fcb00030001
+
 // Parameter macros.
 #define BWT_QUERY_PREFIX 0
 #define BWT_QUERY_SUFFIX 1
@@ -42,6 +49,13 @@ int            bwt_prefix_all  (bwtquery_t * q, bwtquery_t ** qv);
 // bwt build functions.
 bwt_t       *  bwt_build       (txt_t * txt, sar_t * sar);
 bwt_t       *  bwt_build_opt   (txt_t * txt, sar_t * sar, uint64_t mark_intv, uint64_t word_size, uint64_t mark_bits);
+void           bwt_free        (bwt_t * bwt);
 
+// Helper functions.
+txt_t       *  bwt_get_text    (bwt_t * bwt);
+
+// I/O functions.
+int            bwt_file_write  (char * filename, bwt_t * bwt);
+bwt_t       *  bwt_file_read   (char * filename, txt_t * txt);
 
 #endif
