@@ -247,7 +247,7 @@ sym_character
    return sym->sym_canon[s];
 }
 
-uint8_t
+int32_t
 sym_complement
 (
   uint8_t   s,
@@ -265,7 +265,7 @@ sym_complement
    return sym->com_table[s];
 }
 
-uint8_t
+int32_t
 sym_index
 (
   char     c,
@@ -437,7 +437,7 @@ sym_file_read
       b_cnt = read(fd, (char *)sym->sym_canon + e_cnt, (sym->sym_count + 1 - e_cnt) * sizeof(char));
       if (b_cnt == -1)
          goto free_and_return;
-      e_cnt += b_cnt / sizeof(uint8_t);
+      e_cnt += b_cnt / sizeof(char);
    } while (e_cnt < sym->sym_count + 1);
 
    // Alloc symbol table.
