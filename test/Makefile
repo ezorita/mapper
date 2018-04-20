@@ -22,7 +22,7 @@ $(P): $(OBJECTS) $(SOURCES) $(HEADERS) runtests.c
 	$(CC) $(CFLAGS) runtests.c $(SOURCES) $(OBJECTS) $(LDLIBS) -o $@
 
 clean:
-	rm -f $(P) $(OBJECTS) *.gcda *.gcno *.gcov .inspect.gdb *.sym
+	rm -f $(P) $(OBJECTS) *.gcda *.gcno *.gcov .inspect.gdb *.sym *.txt
 
 libunittest.so: unittest.c
 	$(CC) -fPIC -shared $(CFLAGS) -o libunittest.so lib/unittest.c
