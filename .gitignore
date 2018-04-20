@@ -15,7 +15,10 @@ genomes/*
 old_src/*
 test/*.gc*
 test/.*
+test/test*.sym
+test/test*.txt
 test/runtests
+test/*.so
 *.o
 input/*
 out/*
