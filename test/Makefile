@@ -5,9 +5,9 @@ P= runtests
 SOURCE_DIR= ../rsrc
 HEADER_DIR= $(SOURCE_DIR)
 
-OBJECTS= test_index_sym.o libunittest.so
-SOURCE= index_sym.c
-HEADER= index_sym.h
+OBJECTS= test_index_sym.o test_index_txt.o libunittest.so
+SOURCE= index_sym.c index_txt.c
+HEADER= index_sym.h index_txt.h
 INCLUDE= lib $(SOURCE_DIR) $(HEADER_DIR)
 
 CC= gcc
@@ -22,7 +22,7 @@ $(P): $(OBJECTS) $(SOURCES) $(HEADERS) runtests.c
 	$(CC) $(CFLAGS) runtests.c $(SOURCES) $(OBJECTS) $(LDLIBS) -o $@
 
 clean:
-	rm -f $(P) $(OBJECTS) *.gcda *.gcno *.gcov .inspect.gdb
+	rm -f $(P) $(OBJECTS) *.gcda *.gcno *.gcov .inspect.gdb *.sym
 
 libunittest.so: unittest.c
 	$(CC) -fPIC -shared $(CFLAGS) -o libunittest.so lib/unittest.c
