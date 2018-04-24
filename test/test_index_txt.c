@@ -1,14 +1,11 @@
 #include "unittest.h"
 #include "index_txt.h"
 
-char * adna[] = {"Aa","Cc","Gg","Tt","Nn",NULL};
-char * cdna[] = {"AT","CG","GC","TA",NULL};
-
 void
 test_txt_new
 (void)
 {
-   sym_t * sym = sym_new(adna, cdna, 4);
+   sym_t * sym = sym_new_dna();
    test_assert_critical(sym != NULL);
    
    txt_t * txt;
@@ -47,7 +44,7 @@ void
 test_txt_sym
 (void)
 {
-   sym_t * sym = sym_new(adna, cdna, 4);
+   sym_t * sym = sym_new_dna();
    test_assert_critical(sym != NULL);
    
    txt_t * txt;
@@ -86,7 +83,7 @@ void
 test_txt_sym_range
 (void)
 {
-   sym_t * sym = sym_new(adna, cdna, 4);
+   sym_t * sym = sym_new_dna();
    test_assert_critical(sym != NULL);
    
    txt_t * txt;
@@ -139,7 +136,7 @@ void
 test_txt_append
 (void)
 {
-   sym_t * sym = sym_new(adna, cdna, 4);
+   sym_t * sym = sym_new_dna();
    test_assert_critical(sym != NULL);
    
    txt_t * txt;
@@ -215,7 +212,7 @@ void
 test_txt_append_wildcard
 (void)
 {
-   sym_t * sym = sym_new(adna, cdna, 4);
+   sym_t * sym = sym_new_dna();
    test_assert_critical(sym != NULL);
    
    txt_t * txt;
@@ -257,7 +254,7 @@ void
 test_txt_length
 (void)
 {
-   sym_t * sym = sym_new(adna, cdna, 4);
+   sym_t * sym = sym_new_dna();
    test_assert_critical(sym != NULL);
 
    test_assert(txt_length(NULL) == -1);
@@ -288,7 +285,7 @@ void
 test_txt_wildcard_count
 (void)
 {
-   sym_t * sym = sym_new(adna, cdna, 4);
+   sym_t * sym = sym_new_dna();
    test_assert_critical(sym != NULL);
 
    test_assert(txt_length(NULL) == -1);
@@ -316,7 +313,7 @@ void
 test_txt_get_symbols
 (void)
 {
-   sym_t * sym = sym_new(adna, cdna, 4);
+   sym_t * sym = sym_new_dna();
    test_assert_critical(sym != NULL);
    
    test_assert(txt_get_symbols(NULL) == NULL);
@@ -334,7 +331,7 @@ void
 test_txt_file
 (void)
 {
-   sym_t * sym = sym_new(adna, cdna, 4);
+   sym_t * sym = sym_new_dna();
    test_assert_critical(sym != NULL);
    
    test_assert(txt_get_symbols(NULL) == NULL);
