@@ -10,10 +10,12 @@ main(
    // Import the test cases from linked files. //
    extern test_case_t test_cases_index_sym[];
    extern test_case_t test_cases_index_txt[];
+   extern test_case_t test_cases_index_sar[];
 
    const test_case_t *test_case_list[] = {
       test_cases_index_sym,
       test_cases_index_txt,
+      test_cases_index_sar,
       NULL, // Sentinel. //
    };
 
