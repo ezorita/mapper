@@ -27,6 +27,7 @@ struct sym_t;
 
 // Interface functions.
 sym_t    * sym_new            (char ** alphabet, char ** complement, uint8_t sym_default);
+sym_t    * sym_new_dna        ();
 void       sym_free           (sym_t * sym);
 int        sym_set_complement (char ** complement, sym_t  * sym);
 char       sym_character      (uint8_t s, sym_t * sym);

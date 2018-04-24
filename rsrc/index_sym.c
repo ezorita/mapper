@@ -8,6 +8,10 @@ struct sym_t {
    uint8_t * com_table;
 };
 
+char * SYM_ALPHABET_DNA[] = {"Aa","Cc","Gg","Tt","Nn",NULL};
+char * SYM_COMPLEMENT_DNA[] = {"AT","CG","GC","TA",NULL};
+int    SYM_DEFAULT_DNA = 4;
+
 
 // Interface function sources.
 sym_t *
@@ -148,6 +152,16 @@ sym_new
 
    return sym;
 }
+
+sym_t *
+sym_new_dna
+(
+  void
+)
+{
+   return sym_new(SYM_ALPHABET_DNA,SYM_COMPLEMENT_DNA,SYM_DEFAULT_DNA);
+}
+
 
 void
 sym_free
