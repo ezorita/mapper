@@ -665,9 +665,12 @@ bwt_file_read
 
    // Read C array.
    bwt->c = malloc((sym_cnt+1)*sizeof(uint64_t));
+   if (bwt->c == NULL)
+      goto free_and_return;
+
    e_cnt = 0;
    do {
-      b_cnt = read(fd, (char *)bwt->c + e_cnt, (sym_cnt+1 - e_cnt) * sizeof(uint64_t));
+      b_cnt = read(fd, (uint64_t *)bwt->c + e_cnt, (sym_cnt+1 - e_cnt) * sizeof(uint64_t));
       if (b_cnt == -1)
          goto free_and_return;
       e_cnt += b_cnt / sizeof(uint64_t);
@@ -675,9 +678,12 @@ bwt_file_read
 
    // Read OCC array.
    bwt->occ = malloc((bwt->occ_length)*sizeof(uint64_t));
+   if (bwt->occ == NULL)
+      goto free_and_return;
+
    e_cnt = 0;
    do {
-      b_cnt = read(fd, (char *)bwt->occ + e_cnt, (bwt->occ_length - e_cnt) * sizeof(uint64_t));
+      b_cnt = read(fd, (uint64_t *)bwt->occ + e_cnt, (bwt->occ_length - e_cnt) * sizeof(uint64_t));
       if (b_cnt == -1)
          goto free_and_return;
       e_cnt += b_cnt / sizeof(uint64_t);
