@@ -35,7 +35,7 @@ test_sar_build
    test_assert_critical(sar != NULL);
    test_assert(sar_get(2, sar) == 8);
    test_assert(sar_get_range(0, strlen(seq_1), sa_buf, sar) == 0);
-   test_assert(memcmp(sa_buf, sar_1, strlen(seq_1)) == 0);
+   test_assert(memcmp(sa_buf, sar_1, strlen(seq_1)*sizeof(int64_t)) == 0);
    sar_free(sar);
    txt_free(txt);
 
@@ -51,7 +51,7 @@ test_sar_build
    test_assert_critical(sar != NULL);
    test_assert(sar_get(4,sar) == 7);
    test_assert(sar_get_range(0, strlen(seq_2), sa_buf, sar) == 0);
-   test_assert(memcmp(sa_buf, sar_2, strlen(seq_2)) == 0);
+   test_assert(memcmp(sa_buf, sar_2, strlen(seq_2)*sizeof(int64_t)) == 0);
    sar_free(sar);
    txt_free(txt);
 
@@ -65,7 +65,7 @@ test_sar_build
    test_assert_critical(sar != NULL);
    test_assert(sar_get(6,sar) == 3);
    test_assert(sar_get_range(0, strlen(seq_3), sa_buf, sar) == 0);
-   test_assert(memcmp(sa_buf, sar_3, strlen(seq_3)) == 0);
+   test_assert(memcmp(sa_buf, sar_3, strlen(seq_3)*sizeof(int64_t)) == 0);
    sar_free(sar);
    txt_free(txt);
 
@@ -79,7 +79,7 @@ test_sar_build
    test_assert_critical(sar != NULL);
    test_assert(sar_get(0,sar) == 11);
    test_assert(sar_get_range(0, strlen(seq_4), sa_buf, sar) == 0);
-   test_assert(memcmp(sa_buf, sar_4, strlen(seq_4)) == 0);
+   test_assert(memcmp(sa_buf, sar_4, strlen(seq_4)*sizeof(int64_t)) == 0);
    sar_free(sar);
    txt_free(txt);
 
@@ -96,7 +96,7 @@ test_sar_build
    test_assert_critical(sar != NULL);
    test_assert(sar_get(5,sar) == 3);
    test_assert(sar_get_range(0, strlen(seq_5), sa_buf, sar) == 0);
-   test_assert(memcmp(sa_buf, sar_5, strlen(seq_5)) == 0);
+   test_assert(memcmp(sa_buf, sar_5, strlen(seq_5)*sizeof(int64_t)) == 0);
    sar_free(sar);
    txt_free(txt);
 
@@ -201,7 +201,7 @@ test_sar_get_range
    test_assert(sar_get_range(14, 20, sa_buf, sar) == -1);
    
    test_assert(sar_get_range(0,19,sa_buf,sar) == 0);
-   test_assert(memcmp(sa_buf, ref_sa, 19) == 0);
+   test_assert(memcmp(sa_buf, ref_sa, 19*sizeof(int64_t)) == 0);
    
    sar_free(sar);
    txt_free(txt);
@@ -236,7 +236,7 @@ test_sar_file
    sar = sar_file_read("test00.sar");
    test_assert_critical(sar != NULL);
    test_assert(sar_get_range(0,19,sa_buf,sar) == 0);
-   test_assert(memcmp(sa_buf, ref_sa, 19) == 0);
+   test_assert(memcmp(sa_buf, ref_sa, 19*sizeof(int64_t)) == 0);
 
    sar_free(sar);
    txt_free(txt);
