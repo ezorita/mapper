@@ -44,7 +44,7 @@ bwt_new_query
    // Fill query of depth 0.
    q->fp  = 0;
    q->rp  = 0;
-   q->sz  = bwt->occ_length;
+   q->sz  = txt_length(bwt->txt);
    q->dp  = 0;
    q->bwt = bwt;
 
@@ -191,6 +191,13 @@ bwt_query_all
          return -1;
    }
 
+   // Swap fp/rp for forward extension.
+   if (end == BWT_QUERY_SUFFIX) {
+      int64_t fpt = q->fp;
+      q->fp = q->rp;
+      q->rp = fpt;
+   }
+
    // Alloc temp pointers for each symbol.
    int64_t * occ_sp = malloc(sym_cnt * sizeof(int64_t));
    int64_t * occ_ep = malloc(sym_cnt * sizeof(int64_t));
@@ -223,10 +230,14 @@ bwt_query_all
          *(qv[j]) = (bwtquery_t){fp[j], rp[j], sz[j], q->dp+1};
       }
    } else {
+      // Reverse swap.
+      int64_t fpt = q->fp;
+      q->fp = q->rp;
+      q->rp = fpt;
       // Reverse again forward and backward pointers and reversible symbols.
       for (int j  = 0; j < sym_cnt; j++) {
          int32_t sym_comp = sym_complement(j,sym);
-         *(qv[j]) = (bwtquery_t){rp[sym_comp], fp[sym_comp], sz[sym_comp], q->dp+1};
+         *(qv[j]) = (bwtquery_t){rp[sym_comp], fp[sym_comp], sz[sym_comp], q->dp+1, q->bwt};
       }
    }
 
@@ -380,7 +391,7 @@ bwt_build
   sar_t  * sar
 )
 {
-   return bwt_build_opt(txt, sar, BWT_OCC_MARK_INTV_DEF, BWT_OCC_WORD_SIZE_DEF, BWT_OCC_MARK_BITS_DEF);
+   return bwt_build_opt(txt, sar, BWT_OCC_MARK_INTV_DEF);
 }
 
 
@@ -389,11 +400,12 @@ bwt_build_opt
 (
   txt_t     * txt,
   sar_t     * sar,
-  uint64_t    mark_intv,
-  uint64_t    word_size,
-  uint64_t    mark_bits
+  uint64_t    mark_intv
 )
 {
+   uint64_t word_size = BWT_OCC_WORD_SIZE_DEF;
+   uint64_t mark_bits = mark_intv * word_size;
+
    // Check arguments.
    if (!txt || !sar)
       return NULL;
@@ -536,6 +548,47 @@ bwt_get_text
    
    return bwt->txt;
 }
+
+
+int64_t
+bwt_start
+(
+  bwtquery_t  * q
+)
+{
+   if (q == NULL)
+      return -1;
+   else
+      return q->fp;
+}
+
+
+int64_t
+bwt_size
+(
+  bwtquery_t  * q
+)
+{
+   if (q == NULL)
+      return -1;
+   else
+      return q->sz;
+}
+
+
+int64_t
+bwt_depth
+(
+  bwtquery_t  * q
+)
+{
+   if (q == NULL)
+      return -1;
+   else
+      return q->dp;
+}
+
+
 
 
 // I/O functions.
