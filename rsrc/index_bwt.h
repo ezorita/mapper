@@ -40,9 +40,9 @@ bwtquery_t **  bwt_dup_vec     (bwtquery_t ** qv);
 int            bwt_free_vec    (bwtquery_t ** qv);
 
 // Index query function interface.
-int            bwt_query       (int sym, int end, bwtquery_t * q);
+int            bwt_query       (int sym, int end, bwtquery_t * q, bwtquery_t * qo);
 int            bwt_query_all   (int end, bwtquery_t * q, bwtquery_t ** qv);
-int            bwt_prefix      (int sym, bwtquery_t * q);
+int            bwt_prefix      (int sym, bwtquery_t * q, bwtquery_t * qo);
 int            bwt_prefix_all  (bwtquery_t * q, bwtquery_t ** qv);
 
 // bwt build functions.

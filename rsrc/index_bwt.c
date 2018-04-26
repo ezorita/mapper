@@ -260,11 +260,12 @@ bwt_query
 (
   int          sym,
   int          end,
-  bwtquery_t * q
+  bwtquery_t * q,
+  bwtquery_t * qo
 )
 {
    // Param check.
-   if (q == NULL)
+   if (q == NULL || qo == NULL)
       return -1;
    
    bwt_t * bwt = q->bwt;
@@ -288,7 +289,7 @@ bwt_query
    }
 
    // Copy updated query to q.
-   memcpy(q, qv[sym], sizeof(bwtquery_t));
+   memcpy(qo, qv[sym], sizeof(bwtquery_t));
 
    // Free query vector.
    bwt_free_vec(qv);
@@ -301,11 +302,12 @@ int
 bwt_prefix
 (
   int           sym,
-  bwtquery_t  * q
+  bwtquery_t  * q,
+  bwtquery_t  * qo
 )
 {
    // Check arguments.
-   if (q == NULL)
+   if (q == NULL || qo == NULL)
       return -1;
    
    bwt_t * bwt = q->bwt;
@@ -327,10 +329,11 @@ bwt_prefix
       return -1;
    ep += bwt->c[sym] -1;
 
-   q->fp = sp;
-   q->sz = ep - sp + 1;
-   q->rp = -1;
-   q->dp += 1;
+   qo->fp = sp;
+   qo->sz = ep - sp + 1;
+   qo->rp = -1;
+   qo->dp += 1;
+   qo->bwt = bwt;
 
    return 0;
 }

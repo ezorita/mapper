@@ -37,7 +37,7 @@ test_bwt_build
    test_assert_critical(q != NULL);
 
    // Query 'G' -> 6 hits at fp = 17, SA={19,3,26,12,6,9}.
-   test_assert(bwt_query(sym_index('G',sym), BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(sym_index('G',sym), BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_size(q) == 6);
    test_assert(bwt_start(q) == 17);
    test_assert(bwt_depth(q) == 1);
@@ -47,7 +47,7 @@ test_bwt_build
    test_assert(memcmp(sa_buf, q00_sa, 6*sizeof(int64_t)) == 0);
 
    // Query 'GT' -> 3 hits at fp = 20, SA={12,6,9}.
-   test_assert(bwt_query(sym_index('T',sym), BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(sym_index('T',sym), BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_size(q) == 3);
    test_assert(bwt_start(q) == 20);
    test_assert(bwt_depth(q) == 2);
@@ -57,7 +57,7 @@ test_bwt_build
    test_assert(memcmp(sa_buf, q01_sa, 3*sizeof(int64_t)) == 0);
 
    // Query 'GTA' -> 2 hits at fp = 20, SA={12,6}.
-   test_assert(bwt_query(sym_index('A',sym), BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(sym_index('A',sym), BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_size(q) == 2);
    test_assert(bwt_start(q) == 20);
    test_assert(bwt_depth(q) == 3);
@@ -67,7 +67,7 @@ test_bwt_build
    test_assert(memcmp(sa_buf, q02_sa, 2*sizeof(int64_t)) == 0);
 
    // Query 'GTAG' -> 1 hit at fp = 21, SA={6}.
-   test_assert(bwt_query(sym_index('G',sym), BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(sym_index('G',sym), BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_size(q) == 1);
    test_assert(bwt_start(q) == 21);
    test_assert(bwt_depth(q) == 4);
@@ -77,7 +77,7 @@ test_bwt_build
    test_assert(memcmp(sa_buf, q03_sa, 1*sizeof(int64_t)) == 0);
 
    // Query 'GTAGC' -> 0 hits.
-   test_assert(bwt_query(sym_index('C',sym), BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(sym_index('C',sym), BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_size(q) == 0);
 
    free(q);
@@ -87,7 +87,7 @@ test_bwt_build
    test_assert_critical(q != NULL);
 
    // Query 'T' -> 9 hits at fp = 23, SA={13,28,16,22,1,7,10,25,0}.
-   test_assert(bwt_query(sym_index('T',sym), BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(sym_index('T',sym), BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_size(q) == 9);
    test_assert(bwt_start(q) == 23);
    test_assert(bwt_depth(q) == 1);
@@ -97,7 +97,7 @@ test_bwt_build
    test_assert(memcmp(sa_buf, q10_sa, 9*sizeof(int64_t)) == 0);
 
    // Query 'TA' -> 6 hits at fp = 23, SA={13,28,16,22,1,7}.
-   test_assert(bwt_query(sym_index('A',sym), BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(sym_index('A',sym), BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_size(q) == 6);
    test_assert(bwt_start(q) == 23);
    test_assert(bwt_depth(q) == 2);
@@ -108,7 +108,7 @@ test_bwt_build
 
    // Query 'TAA' -> 1 hits at fp = 24, SA={28}.
    bwtquery_t * q2 = bwt_dup_query(q);
-   test_assert(bwt_query(sym_index('A',sym), BWT_QUERY_SUFFIX, q2) == 0);
+   test_assert(bwt_query(sym_index('A',sym), BWT_QUERY_SUFFIX, q2, q2) == 0);
    test_assert(bwt_size(q2) == 1);
    test_assert(bwt_start(q2) == 24);
    test_assert(bwt_depth(q2) == 3);
@@ -120,7 +120,7 @@ test_bwt_build
 
    // Query 'CTA' -> 2 hits at fp = 14, SA={27,21}.
    bwtquery_t * q3 = bwt_dup_query(q);
-   test_assert(bwt_query(sym_index('C',sym), BWT_QUERY_PREFIX, q3) == 0);
+   test_assert(bwt_query(sym_index('C',sym), BWT_QUERY_PREFIX, q3, q3) == 0);
    test_assert(bwt_size(q3) == 2);
    test_assert(bwt_start(q3) == 14);
    test_assert(bwt_depth(q3) == 3);
@@ -150,7 +150,7 @@ test_bwt_build
    bwt_free_vec(qv);
 
    // Query 'TAC' -> 2 hits at fp=25, SA={16,22}.
-   test_assert(bwt_query(sym_index('C',sym), BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(sym_index('C',sym), BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_size(q) == 2);
    test_assert(bwt_start(q) == 25);
    test_assert(bwt_depth(q) == 3);
@@ -187,7 +187,7 @@ test_bwt_build
    test_assert_critical(q != NULL);
    
    // Query 'C' -> 6 hits, fp=11, SA={4,18,11,27,21,24}.
-   test_assert(bwt_prefix(sym_index('C',sym), q) == 0);
+   test_assert(bwt_prefix(sym_index('C',sym), q, q) == 0);
    test_assert(bwt_size(q) == 6);
    test_assert(bwt_start(q) == 11);
    test_assert(bwt_depth(q) == 1);
@@ -197,7 +197,7 @@ test_bwt_build
    test_assert(memcmp(sa_buf, q20_sa, 6*sizeof(int64_t)) == 0);
 
    // Query 'GC' -> 2 hits, fp=18, SA={3,26}.
-   test_assert(bwt_prefix(sym_index('G',sym), q) == 0);
+   test_assert(bwt_prefix(sym_index('G',sym), q, q) == 0);
    test_assert(bwt_size(q) == 2);
    test_assert(bwt_start(q) == 18);
    test_assert(bwt_depth(q) == 2);
@@ -229,7 +229,7 @@ test_bwt_build
 
    // Query 'TAGC' -> 1 hit at fp=27, SA={1}.
    bwtquery_t * q4 = qv2[0];
-   test_assert(bwt_prefix(sym_index('T', sym), q4) == 0);
+   test_assert(bwt_prefix(sym_index('T', sym), q4, q4) == 0);
    test_assert(bwt_size(q4) == 1);
    test_assert(bwt_start(q4) == 27);
    test_assert(bwt_depth(q4) == 4);
@@ -264,31 +264,31 @@ test_bwt_build
    q = bwt_new_query(bwt);
    test_assert_critical(q != NULL);
   
-   test_assert(bwt_query(sym_index('A',sym), BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(sym_index('A',sym), BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_size(q) == 4000);
    test_assert(bwt_start(q) == 2000);
    test_assert(bwt_depth(q) == 1);
-   test_assert(bwt_query(sym_index('C',sym), BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(sym_index('C',sym), BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_size(q) == 2000);
    test_assert(bwt_start(q) == 4000);
    test_assert(bwt_depth(q) == 2);
-   test_assert(bwt_query(sym_index('G',sym), BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(sym_index('G',sym), BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_size(q) == 2000);
    test_assert(bwt_start(q) == 4000);
    test_assert(bwt_depth(q) == 3);
-   test_assert(bwt_query(sym_index('T',sym), BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(sym_index('T',sym), BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_size(q) == 2000);
    test_assert(bwt_start(q) == 4000);
    test_assert(bwt_depth(q) == 4);
-   test_assert(bwt_query(sym_index('T',sym), BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(sym_index('T',sym), BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_size(q) == 1000);
    test_assert(bwt_start(q) == 5000);
    test_assert(bwt_depth(q) == 5);
-   test_assert(bwt_query(sym_index('G',sym), BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(sym_index('G',sym), BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_size(q) == 1000);
    test_assert(bwt_start(q) == 5000);
    test_assert(bwt_depth(q) == 6);
-   test_assert(bwt_query(sym_index('A',sym), BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(sym_index('A',sym), BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_size(q) == 0);
 
    free(q);
@@ -375,7 +375,7 @@ test_bwt_dup_query
    test_assert(bwt_size(q2) == 32);
    test_assert(bwt_depth(q2) == 0);
 
-   test_assert(bwt_query(sym_index('G',sym), BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(sym_index('G',sym), BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_size(q) == 6);
    test_assert(bwt_start(q) == 17);
    test_assert(bwt_depth(q) == 1);
@@ -552,22 +552,32 @@ test_bwt_query
    bwtquery_t * q = bwt_new_query(bwt);
    test_assert_critical(q != NULL);
 
-   bwt_query(sym_index('A',sym), BWT_QUERY_SUFFIX, q);
+   test_assert(bwt_query(-1, BWT_QUERY_SUFFIX, q, q) == -1);
+   test_assert(bwt_query(sym_count(sym), BWT_QUERY_SUFFIX, q, q) == -1);
+   test_assert(bwt_query(sym_index('A',sym), 3498, q, q) == -1);
+   test_assert(bwt_query(sym_index('A',sym), BWT_QUERY_SUFFIX, NULL, q) == -1);
+   test_assert(bwt_query(sym_index('A',sym), BWT_QUERY_SUFFIX, q, NULL) == -1);
+   test_assert(bwt_start(q) == 0);
+   test_assert(bwt_size(q) == 32);
+   test_assert(bwt_depth(q) == 0);
+
+
+   bwt_query(sym_index('A',sym), BWT_QUERY_SUFFIX, q, q);
    test_assert(bwt_start(q) == 2);
    test_assert(bwt_size(q) == 9);
    test_assert(bwt_depth(q) == 1);
 
-   bwt_query(sym_index('A',sym), BWT_QUERY_SUFFIX, q);
+   bwt_query(sym_index('A',sym), BWT_QUERY_SUFFIX, q, q);
    test_assert(bwt_start(q) == 4);
    test_assert(bwt_size(q) == 1);
    test_assert(bwt_depth(q) == 2);
 
-   bwt_query(sym_index('T',sym), BWT_QUERY_PREFIX, q);
+   bwt_query(sym_index('T',sym), BWT_QUERY_PREFIX, q, q);
    test_assert(bwt_start(q) == 24);
    test_assert(bwt_size(q) == 1);
    test_assert(bwt_depth(q) == 3);
    
-   bwt_query(sym_index('C',sym), BWT_QUERY_PREFIX, q);
+   bwt_query(sym_index('C',sym), BWT_QUERY_PREFIX, q, q);
    test_assert(bwt_start(q) == 14);
    test_assert(bwt_size(q) == 1);
    test_assert(bwt_depth(q) == 4);
@@ -577,27 +587,27 @@ test_bwt_query
    q = bwt_new_query(bwt);
    test_assert_critical(q != NULL);
 
-   bwt_query(sym_index('A',sym), BWT_QUERY_PREFIX, q);
+   bwt_query(sym_index('A',sym), BWT_QUERY_PREFIX, q, q);
    test_assert(bwt_start(q) == 2);
    test_assert(bwt_size(q) == 9);
    test_assert(bwt_depth(q) == 1);
 
-   bwt_query(sym_index('C',sym), BWT_QUERY_SUFFIX, q);
+   bwt_query(sym_index('C',sym), BWT_QUERY_SUFFIX, q, q);
    test_assert(bwt_start(q) == 5);
    test_assert(bwt_size(q) == 3);
    test_assert(bwt_depth(q) == 2);
 
-   bwt_query(sym_index('T',sym), BWT_QUERY_PREFIX, q);
+   bwt_query(sym_index('T',sym), BWT_QUERY_PREFIX, q, q);
    test_assert(bwt_start(q) == 25);
    test_assert(bwt_size(q) == 2);
    test_assert(bwt_depth(q) == 3);
 
-   bwt_query(sym_index('T',sym), BWT_QUERY_SUFFIX, q);
+   bwt_query(sym_index('T',sym), BWT_QUERY_SUFFIX, q, q);
    test_assert(bwt_start(q) == 26);
    test_assert(bwt_size(q) == 1);
    test_assert(bwt_depth(q) == 4);
 
-   bwt_query(sym_index('C',sym), BWT_QUERY_PREFIX, q);
+   bwt_query(sym_index('C',sym), BWT_QUERY_PREFIX, q, q);
    test_assert(bwt_start(q) == 15);
    test_assert(bwt_size(q) == 1);
    test_assert(bwt_depth(q) == 5);
@@ -726,34 +736,36 @@ test_bwt_prefix
    test_assert(bwt_size(q) == 32);
    test_assert(bwt_depth(q) == 0);
    
-   test_assert(bwt_prefix(sym_index('A',sym), NULL) == -1);
-   test_assert(bwt_prefix(-1, q) == -1);
-   test_assert(bwt_prefix(sym_count(sym), q) == -1);
+   test_assert(bwt_prefix(sym_index('A',sym), NULL, q) == -1);
+   test_assert(bwt_prefix(sym_index('A',sym), q, NULL) == -1);
+   test_assert(bwt_prefix(sym_index('A',sym), q, NULL) == -1);
+   test_assert(bwt_prefix(-1, q, q) == -1);
+   test_assert(bwt_prefix(sym_count(sym), q, q) == -1);
    test_assert(bwt_start(q) == 0);
    test_assert(bwt_size(q) == 32);
    test_assert(bwt_depth(q) == 0);
 
-   test_assert(bwt_prefix(sym_index('a',sym), q) == 0);
+   test_assert(bwt_prefix(sym_index('a',sym), q, q) == 0);
    test_assert(bwt_start(q) == 2);
    test_assert(bwt_size(q) == 9);
    test_assert(bwt_depth(q) == 1);
-   test_assert(bwt_prefix(sym_index('T',sym), q) == 0);
+   test_assert(bwt_prefix(sym_index('T',sym), q, q) == 0);
    test_assert(bwt_start(q) == 23);
    test_assert(bwt_size(q) == 6);
    test_assert(bwt_depth(q) == 2);
-   test_assert(bwt_prefix(sym_index('C',sym), q) == 0);
+   test_assert(bwt_prefix(sym_index('C',sym), q, q) == 0);
    test_assert(bwt_start(q) == 14);
    test_assert(bwt_size(q) == 2);
    test_assert(bwt_depth(q) == 3);
-   test_assert(bwt_prefix(sym_index('G',sym), q) == 0);
+   test_assert(bwt_prefix(sym_index('G',sym), q, q) == 0);
    test_assert(bwt_start(q) == 19);
    test_assert(bwt_size(q) == 1);
    test_assert(bwt_depth(q) == 4);
-   test_assert(bwt_prefix(sym_index('T',sym), q) == 0);
+   test_assert(bwt_prefix(sym_index('T',sym), q, q) == 0);
    test_assert(bwt_start(q) == 30);
    test_assert(bwt_size(q) == 1);
    test_assert(bwt_depth(q) == 5);
-   test_assert(bwt_prefix(sym_index('C',sym), q) == 0);
+   test_assert(bwt_prefix(sym_index('C',sym), q, q) == 0);
    test_assert(bwt_start(q) == 16);
    test_assert(bwt_size(q) == 1);
    test_assert(bwt_depth(q) == 6);
@@ -890,12 +902,12 @@ test_bwt_helpers
    test_assert(bwt_size(q) == 32);
    test_assert(bwt_depth(q) == 0);
    
-   test_assert(bwt_query(0, BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(0, BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_start(q) == 2);
    test_assert(bwt_size(q) == 9);
    test_assert(bwt_depth(q) == 1);
 
-   test_assert(bwt_query(0, BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(0, BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_start(q) == 4);
    test_assert(bwt_size(q) == 1);
    test_assert(bwt_depth(q) == 2);
@@ -935,31 +947,31 @@ test_bwt_file
    bwtquery_t * q = bwt_new_query(bwt);
    test_assert_critical(q != NULL);
    
-   test_assert(bwt_query(sym_index('A',sym), BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(sym_index('A',sym), BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_size(q) == 4000);
    test_assert(bwt_start(q) == 2000);
    test_assert(bwt_depth(q) == 1);
-   test_assert(bwt_query(sym_index('C',sym), BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(sym_index('C',sym), BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_size(q) == 2000);
    test_assert(bwt_start(q) == 4000);
    test_assert(bwt_depth(q) == 2);
-   test_assert(bwt_query(sym_index('G',sym), BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(sym_index('G',sym), BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_size(q) == 2000);
    test_assert(bwt_start(q) == 4000);
    test_assert(bwt_depth(q) == 3);
-   test_assert(bwt_query(sym_index('T',sym), BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(sym_index('T',sym), BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_size(q) == 2000);
    test_assert(bwt_start(q) == 4000);
    test_assert(bwt_depth(q) == 4);
-   test_assert(bwt_query(sym_index('T',sym), BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(sym_index('T',sym), BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_size(q) == 1000);
    test_assert(bwt_start(q) == 5000);
    test_assert(bwt_depth(q) == 5);
-   test_assert(bwt_query(sym_index('G',sym), BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(sym_index('G',sym), BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_size(q) == 1000);
    test_assert(bwt_start(q) == 5000);
    test_assert(bwt_depth(q) == 6);
-   test_assert(bwt_query(sym_index('A',sym), BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(sym_index('A',sym), BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_size(q) == 0);
 
    test_assert(bwt_file_write("test00.bwt", bwt) == 0);
@@ -972,31 +984,31 @@ test_bwt_file
    q = bwt_new_query(bwt);
    test_assert_critical(q != NULL);
    
-   test_assert(bwt_query(sym_index('A',sym), BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(sym_index('A',sym), BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_size(q) == 4000);
    test_assert(bwt_start(q) == 2000);
    test_assert(bwt_depth(q) == 1);
-   test_assert(bwt_query(sym_index('C',sym), BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(sym_index('C',sym), BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_size(q) == 2000);
    test_assert(bwt_start(q) == 4000);
    test_assert(bwt_depth(q) == 2);
-   test_assert(bwt_query(sym_index('G',sym), BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(sym_index('G',sym), BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_size(q) == 2000);
    test_assert(bwt_start(q) == 4000);
    test_assert(bwt_depth(q) == 3);
-   test_assert(bwt_query(sym_index('T',sym), BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(sym_index('T',sym), BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_size(q) == 2000);
    test_assert(bwt_start(q) == 4000);
    test_assert(bwt_depth(q) == 4);
-   test_assert(bwt_query(sym_index('T',sym), BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(sym_index('T',sym), BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_size(q) == 1000);
    test_assert(bwt_start(q) == 5000);
    test_assert(bwt_depth(q) == 5);
-   test_assert(bwt_query(sym_index('G',sym), BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(sym_index('G',sym), BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_size(q) == 1000);
    test_assert(bwt_start(q) == 5000);
    test_assert(bwt_depth(q) == 6);
-   test_assert(bwt_query(sym_index('A',sym), BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(sym_index('A',sym), BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_size(q) == 0);
 
    free(q);
@@ -1008,31 +1020,31 @@ test_bwt_file
    q = bwt_new_query(bwt);
    test_assert_critical(q != NULL);
    
-   test_assert(bwt_query(sym_index('A',sym), BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(sym_index('A',sym), BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_size(q) == 4000);
    test_assert(bwt_start(q) == 2000);
    test_assert(bwt_depth(q) == 1);
-   test_assert(bwt_query(sym_index('C',sym), BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(sym_index('C',sym), BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_size(q) == 2000);
    test_assert(bwt_start(q) == 4000);
    test_assert(bwt_depth(q) == 2);
-   test_assert(bwt_query(sym_index('G',sym), BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(sym_index('G',sym), BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_size(q) == 2000);
    test_assert(bwt_start(q) == 4000);
    test_assert(bwt_depth(q) == 3);
-   test_assert(bwt_query(sym_index('T',sym), BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(sym_index('T',sym), BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_size(q) == 2000);
    test_assert(bwt_start(q) == 4000);
    test_assert(bwt_depth(q) == 4);
-   test_assert(bwt_query(sym_index('T',sym), BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(sym_index('T',sym), BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_size(q) == 1000);
    test_assert(bwt_start(q) == 5000);
    test_assert(bwt_depth(q) == 5);
-   test_assert(bwt_query(sym_index('G',sym), BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(sym_index('G',sym), BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_size(q) == 1000);
    test_assert(bwt_start(q) == 5000);
    test_assert(bwt_depth(q) == 6);
-   test_assert(bwt_query(sym_index('A',sym), BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(sym_index('A',sym), BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_size(q) == 0);
 
    test_assert(bwt_file_write("test01.bwt", bwt) == 0);
@@ -1045,31 +1057,31 @@ test_bwt_file
    q = bwt_new_query(bwt);
    test_assert_critical(q != NULL);
    
-   test_assert(bwt_query(sym_index('A',sym), BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(sym_index('A',sym), BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_size(q) == 4000);
    test_assert(bwt_start(q) == 2000);
    test_assert(bwt_depth(q) == 1);
-   test_assert(bwt_query(sym_index('C',sym), BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(sym_index('C',sym), BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_size(q) == 2000);
    test_assert(bwt_start(q) == 4000);
    test_assert(bwt_depth(q) == 2);
-   test_assert(bwt_query(sym_index('G',sym), BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(sym_index('G',sym), BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_size(q) == 2000);
    test_assert(bwt_start(q) == 4000);
    test_assert(bwt_depth(q) == 3);
-   test_assert(bwt_query(sym_index('T',sym), BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(sym_index('T',sym), BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_size(q) == 2000);
    test_assert(bwt_start(q) == 4000);
    test_assert(bwt_depth(q) == 4);
-   test_assert(bwt_query(sym_index('T',sym), BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(sym_index('T',sym), BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_size(q) == 1000);
    test_assert(bwt_start(q) == 5000);
    test_assert(bwt_depth(q) == 5);
-   test_assert(bwt_query(sym_index('G',sym), BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(sym_index('G',sym), BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_size(q) == 1000);
    test_assert(bwt_start(q) == 5000);
    test_assert(bwt_depth(q) == 6);
-   test_assert(bwt_query(sym_index('A',sym), BWT_QUERY_SUFFIX, q) == 0);
+   test_assert(bwt_query(sym_index('A',sym), BWT_QUERY_SUFFIX, q, q) == 0);
    test_assert(bwt_size(q) == 0);
 
    free(q);
