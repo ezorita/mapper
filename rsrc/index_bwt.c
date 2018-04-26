@@ -179,6 +179,9 @@ bwt_query_all
    if (q == NULL || qv == NULL)
       return -1;
 
+   if (end != BWT_QUERY_SUFFIX && end != BWT_QUERY_PREFIX)
+      return -1;
+
    bwt_t * bwt = q->bwt;
    if (bwt == NULL)
       return -1;
@@ -191,11 +194,15 @@ bwt_query_all
          return -1;
    }
 
+   int64_t q_fp = q->fp;
+   int64_t q_rp = q->rp;
+   int64_t q_sz = q->sz;   
+   int64_t q_dp = q->dp;   
+
    // Swap fp/rp for forward extension.
    if (end == BWT_QUERY_SUFFIX) {
-      int64_t fpt = q->fp;
-      q->fp = q->rp;
-      q->rp = fpt;
+      q_fp = q->rp;
+      q_rp = q->fp;
    }
 
    // Alloc temp pointers for each symbol.
@@ -206,8 +213,8 @@ bwt_query_all
    int64_t * sz     = malloc(sym_cnt * sizeof(int64_t));
 
    // Fetch occ values to update pointers.
-   get_occ_all(q->fp - 1, bwt, occ_sp);
-   get_occ_all(q->fp + q->sz - 1, bwt, occ_ep);
+   get_occ_all(q_fp - 1, bwt, occ_sp);
+   get_occ_all(q_fp + q_sz - 1, bwt, occ_ep);
 
    // Update forward pointers and result sizes.
    int64_t tot = 0;
@@ -219,7 +226,7 @@ bwt_query_all
    }
 
    // Update reverse pointer in complement order.
-   rp[sym_complement(0,sym)] = q->rp + (q->sz - tot);
+   rp[sym_complement(0,sym)] = q_rp + (q_sz - tot);
    for (int j = 1; j < sym_cnt; j++) {
       rp[sym_complement(j,sym)] = rp[sym_complement(j-1,sym)] + sz[sym_complement(j-1,sym)];
    }
@@ -227,17 +234,13 @@ bwt_query_all
    if (end == BWT_QUERY_PREFIX) {
       // Store pointers to qv vector.
       for (int j = 0; j < sym_cnt; j++) {
-         *(qv[j]) = (bwtquery_t){fp[j], rp[j], sz[j], q->dp+1};
+         *(qv[j]) = (bwtquery_t){fp[j], rp[j], sz[j], q_dp+1, bwt};
       }
    } else {
-      // Reverse swap.
-      int64_t fpt = q->fp;
-      q->fp = q->rp;
-      q->rp = fpt;
       // Reverse again forward and backward pointers and reversible symbols.
       for (int j  = 0; j < sym_cnt; j++) {
          int32_t sym_comp = sym_complement(j,sym);
-         *(qv[j]) = (bwtquery_t){rp[sym_comp], fp[sym_comp], sz[sym_comp], q->dp+1, q->bwt};
+         *(qv[j]) = (bwtquery_t){rp[sym_comp], fp[sym_comp], sz[sym_comp], q_dp+1, bwt};
       }
    }
 
@@ -353,18 +356,22 @@ bwt_prefix_all
       if (qv[j] == NULL)
          return -1;
    }
+
+   int64_t q_fp = q->fp;
+   int64_t q_sz = q->sz;
+   int64_t q_dp = q->dp;
    
    // Compute occs for all nt in one call (1 cache miss).
    int64_t * occ_sp = malloc(sym_cnt * sizeof(int64_t));
    int64_t * occ_ep = malloc(sym_cnt * sizeof(int64_t));
 
    // Compute occ.
-   if (get_occ_all(q->fp - 1, bwt, occ_sp)) {
+   if (get_occ_all(q_fp - 1, bwt, occ_sp)) {
       free(occ_sp);
       free(occ_ep);
       return -1;
    }
-   if (get_occ_all(q->fp + q->sz - 1, bwt, occ_ep)) {
+   if (get_occ_all(q_fp + q_sz - 1, bwt, occ_ep)) {
       free(occ_sp);
       free(occ_ep);
       return -1;
@@ -374,8 +381,9 @@ bwt_prefix_all
       qv[j]->fp = bwt->c[j] + occ_sp[j];
       qv[j]->sz = bwt->c[j] + occ_ep[j] - qv[j]->fp;
       qv[j]->sz = (qv[j]->sz < 0 ? 0 : qv[j]->sz);
-      qv[j]->dp = q->dp + 1;
+      qv[j]->dp = q_dp + 1;
       qv[j]->rp = -1;
+      qv[j]->bwt = bwt;
    }
 
    free(occ_sp);
