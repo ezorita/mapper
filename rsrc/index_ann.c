@@ -463,22 +463,36 @@ neigh_next
 {
    int n_cnt = 0;
    int trail_1 = 0, trail_2 = 0, truncated = 0;
-   uint8_t * tmp = malloc(qlen*sizeof(uint8_t));
 
    // Index data.
    bwt_t * bwt = bwt_get_bwt(q[qlen]);
    txt_t * txt = bwt_get_text(bwt);
    int     num_symb = sym_count(txt_get_symbols(txt));
 
-   // Get sa_ptr sequence from genome.
-   uint8_t * seq = txt_sym_range(sar_get(sa_ptr, sar), qlen, txt);
-   // Iterate over qlen nucleotides.
+   // Get suffix array.
+   int64_t txt_pos = sar_get(sa_ptr, sar);
+
+   // Increase next_sa by one (error default).
+   *next_sa = sa_ptr + 1;
+
+   // Check text limits.
+   if (txt_pos + qlen > txt_length(txt)) {
+      return -1;
+   }
+
+   // Get symbols.
+   uint8_t * seq = txt_sym_range(txt_pos, qlen, txt);
+   
+   // Report sequences containing '$'.
    for (int i = 0; i < qlen; i++) {
-      // Report sequences containing '$'.
       if (seq[i] >= num_symb) {
-         truncated = 1;
-         break;
+         return -1;
       }
+   }
+
+   // Iterate over qlen nucleotides.
+   uint8_t * tmp = malloc(qlen*sizeof(uint8_t));
+   for (int i = 0; i < qlen && !truncated; i++) {
       n_cnt += seq[i] == UNKNOWN_BASE;
       // Track trail.
       if (trail_1 == i && seq[i] == query_1[i])
@@ -494,7 +508,6 @@ neigh_next
 
    // Check whether sequence is valid (all in same strand).
    if (bwt_size(q[qlen]) == 0 || truncated) {
-      *next_sa = sa_ptr + 1;
       free(tmp);
       return -1;
    }
