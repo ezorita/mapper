@@ -157,6 +157,59 @@ txt_append_wildcard
 }
 
 
+int
+txt_append_rc
+(
+  txt_t  * txt
+)
+{
+   // Check arguments.
+   if (txt == NULL)
+      return -1;
+
+   if (txt->txt_len < 1)
+      return 0;
+
+   // Realloc structure if necessary.
+   if (2*txt->txt_len >= txt->mem_size) {
+      size_t new_mem_size = 2*(txt->mem_size + 1);
+      txt->text = realloc(txt->text, new_mem_size * sizeof(uint8_t));
+      if (txt->text == NULL)
+         return -1;
+      txt->mem_size = new_mem_size;
+   }
+   
+   // Append reverse complement of text, including wildcards.
+   sym_t  * sym = txt_get_symbols(txt);
+   int64_t tlen = txt_length(txt);
+   int     nsym = sym_count(sym);
+
+   // Add last wildcard if not present.
+   if (txt->text[tlen-1] < nsym) {
+      txt_append_wildcard(txt);
+   } else {
+      tlen--;
+   }
+   
+   // Append reverse complement of text.
+   for (int i = 1; i <= tlen; i++) {
+      if (__builtin_expect(txt->text[tlen-i] < nsym, 1)) {
+         txt->text[tlen+i] = sym_complement(txt_sym(tlen-i,txt), sym);
+         txt->txt_len++;
+      } else {
+         txt_append_wildcard(txt);
+      }
+   }
+
+   // Append last wildcard.
+   if (txt->text[txt_length(txt)-1] < nsym) {
+      txt_append_wildcard(txt);
+   }
+
+   return 0;
+}
+
+
 // Helper functions.
 int64_t
 txt_length

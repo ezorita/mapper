@@ -251,6 +251,113 @@ test_txt_append_wildcard
 
 
 void
+test_txt_append_rc
+(void)
+{
+   sym_t * sym = sym_new_dna();
+   test_assert_critical(sym != NULL);
+   
+   txt_t * txt;
+   txt = txt_new(sym);
+   test_assert_critical(txt != NULL);
+
+   test_assert(txt_append("AACCGGTTNN", txt) == 0);
+   test_assert(txt_length(txt) == 10);
+   test_assert(txt_wildcard_count(txt) == 0);
+
+   test_assert(txt_sym(0, txt) == 0);
+   test_assert(txt_sym(1, txt) == 0);
+   test_assert(txt_sym(2, txt) == 1);
+   test_assert(txt_sym(3, txt) == 1);
+   test_assert(txt_sym(4, txt) == 2);
+   test_assert(txt_sym(5, txt) == 2);
+   test_assert(txt_sym(6, txt) == 3);
+   test_assert(txt_sym(7, txt) == 3);
+   test_assert(txt_sym(8, txt) == 4);
+   test_assert(txt_sym(9, txt) == 4);
+
+   test_assert(txt_append_rc(txt) == 0);
+   test_assert(txt_length(txt) == 22);
+   test_assert(txt_wildcard_count(txt) == 2);
+
+   test_assert(txt_sym(0, txt) == 0);
+   test_assert(txt_sym(1, txt) == 0);
+   test_assert(txt_sym(2, txt) == 1);
+   test_assert(txt_sym(3, txt) == 1);
+   test_assert(txt_sym(4, txt) == 2);
+   test_assert(txt_sym(5, txt) == 2);
+   test_assert(txt_sym(6, txt) == 3);
+   test_assert(txt_sym(7, txt) == 3);
+   test_assert(txt_sym(8, txt) == 4);
+   test_assert(txt_sym(9, txt) == 4);
+   test_assert(txt_sym(10, txt) == 5);
+   test_assert(txt_sym(11, txt) == 4);
+   test_assert(txt_sym(12, txt) == 4);
+   test_assert(txt_sym(13, txt) == 0);
+   test_assert(txt_sym(14, txt) == 0);
+   test_assert(txt_sym(15, txt) == 1);
+   test_assert(txt_sym(16, txt) == 1);
+   test_assert(txt_sym(17, txt) == 2);
+   test_assert(txt_sym(18, txt) == 2);
+   test_assert(txt_sym(19, txt) == 3);
+   test_assert(txt_sym(20, txt) == 3);
+   test_assert(txt_sym(21, txt) == 5);
+
+   txt_free(txt);
+
+   // Another example with more wildcards: AC$GT$NN$
+   txt = txt_new(sym);
+   test_assert_critical(txt != NULL);
+
+   test_assert(txt_append("AC", txt) == 0);
+   test_assert(txt_append_wildcard(txt) == 0);
+   test_assert(txt_append("GT", txt) == 0);
+   test_assert(txt_append_wildcard(txt) == 0);
+   test_assert(txt_append("NN", txt) == 0);
+   test_assert(txt_append_wildcard(txt) == 0);
+
+   test_assert(txt_length(txt) == 9);
+   test_assert(txt_wildcard_count(txt) == 3);
+
+   test_assert(txt_sym(0, txt) == 0);
+   test_assert(txt_sym(1, txt) == 1);
+   test_assert(txt_sym(2, txt) == 5);
+   test_assert(txt_sym(3, txt) == 2);
+   test_assert(txt_sym(4, txt) == 3);
+   test_assert(txt_sym(5, txt) == 5);
+   test_assert(txt_sym(6, txt) == 4);
+   test_assert(txt_sym(7, txt) == 4);
+   test_assert(txt_sym(8, txt) == 5);
+
+   test_assert(txt_append_rc(txt) == 0);
+   test_assert(txt_length(txt) == 18);
+   test_assert(txt_wildcard_count(txt) == 6);
+
+   test_assert(txt_sym(0, txt) == 0);
+   test_assert(txt_sym(1, txt) == 1);
+   test_assert(txt_sym(2, txt) == 5);
+   test_assert(txt_sym(3, txt) == 2);
+   test_assert(txt_sym(4, txt) == 3);
+   test_assert(txt_sym(5, txt) == 5);
+   test_assert(txt_sym(6, txt) == 4);
+   test_assert(txt_sym(7, txt) == 4);
+   test_assert(txt_sym(8, txt) == 5);
+   test_assert(txt_sym(9, txt) == 4);
+   test_assert(txt_sym(10, txt) == 4);
+   test_assert(txt_sym(11, txt) == 5);
+   test_assert(txt_sym(12, txt) == 0);
+   test_assert(txt_sym(13, txt) == 1);
+   test_assert(txt_sym(14, txt) == 5);
+   test_assert(txt_sym(15, txt) == 2);
+   test_assert(txt_sym(16, txt) == 3);
+   test_assert(txt_sym(17, txt) == 5);
+
+   txt_free(txt);
+   sym_free(sym);
+}
+
+
+void
 test_txt_length
 (void)
 {
@@ -402,6 +509,7 @@ const test_case_t test_cases_index_txt[] = {
    {"index_txt/txt_sym_range",       test_txt_sym_range},
    {"index_txt/txt_append",          test_txt_append},
    {"index_txt/txt_append_wildcard", test_txt_append_wildcard},
+   {"index_txt/txt_append_rc",       test_txt_append_rc},
    {"index_txt/txt_length",          test_txt_length},
    {"index_txt/txt_wildcard_count",  test_txt_wildcard_count},
    {"index_txt/txt_get_symbols",     test_txt_get_symbols},

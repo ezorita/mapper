@@ -28,6 +28,7 @@ int32_t    txt_sym             (int64_t pos, txt_t * txt);
 uint8_t  * txt_sym_range       (int64_t beg, int64_t len, txt_t * txt);
 int        txt_append          (char * text, txt_t * txt);
 int        txt_append_wildcard (txt_t * txt);
+int        txt_append_rc       (txt_t * txt);
 
 // Helper functions.
 int64_t    txt_length          (txt_t * txt);
