@@ -564,21 +564,25 @@ test_bwt_query
 
    bwt_query(sym_index('A',sym), BWT_QUERY_SUFFIX, q, q);
    test_assert(bwt_start(q) == 2);
+   test_assert(bwt_rcstart(q) == 23);
    test_assert(bwt_size(q) == 9);
    test_assert(bwt_depth(q) == 1);
 
    bwt_query(sym_index('A',sym), BWT_QUERY_SUFFIX, q, q);
    test_assert(bwt_start(q) == 4);
+   test_assert(bwt_rcstart(q) == 31);
    test_assert(bwt_size(q) == 1);
    test_assert(bwt_depth(q) == 2);
 
    bwt_query(sym_index('T',sym), BWT_QUERY_PREFIX, q, q);
    test_assert(bwt_start(q) == 24);
+   test_assert(bwt_rcstart(q) == 31);
    test_assert(bwt_size(q) == 1);
    test_assert(bwt_depth(q) == 3);
    
    bwt_query(sym_index('C',sym), BWT_QUERY_PREFIX, q, q);
    test_assert(bwt_start(q) == 14);
+   test_assert(bwt_rcstart(q) == 31);
    test_assert(bwt_size(q) == 1);
    test_assert(bwt_depth(q) == 4);
 
@@ -589,26 +593,31 @@ test_bwt_query
 
    bwt_query(sym_index('A',sym), BWT_QUERY_PREFIX, q, q);
    test_assert(bwt_start(q) == 2);
+   test_assert(bwt_rcstart(q) == 23);
    test_assert(bwt_size(q) == 9);
    test_assert(bwt_depth(q) == 1);
 
    bwt_query(sym_index('C',sym), BWT_QUERY_SUFFIX, q, q);
    test_assert(bwt_start(q) == 5);
+   test_assert(bwt_rcstart(q) == 20);
    test_assert(bwt_size(q) == 3);
    test_assert(bwt_depth(q) == 2);
 
    bwt_query(sym_index('T',sym), BWT_QUERY_PREFIX, q, q);
    test_assert(bwt_start(q) == 25);
+   test_assert(bwt_rcstart(q) == 20);
    test_assert(bwt_size(q) == 2);
    test_assert(bwt_depth(q) == 3);
 
    bwt_query(sym_index('T',sym), BWT_QUERY_SUFFIX, q, q);
    test_assert(bwt_start(q) == 26);
+   test_assert(bwt_rcstart(q) == 9);
    test_assert(bwt_size(q) == 1);
    test_assert(bwt_depth(q) == 4);
 
    bwt_query(sym_index('C',sym), BWT_QUERY_PREFIX, q, q);
    test_assert(bwt_start(q) == 15);
+   test_assert(bwt_rcstart(q) == 9);
    test_assert(bwt_size(q) == 1);
    test_assert(bwt_depth(q) == 5);
 
@@ -870,6 +879,40 @@ test_bwt_get_text
    sym_free(sym);
 }
 
+void
+test_bwt_get_bwt
+(void)
+{
+   sym_t * sym = sym_new_dna();
+   test_assert_critical(sym != NULL);
+
+   txt_t * txt = txt_new(sym);
+   test_assert_critical(txt != NULL);
+   // Bidirectional BWT serach requires FW and RC text.
+   test_assert(txt_append("TTAGCAGTAGTCGTA", txt) == 0);
+   test_assert(txt_append_wildcard(txt) == 0);
+   test_assert(txt_append("TACGACTACTGCTAA", txt) == 0);
+   test_assert(txt_append_wildcard(txt) == 0);
+
+   sar_t * sar = sar_build(txt);
+   test_assert_critical(sar != NULL);
+
+   bwt_t * bwt = bwt_build(txt, sar);
+   test_assert_critical(bwt != NULL);
+
+   bwtquery_t * q = bwt_new_query(bwt);
+   test_assert_critical(q != NULL);
+
+   test_assert(bwt_get_bwt(NULL) == NULL);
+   test_assert(bwt_get_bwt(q) == bwt);
+
+   free(q);
+   bwt_free(bwt);
+   sar_free(sar);
+   txt_free(txt);
+   sym_free(sym);
+}
+
 
 void
 test_bwt_helpers
@@ -1104,6 +1147,7 @@ const test_case_t test_cases_index_bwt[] = {
    {"index_bwt/bwt_prefix",           test_bwt_prefix},
    {"index_bwt/bwt_prefix_all",       test_bwt_prefix_all},
    {"index_bwt/bwt_get_text",         test_bwt_get_text},
+   {"index_bwt/bwt_get_bwt",          test_bwt_get_bwt},
    {"index_bwt/bwt_helpers",          test_bwt_helpers},
    {"index_bwt/bwt_file",             test_bwt_file},
    {NULL, NULL}, // Sentinel. //

@@ -575,6 +575,19 @@ bwt_start
 
 
 int64_t
+bwt_rcstart
+(
+  bwtquery_t  * q
+)
+{
+   if (q == NULL)
+      return -1;
+   else
+      return q->rp;
+}
+
+
+int64_t
 bwt_size
 (
   bwtquery_t  * q
@@ -597,6 +610,19 @@ bwt_depth
       return -1;
    else
       return q->dp;
+}
+
+
+bwt_t *
+bwt_get_bwt
+(
+  bwtquery_t  * q
+)
+{
+   if (q == NULL)
+      return NULL;
+   else
+      return q->bwt;
 }
 
 

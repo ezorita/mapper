@@ -55,6 +55,8 @@ txt_t       *  bwt_get_text    (bwt_t * bwt);
 int64_t        bwt_start       (bwtquery_t * q);
 int64_t        bwt_size        (bwtquery_t * q);
 int64_t        bwt_depth       (bwtquery_t * q);
+int64_t        bwt_rcstart     (bwtquery_t * q);
+bwt_t       *  bwt_get_bwt     (bwtquery_t * q);
 
 // I/O functions.
 int            bwt_file_write  (char * filename, bwt_t * bwt);
