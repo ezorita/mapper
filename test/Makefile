@@ -5,9 +5,9 @@ P= runtests
 SOURCE_DIR= ../rsrc
 HEADER_DIR= $(SOURCE_DIR)
 
-OBJECTS= test_index_sym.o test_index_txt.o test_index_sar.o test_index_bwt.o libunittest.so
-SOURCE= index_sym.c index_txt.c index_sar.c index_bwt.c divsufsort.c
-HEADER= index_sym.h index_txt.h index_sar.h index_bwt.h divsufsort.h divsufsort_private.h
+OBJECTS= test_index_sym.o test_index_txt.o test_index_sar.o test_index_bwt.o test_index_ann.o libunittest.so
+SOURCE= index_sym.c index_txt.c index_sar.c index_bwt.c index_ann.c blocksearch.c divsufsort.c
+HEADER= index_sym.h index_txt.h index_sar.h index_bwt.h index_ann.h blocksearch.h divsufsort.h divsufsort_private.h
 INCLUDE= lib $(SOURCE_DIR) $(HEADER_DIR)
 
 CC= gcc

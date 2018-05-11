@@ -19,6 +19,7 @@ test/test*.sym
 test/test*.txt
 test/test*.sar
 test/test*.bwt
+test/test*.ann
 test/runtests
 test/*.so
 *.o
