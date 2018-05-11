@@ -163,6 +163,9 @@ txt_append
    size_t tlen = strlen(text);
    if (txt->txt_len + tlen >= txt->mem_txt) {
       size_t new_mem_size = txt->mem_txt * 2;
+      while (new_mem_size < txt->txt_len + tlen) {
+         new_mem_size *= 2;
+      }      
       txt->text = realloc(txt->text, new_mem_size * sizeof(uint8_t));
       if (txt->text == NULL)
          return -1;
