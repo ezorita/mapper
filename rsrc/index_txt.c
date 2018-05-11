@@ -18,7 +18,7 @@ struct txt_t {
 };
 
 // Private function headers.
-int64_t   seq_bisect  (int64_t * vals, int64_t beg, int64_t end, int64_t target);
+int64_t   seq_bisect  (int64_t beg, int64_t end, int64_t target, int64_t * vals);
 
 
 // Interface functions source.
@@ -218,6 +218,10 @@ txt_commit_seq
 {
    // Check arguments.
    if (txt == NULL || seqname == NULL)
+      return -1;
+   
+   // Check seqname length.
+   if (strlen(seqname) < 1)
       return -1;
 
    // Check seqname uniqueness.
@@ -437,18 +441,20 @@ txt_pos_to_str
   txt_t    * txt
 )
 {
+   if (txt == NULL)
+      return NULL;
    if (pos < 0 || pos >= txt->txt_len)
       return NULL;
 
    // Check whether text has RC.
    int strand = 0;
    if (txt->rc_flag) {
-      strand = (pos > txt->txt_len/2 ? 1 : 0);
-      pos    = (pos > txt->txt_len/2 ? 2*(txt->txt_len/2) - pos : pos);
+      strand = (pos >= txt->txt_len/2 ? 1 : 0);
+      pos    = (pos >= txt->txt_len/2 ? txt->txt_len - 2 - pos : pos);
    }
 
    // Find sequence name.
-   int seq_id = seq_bisect(txt->seq_beg, pos, 0, txt->seq_cnt);
+   int seq_id = seq_bisect(0, txt->seq_cnt, pos, txt->seq_beg);
 
    // Generate string.
    char * pos_str = malloc(strlen(txt->seq_name[seq_id])+30);
@@ -476,8 +482,8 @@ txt_str_to_pos
       return -1;
 
    // Tokenize string.
-   char * seq_name = pos_str;
-   char * seq_pos  = strtok(pos_str, ":");
+   char * seq_name = strtok(pos_str, ":");
+   char * seq_pos  = strtok(NULL, ":");
    char * seq_fw   = strtok(NULL, ":");
 
    // Incorrect format.
@@ -497,16 +503,18 @@ txt_str_to_pos
          break;
       }
    }
-
    if (seq_id < 0)
       return -1;
 
    // Convert position to int.
    int64_t pos = atol(seq_pos);
-   pos = txt->seq_beg[seq_id] + pos - 1;
+   if (pos < 1 || pos > txt->seq_len[seq_id])
+      return -1;
 
+   // Find position in sequence.
+   pos = txt->seq_beg[seq_id] + pos - 1;
    if (strand) {
-      pos = 2*(txt->txt_len/2) - pos;
+      pos = txt->txt_len - 2 - pos;
    }         
 
    free(pos_str);
@@ -716,10 +724,10 @@ txt_file_read
 int64_t
 seq_bisect
 (
-  int64_t * vals,
   int64_t   beg,
   int64_t   end,
-  int64_t   target
+  int64_t   target,
+  int64_t * vals
 )
 {
    if (end - beg < 2) 
@@ -727,7 +735,7 @@ seq_bisect
 
    int64_t mid = (beg + end) / 2;
    if (target < vals[mid])
-      return seq_bisect(vals, beg, mid, target);
+      return seq_bisect(beg, mid, target, vals);
    else
-      return seq_bisect(vals, mid, end, target);
+      return seq_bisect(mid, end, target, vals);
 }
