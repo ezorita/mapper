@@ -3,7 +3,6 @@
 #include <stdint.h>
 #include <string.h>
 #include <pthread.h>
-#include <stdio.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/mman.h>
@@ -44,6 +43,10 @@ void           ann_free         (ann_t * ann);
 
 // Query functions.
 locinfo_t   *  ann_query        (int64_t pos, ann_t * ann);
+
+// Helper functions.
+int            ann_get_kmer     (ann_t * ann);
+int            ann_get_dist     (ann_t * ann);
 
 // I/O functions.
 int            ann_file_write   (char * filename, ann_t * ann);

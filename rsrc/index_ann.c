@@ -348,6 +348,38 @@ ann_query
 }
 
 
+
+// Helper functions.
+
+int
+ann_get_kmer
+(
+  ann_t  * ann
+)
+{
+   if (ann == NULL)
+      return -1;
+
+   return ann->kmer;
+}
+
+
+int
+ann_get_dist
+(
+  ann_t  * ann
+)
+{
+   if (ann == NULL)
+      return -1;
+
+   return ann->tau;
+}
+
+
+
+// I/O functions.
+
 int
 ann_file_write
 (
