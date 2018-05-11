@@ -3,6 +3,10 @@
 #include <stdint.h>
 #include <string.h>
 #include <pthread.h>
+#include <stdio.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/mman.h>
 
 #include "index_sar.h"
 #include "index_bwt.h"
