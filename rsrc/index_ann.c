@@ -3,10 +3,12 @@
 // Define interface structures.
 
 struct ann_t {
-   uint32_t    kmer;
-   uint32_t    tau;
+   size_t      mmap_len;
+   void      * mmap_ptr;
+   int64_t     kmer;
+   int64_t     tau;
+   int64_t     size;
    uint8_t   * info;
-   size_t      size;
 };
 
 
@@ -60,6 +62,12 @@ ann_build
  int        threads
 )
 {
+   if (kmer < 2 || tau >= 4 || tau >= kmer || tau < 1 || threads < 1)
+      return NULL;
+
+   if (bwt == NULL || sar == NULL)
+      return NULL;
+
    // Constant parameters.
    int job_to_thread_ratio = 5;
    int           word_size = max(3,tau) + 3;
@@ -186,8 +194,9 @@ ann_build
 
    ann->kmer = kmer;
    ann->tau  = tau;
-   ann->info = calloc(tlen/2+1, sizeof(uint8_t));
-   ann->size = tlen/2+1;
+   ann->size = tlen/2;
+   ann->info = calloc(ann->size, sizeof(uint8_t));
+
    
    if (ann->info == NULL)
       goto failure_return;
@@ -251,13 +260,205 @@ ann_build
    free(monitor);
    free(tmp_info);
    free(q);
-   if (ann != NULL)
-      free(ann->info);
-   free(ann);
-   
+   ann_free(ann);
    return NULL;
 }
 
+void
+ann_free
+(
+  ann_t * ann
+)
+{
+   if (ann != NULL) {
+      if (ann->mmap_ptr == NULL) {
+         free(ann->info);
+      } else {
+         munmap(ann->mmap_ptr, ann->mmap_len);
+      }
+      free(ann);
+   }
+
+   return;
+}
+
+
+locinfo_t *
+ann_query
+(
+  int64_t    pos,
+  ann_t    * ann
+)
+{
+   if (ann == NULL)
+      return NULL;
+
+   if (pos < 0 || pos >= ann->size*2)
+      return NULL;
+
+   // Annotation data structure:
+   // 8 bits per genomic locus.
+   //   bit 7 - Locus alignment info.
+   //   bit 6 - Locus alignment flag.
+   //   bit 5 *
+   //   bit 4 - Distance to closest neighbor (00: 1, 01: 2, 10: 3, 11: 4).
+   //   bit 3 *
+   //   bit 2 *
+   //   bit 1 * 
+   //   bit 0 - Neighbor count
+
+   int strand = 0;
+   if (pos > ann->size) {
+      strand = 1;
+      pos    = (ann->size-1)*2 - pos;
+   }
+   
+   uint8_t   info    = ann->info[pos];
+   int32_t   aln_cnt = 0;
+   int32_t * aln_pos = malloc(ann->kmer*sizeof(int32_t));
+   if ((info >> 6) & 1) {
+      for (int i = 0; i < ann->kmer; i++) {
+         if ((ann->info[pos+i] >> 7) & 1) {
+            aln_pos[aln_cnt++] = (strand ? ann->kmer - 1 - i : i);
+         }
+      }
+   }
+   
+   locinfo_t * locinfo = malloc(sizeof(locinfo_t) + aln_cnt*sizeof(int32_t));
+   if (locinfo == NULL)
+      return NULL;
+
+   int cnt = (info & 0x0F);
+   
+   locinfo->dist      = (cnt ? ((info >> 4) & 3) + 1 : 0);
+   locinfo->align_cnt = aln_cnt;
+   memcpy(&(locinfo->align_pos[0]), aln_pos, aln_cnt*sizeof(int32_t));
+
+   // Convert neigh_cnt.
+   if      (cnt <= 10)   locinfo->neigh_cnt = cnt;
+   else if (cnt == 0x0B) locinfo->neigh_cnt = 15;
+   else if (cnt == 0x0C) locinfo->neigh_cnt = 40;
+   else if (cnt == 0x0D) locinfo->neigh_cnt = 75;
+   else if (cnt == 0x0E) locinfo->neigh_cnt = 300;
+   else if (cnt == 0x0F) locinfo->neigh_cnt = 1000;
+
+   free(aln_pos);
+
+   return locinfo;
+}
+
+
+int
+ann_file_write
+(
+  char   * filename,
+  ann_t  * ann
+)
+{
+   // Check arguments.
+   if (filename == NULL || ann == NULL)
+      return -1;
+   
+   // Open file.
+   int fd = creat(filename, 0644);
+   if (fd == -1)
+      return -1;
+
+   // Write data.
+   ssize_t  e_cnt = 0;
+   ssize_t  b_cnt = 0;
+   uint64_t magic = ANN_FILE_MAGICNO;
+
+   // Write magic.
+   if (write(fd, &magic, sizeof(uint64_t)) == -1)
+      goto close_and_error;
+   
+   // Write kmer.
+   if (write(fd, (int64_t *)&(ann->kmer), sizeof(int64_t)) == -1)
+      goto close_and_error;
+
+   // Write tau.
+   if (write(fd, (int64_t *)&(ann->tau), sizeof(int64_t)) == -1)
+      goto close_and_error;
+
+   // Write size.
+   if (write(fd, (int64_t *)&(ann->size), sizeof(int64_t)) == -1)
+      goto close_and_error;
+
+   // Write info array.
+   e_cnt = 0;
+   do {
+      b_cnt  = write(fd, (uint8_t *)ann->info + e_cnt, (ann->size - e_cnt)*sizeof(uint8_t));
+      if (b_cnt == -1)
+         goto close_and_error;
+      e_cnt += b_cnt / sizeof(uint8_t);
+   } while (e_cnt < ann->size);
+
+   close(fd);
+   return 0;
+   
+ close_and_error:
+   close(fd);
+   return -1;
+}
+
+
+ann_t *
+ann_file_read
+(
+  char * filename
+)
+{
+   // Check arguments.
+   if (filename == NULL)
+      return NULL;
+
+   // Open file.
+   int fd = open(filename, O_RDONLY);
+   if (fd == -1)
+      return NULL;
+
+   // Alloc memory.
+   ann_t * ann = malloc(sizeof(ann_t));
+   if (ann == NULL)
+      goto free_and_return;
+
+   // Set NULL pointers.
+   ann->info = NULL;
+
+   // Get file len and mmap file.
+   struct stat sb;
+   fstat(fd, &sb);
+   if (sb.st_size < 48)
+      goto free_and_return;
+
+   int64_t * data = mmap(NULL, sb.st_size, PROT_READ, MAP_SHARED, fd, 0);
+   if (data == NULL)
+      goto free_and_return;
+   
+   ann->mmap_len = sb.st_size;
+   ann->mmap_ptr = (void *) data;
+
+   // Read file.
+   // Read magic number.
+   uint64_t magic = data[0];
+   if (magic != ANN_FILE_MAGICNO)
+      goto free_and_return;
+
+   ann->kmer = data[1];
+   ann->tau  = data[2];
+   ann->size = data[3];
+   ann->info = (uint8_t *) (data + 4);
+
+   close(fd);
+
+   return ann;
+
+ free_and_return:
+   close(fd);
+   ann_free(ann);
+   return NULL;
+}
 
 /*
 ** Private functions source.

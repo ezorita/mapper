@@ -23,11 +23,26 @@
 
 // Typedef structures.
 typedef struct ann_t      ann_t;
+typedef struct locinfo_t  locinfo_t;
 
 // Type interface.
 struct ann_t;
+struct locinfo_t {
+   int32_t dist;
+   int32_t neigh_cnt;
+   int32_t align_cnt;
+   int32_t align_pos[];
+};
 
-// Annotation build functions.
-ann_t       *  ann_build   (int kmer, int tau, bwt_t * bwt, sar_t * sar, int threads);
+// Annotation build/free functions.
+ann_t       *  ann_build        (int kmer, int tau, bwt_t * bwt, sar_t * sar, int threads);
+void           ann_free         (ann_t * ann);
+
+// Query functions.
+locinfo_t   *  ann_query        (int64_t pos, ann_t * ann);
+
+// I/O functions.
+int            ann_file_write   (char * filename, ann_t * ann);
+ann_t       *  ann_file_read    (char * filename);
 
 #endif
