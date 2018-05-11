@@ -17,22 +17,27 @@ test_txt_new
    test_assert_critical(txt != NULL);
    test_assert(txt_length(txt) == 0);
    test_assert(txt_wildcard_count(txt) == 0);
+   test_assert(txt_seq_count(txt) == 0);
    test_assert(txt_get_symbols(txt) == sym);
    
    test_assert(txt_append("ACTAGC", txt) == 0);
    test_assert(txt_length(txt) == 6);
+   test_assert(txt_seq_count(txt) == 0);
    test_assert(txt_wildcard_count(txt) == 0);
 
-   test_assert(txt_append_wildcard(txt) == 0);
+   test_assert(txt_commit_seq("seq1",txt) == 0);
    test_assert(txt_length(txt) == 7);
+   test_assert(txt_seq_count(txt) == 1);
    test_assert(txt_wildcard_count(txt) == 1);
 
    test_assert(txt_append("GGG", txt) == 0);
    test_assert(txt_length(txt) == 10);
+   test_assert(txt_seq_count(txt) == 1);
    test_assert(txt_wildcard_count(txt) == 1);
 
-   test_assert(txt_append_wildcard(txt) == 0);
+   test_assert(txt_commit_seq("seq2",txt) == 0);
    test_assert(txt_length(txt) == 11);
+   test_assert(txt_seq_count(txt) == 2);
    test_assert(txt_wildcard_count(txt) == 2);
 
    txt_free(txt);
@@ -251,7 +256,52 @@ test_txt_append_wildcard
 
 
 void
-test_txt_append_rc
+test_txt_commit_seq
+(void)
+{
+   sym_t * sym = sym_new_dna();
+   test_assert_critical(sym != NULL);
+   
+   txt_t * txt;
+   txt = txt_new(sym);
+   test_assert_critical(txt != NULL);
+
+   test_assert(txt_append("AACCGGTTNN", txt) == 0);
+   test_assert(txt_length(txt) == 10);
+
+   test_assert(txt_commit_seq(NULL,txt) == -1);
+   test_assert(txt_commit_seq("",txt) == -1);
+   test_assert(txt_commit_seq("seq0",NULL) == -1);
+
+   test_assert(txt_commit_seq("seq0",txt) == 0);
+
+   test_assert(txt_wildcard_count(txt) == 1);
+   test_assert(txt_length(txt) == 11);
+   test_assert(txt_seq_count(txt) == 1);
+   test_assert(txt_seq_start(0,txt) == 0);
+   test_assert(txt_seq_length(0,txt) == 11);
+   test_assert(strcmp(txt_seq_name(0,txt), "seq0") == 0);
+
+   test_assert(txt_append("TGATCGATCNTAGCT", txt) == 0);
+   test_assert(txt_length(txt) == 26);
+   // Seq name must be unique
+   test_assert(txt_commit_seq("seq0",txt) == -1);
+   test_assert(txt_commit_seq("seq1",txt) == 0);
+
+   test_assert(txt_wildcard_count(txt) == 2);
+   test_assert(txt_length(txt) == 27);
+   test_assert(txt_seq_count(txt) == 2);
+   test_assert(txt_seq_start(1,txt) == 11);
+   test_assert(txt_seq_length(1,txt) == 16);
+   test_assert(strcmp(txt_seq_name(1,txt), "seq1") == 0);
+
+   txt_free(txt);
+   sym_free(sym);
+}
+
+
+void
+test_txt_commit_rc
 (void)
 {
    sym_t * sym = sym_new_dna();
@@ -276,7 +326,7 @@ test_txt_append_rc
    test_assert(txt_sym(8, txt) == 4);
    test_assert(txt_sym(9, txt) == 4);
 
-   test_assert(txt_append_rc(txt) == 0);
+   test_assert(txt_commit_rc(txt) == 0);
    test_assert(txt_length(txt) == 22);
    test_assert(txt_wildcard_count(txt) == 2);
 
@@ -329,7 +379,7 @@ test_txt_append_rc
    test_assert(txt_sym(7, txt) == 4);
    test_assert(txt_sym(8, txt) == 5);
 
-   test_assert(txt_append_rc(txt) == 0);
+   test_assert(txt_commit_rc(txt) == 0);
    test_assert(txt_length(txt) == 18);
    test_assert(txt_wildcard_count(txt) == 6);
 
@@ -435,6 +485,120 @@ test_txt_get_symbols
 
 
 void
+test_txt_seq_helpers
+(void)
+{
+   sym_t * sym = sym_new_dna();
+   test_assert_critical(sym != NULL);
+   
+   txt_t * txt;
+   txt = txt_new(sym);
+   test_assert_critical(txt != NULL);
+
+   test_assert(txt_append("AACCGGTTNN", txt) == 0);
+   test_assert(txt_commit_seq("seq0",txt) == 0);
+   test_assert(txt_append("TGATCGATCNTAGCT", txt) == 0);
+   test_assert(txt_commit_seq("seq1",txt) == 0);
+
+   test_assert(txt_seq_count(NULL) == -1);
+   test_assert(txt_seq_count(txt) == 2);
+
+   test_assert(txt_seq_start(0,NULL) == -1);
+   test_assert(txt_seq_start(-1,txt) == -1);
+   test_assert(txt_seq_start(2,txt) == -1);
+   test_assert(txt_seq_start(0,txt) == 0);
+   test_assert(txt_seq_start(1,txt) == 11);
+
+   test_assert(txt_seq_length(0,NULL) == -1);
+   test_assert(txt_seq_length(-1,txt) == -1);
+   test_assert(txt_seq_length(2,txt) == -1);
+   test_assert(txt_seq_length(0,txt) == 11);
+   test_assert(txt_seq_length(1,txt) == 16);
+
+   test_assert(txt_seq_name(0,NULL) == NULL);
+   test_assert(txt_seq_name(-1,txt) == NULL);
+   test_assert(txt_seq_name(2,txt) == NULL);
+   test_assert(strcmp(txt_seq_name(0,txt), "seq0") == 0);
+   test_assert(strcmp(txt_seq_name(1,txt), "seq1") == 0);
+
+   txt_free(txt);
+   sym_free(sym);
+}
+
+
+void
+test_txt_pos_to_str
+(void)
+{
+   sym_t * sym = sym_new_dna();
+   test_assert_critical(sym != NULL);
+   
+   txt_t * txt;
+   txt = txt_new(sym);
+   test_assert_critical(txt != NULL);
+
+   test_assert(txt_append("AACCGGTTNN", txt) == 0);
+   test_assert(txt_commit_seq("seq0",txt) == 0);
+   test_assert(txt_append("TGATCGATCNTAGCT", txt) == 0);
+   test_assert(txt_commit_seq("seq1",txt) == 0);
+   test_assert(txt_commit_rc(txt) == 0);
+
+   //0        90        90     6   0         0         0
+   //AACCGGTTNN$TGATCGATCNTAGCT$TGATCGATCNTAGCT$AACCGGTTNN$
+
+   test_assert(txt_pos_to_str(-1,txt) == NULL);
+   test_assert(txt_pos_to_str(0,NULL) == NULL);
+   test_assert(strcmp(txt_pos_to_str(9,txt), "seq0:10:+") == 0);
+   test_assert(strcmp(txt_pos_to_str(12,txt), "seq1:2:+") == 0);
+   test_assert(strcmp(txt_pos_to_str(27,txt), "seq1:15:-") == 0);
+   test_assert(strcmp(txt_pos_to_str(52,txt), "seq0:1:-") == 0);
+
+   txt_free(txt);
+   sym_free(sym);
+}
+
+void
+test_txt_str_to_pos
+(void)
+{
+   sym_t * sym = sym_new_dna();
+   test_assert_critical(sym != NULL);
+   
+   txt_t * txt;
+   txt = txt_new(sym);
+   test_assert_critical(txt != NULL);
+
+   test_assert(txt_append("AACCGGTTNN", txt) == 0);
+   test_assert(txt_commit_seq("seq0",txt) == 0);
+   test_assert(txt_append("TGATCGATCNTAGCT", txt) == 0);
+   test_assert(txt_commit_seq("seq1",txt) == 0);
+   test_assert(txt_commit_rc(txt) == 0);
+
+   //0        90        90     6   0         0         0
+   //AACCGGTTNN$TGATCGATCNTAGCT$TGATCGATCNTAGCT$AACCGGTTNN$
+
+   test_assert(txt_str_to_pos(NULL,txt) == -1);
+   test_assert(txt_str_to_pos("seq0:8:+",NULL) == -1);
+   test_assert(txt_str_to_pos("seqNULL:10:+",txt) == -1);
+   test_assert(txt_str_to_pos("seqNULL:+",txt) == -1);
+   test_assert(txt_str_to_pos("seq0,10,+",txt) == -1);
+   test_assert(txt_str_to_pos("seq0:-1:+",txt) == -1);
+   test_assert(txt_str_to_pos("seq0:100:+",txt) == -1);
+   test_assert(txt_str_to_pos("seq0:0:+",txt) == -1);
+
+   test_assert(txt_str_to_pos("seq0:10:+",txt) == 9);
+   test_assert(txt_str_to_pos("seq1:2:+",txt) == 12);
+   test_assert(txt_str_to_pos("seq1:15:-",txt) == 27);
+   test_assert(txt_str_to_pos("seq0:1:-",txt) == 52);
+   test_assert(txt_str_to_pos("seq1:15:+",txt) == 25);
+
+   txt_free(txt);
+   sym_free(sym);
+}
+
+
+
+void
 test_txt_file
 (void)
 {
@@ -446,10 +610,14 @@ test_txt_file
    txt = txt_new(sym);
    test_assert_critical(txt != NULL);
 
+   char * sn = malloc(10);
    for (int i = 0; i < 100; i++) {
+      sprintf(sn, "seq%d", i);
       test_assert(txt_append("AAAAAAAAAACCCCCCCCCCGGGGGGGGGGTTTTTTTTTTNNNNNNNNNN", txt) == 0);
-      test_assert(txt_append_wildcard(txt) == 0);
+      test_assert(txt_commit_seq(sn,txt) == 0);
    }
+   free(sn);
+
    test_assert(txt_length(txt) == 5100);
    test_assert(txt_wildcard_count(txt) == 100);
    test_assert(txt_sym(0, txt) == 0);
@@ -496,6 +664,24 @@ test_txt_file
    test_assert(txt_sym(5069, txt) == 2);
    test_assert(txt_sym(5059, txt) == 1);
    test_assert(txt_sym(5049, txt) == 0);
+   
+   test_assert(strcmp(txt_seq_name(0,txt), "seq0") == 0);
+   test_assert(strcmp(txt_seq_name(71,txt), "seq71") == 0);
+   test_assert(strcmp(txt_seq_name(99,txt), "seq99") == 0);
+   test_assert(txt_seq_name(100,txt) == NULL);
+
+   test_assert(txt_seq_length(0,txt) == 51);
+   test_assert(txt_seq_length(34,txt) == 51);
+   test_assert(txt_seq_length(99,txt) == 51);
+   test_assert(txt_seq_length(100,txt) == -1);
+
+   test_assert(txt_seq_start(0,txt) == 0);
+   test_assert(txt_seq_start(1,txt) == 51);
+   test_assert(txt_seq_start(26,txt) == 1326);
+   test_assert(txt_seq_start(99,txt) == 5049);
+   test_assert(txt_seq_start(100,txt) == -1);
+
+   test_assert(strcmp(txt_pos_to_str(0,txt), "seq0:1:+") == 0);
 
    txt_free(txt);
    sym_free(sym);
@@ -509,10 +695,14 @@ const test_case_t test_cases_index_txt[] = {
    {"index_txt/txt_sym_range",       test_txt_sym_range},
    {"index_txt/txt_append",          test_txt_append},
    {"index_txt/txt_append_wildcard", test_txt_append_wildcard},
-   {"index_txt/txt_append_rc",       test_txt_append_rc},
+   {"index_txt/txt_commit_seq",      test_txt_commit_seq},
+   {"index_txt/txt_commit_rc",       test_txt_commit_rc},
    {"index_txt/txt_length",          test_txt_length},
    {"index_txt/txt_wildcard_count",  test_txt_wildcard_count},
    {"index_txt/txt_get_symbols",     test_txt_get_symbols},
+   {"index_txt/txt_seq_helpers",     test_txt_seq_helpers},
+   {"index_txt/txt_seq_pos_to_str",  test_txt_pos_to_str},
+   {"index_txt/txt_seq_str_to_pos",  test_txt_str_to_pos},
    {"index_txt/txt_file",      test_txt_file},
    {NULL, NULL}, // Sentinel. //
 };
