@@ -2,21 +2,23 @@
 
 // Interface data types.
 struct bwt_t {
-   uint64_t   occ_length;
-   uint64_t   occ_mark_intv;
-   uint64_t   occ_word_size;
-   uint64_t   occ_mark_bits;
-   uint64_t * c;
-   uint64_t * occ;
-   txt_t    * txt;
+   size_t      mmap_len;
+   void      * mmap_ptr;
+   uint64_t    occ_length;
+   uint64_t    occ_mark_intv;
+   uint64_t    occ_word_size;
+   uint64_t    occ_mark_bits;
+   uint64_t  * c;
+   uint64_t  * occ;
+   txt_t     * txt;
 };
 
 struct bwtquery_t {
-   int64_t   fp;
-   int64_t   rp;
-   int64_t   sz;
-   int64_t   dp;
-   bwt_t   * bwt;
+   int64_t    fp;
+   int64_t    rp;
+   int64_t    sz;
+   int64_t    dp;
+   bwt_t    * bwt;
 };
 
 
@@ -430,6 +432,8 @@ bwt_build_opt
       return NULL;
 
    // Inherits info from text.
+   bwt->mmap_len = 0;
+   bwt->mmap_ptr = NULL;
    bwt->occ_mark_intv = mark_intv;
    bwt->occ_word_size = word_size;
    bwt->occ_mark_bits = mark_bits;
@@ -538,8 +542,12 @@ bwt_free
 )
 {
    if (bwt != NULL) {
-      free(bwt->c);
-      free(bwt->occ);
+      if (bwt->mmap_ptr == NULL) {
+         free(bwt->c);
+         free(bwt->occ);
+      } else {
+         munmap(bwt->mmap_ptr, bwt->mmap_len);
+      }
       free(bwt);
    }
 
@@ -706,7 +714,6 @@ bwt_file_read
   txt_t  * txt
 )
 {
-   /* WHAT ABOUT USING MMAP INSTEAD? */
    // Check arguments.
    if (filename == NULL || txt == NULL)
       return NULL;
@@ -721,69 +728,46 @@ bwt_file_read
    // Alloc memory.
    bwt_t * bwt = malloc(sizeof(bwt_t));
    if (bwt == NULL)
-      return NULL;
+      goto free_and_return;
+
    // Set NULL pointers.
    bwt->occ = NULL;
    bwt->c = NULL;
-   
-   // Read file.
-   uint64_t magic;
-   ssize_t b_cnt;
-   ssize_t e_cnt;
 
-   // Read magic number.
-   if (read(fd, &magic, sizeof(uint64_t)) < sizeof(uint64_t))
+   // Get file len and mmap file.
+   struct stat sb;
+   fstat(fd, &sb);
+   if (sb.st_size < 48)
       goto free_and_return;
+
+   uint64_t * data = mmap(NULL, sb.st_size, PROT_READ, MAP_SHARED, fd, 0);
+   if (data == NULL)
+      goto free_and_return;
+
+   bwt->mmap_len = sb.st_size;
+   bwt->mmap_ptr = (void *) data;
+
+   // Read file.
+   // Read magic number.
+   uint64_t magic = data[0];
    if (magic != BWT_FILE_MAGICNO)
       goto free_and_return;
 
-   // Read 'occ_length'.
-   if (read(fd, &(bwt->occ_length), sizeof(uint64_t)) < sizeof(uint64_t))
-      goto free_and_return;
+   bwt->occ_length    = data[1];
+   bwt->occ_mark_intv = data[2];
+   bwt->occ_word_size = data[3];
+   bwt->occ_mark_bits = data[4];
 
-   // Read 'occ_mark_intv'.
-   if (read(fd, &(bwt->occ_mark_intv), sizeof(uint64_t)) < sizeof(uint64_t))
-      goto free_and_return;
-
-   // Read 'occ_word_size'.
-   if (read(fd, &(bwt->occ_word_size), sizeof(uint64_t)) < sizeof(uint64_t))
-      goto free_and_return;
-
-   // Read 'occ_mark_bits'.
-   if (read(fd, &(bwt->occ_mark_bits), sizeof(uint64_t)) < sizeof(uint64_t))
-      goto free_and_return;
-
-   // Read C array.
-   bwt->c = malloc((sym_cnt+1)*sizeof(uint64_t));
-   if (bwt->c == NULL)
-      goto free_and_return;
-
-   e_cnt = 0;
-   do {
-      b_cnt = read(fd, (uint64_t *)bwt->c + e_cnt, (sym_cnt+1 - e_cnt) * sizeof(uint64_t));
-      if (b_cnt == -1)
-         goto free_and_return;
-      e_cnt += b_cnt / sizeof(uint64_t);
-   } while (e_cnt < sym_cnt+1);
-
-   // Read OCC array.
-   bwt->occ = malloc((bwt->occ_length)*sizeof(uint64_t));
-   if (bwt->occ == NULL)
-      goto free_and_return;
-
-   e_cnt = 0;
-   do {
-      b_cnt = read(fd, (uint64_t *)bwt->occ + e_cnt, (bwt->occ_length - e_cnt) * sizeof(uint64_t));
-      if (b_cnt == -1)
-         goto free_and_return;
-      e_cnt += b_cnt / sizeof(uint64_t);
-   } while (e_cnt < bwt->occ_length);
-
+   bwt->c   = data + 5;
+   bwt->occ = bwt->c + sym_cnt + 1;
    bwt->txt = txt;
+
+   close(fd);
 
    return bwt;
 
  free_and_return:
+   close(fd);
    bwt_free(bwt);
    return NULL;
 }

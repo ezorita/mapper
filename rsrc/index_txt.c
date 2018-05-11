@@ -100,11 +100,11 @@ txt_free
          free(txt->seq_beg);
          free(txt->seq_name);
          free(txt->text);
-         free(txt);
       } else {
          free(txt->seq_name);
          munmap(txt->mmap_ptr, txt->mmap_len);
       }
+      free(txt);
    }
 
    return;
@@ -634,7 +634,8 @@ txt_file_read
 
    txt_t * txt = malloc(sizeof(txt_t));
    if (txt == NULL)
-      return NULL;
+      goto free_and_return;
+
    // Set NULL pointers.
    txt->mmap_len = 0;
    txt->mmap_ptr = NULL;

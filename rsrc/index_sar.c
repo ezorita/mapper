@@ -2,7 +2,9 @@
 
 // Interface data types.
 struct sar_t {
-   int32_t    sar_bits;
+   size_t     mmap_len;
+   void     * mmap_ptr;
+   int64_t    sar_bits;
    int64_t    sar_len;
    int64_t  * sa;
 };
@@ -23,15 +25,25 @@ sar_build
       return NULL;
 
    // Alloc memory.
-   char    * data = malloc(txt_length(txt)*sizeof(uint8_t));
+   char      * data = NULL;
+   saidx64_t * sa   = NULL;
+   sar_t     * sar  = NULL;
+
+   data = malloc(txt_length(txt)*sizeof(uint8_t));
    if (data == NULL)
-      return NULL;
-   saidx64_t * sa   = malloc(txt_length(txt)*sizeof(saidx64_t));
-   if (sa == NULL) {
-      free(data);
-      return NULL;
-   }
-   sar_t   * sar  = malloc(sizeof(sar_t));
+      goto free_and_return;
+
+   sa   = malloc(txt_length(txt)*sizeof(saidx64_t));
+   if (sa == NULL)
+       goto free_and_return;
+
+   sar  = malloc(sizeof(sar_t));
+   if (sar == NULL)
+      goto free_and_return;
+
+   sar->sa = NULL;
+   sar->mmap_len = 0;
+   sar->mmap_ptr = NULL;
 
    // Since wildcards are encoded as sym_count(sym), shift all symbols and force
    // wildcards to be the symbol 0.
@@ -49,6 +61,12 @@ sar_build
 
    free(data);
    return sar;
+
+ free_and_return:
+   free(data);
+   free(sa);
+   sar_free(sar);
+   return NULL;
 }
 
 
@@ -59,7 +77,11 @@ sar_free
 )
 {
    if (sar != NULL) {
-      free(sar->sa);
+      if (sar->mmap_ptr == NULL) {
+         free(sar->sa);
+      } else {
+         munmap(sar->mmap_ptr, sar->mmap_len);
+      }
       free(sar);
    }
 
@@ -162,7 +184,7 @@ sar_file_write
       goto close_and_error;
    
    // Write sar_bits.
-   if (write(fd, (int32_t *)&(sar->sar_bits), sizeof(int32_t)) == -1)
+   if (write(fd, (int64_t *)&(sar->sar_bits), sizeof(int64_t)) == -1)
       goto close_and_error;
 
    // Write sar_len.
@@ -205,45 +227,39 @@ sar_file_read
    // Alloc memory.
    sar_t * sar = malloc(sizeof(sar_t));
    if (sar == NULL)
-      return NULL;
+      goto free_and_return;
    // Set NULL pointers.
    sar->sa = NULL;
-   
-   // Read file.
-   uint64_t magic;
-   ssize_t b_cnt;
-   ssize_t e_cnt;
 
-   // Read magic number.
-   if (read(fd, &magic, sizeof(uint64_t)) < sizeof(uint64_t))
+   // Get file len and mmap file.
+   struct stat sb;
+   fstat(fd, &sb);
+   if (sb.st_size < 24)
       goto free_and_return;
+
+   int64_t * data = mmap(NULL, sb.st_size, PROT_READ, MAP_SHARED, fd, 0);
+   if (data == NULL)
+      goto free_and_return;
+
+   sar->mmap_len = sb.st_size;
+   sar->mmap_ptr = (void *) data;
+
+   // Read file.
+   // Read magic number.
+   uint64_t magic = data[0];
    if (magic != SAR_FILE_MAGICNO)
       goto free_and_return;
 
-   // Read 'sar_bits'.
-   if (read(fd, &(sar->sar_bits), sizeof(int32_t)) < sizeof(int32_t))
-      goto free_and_return;
+   sar->sar_bits = data[1];
+   sar->sar_len  = data[2];
+   sar->sa       = data + 3;
 
-   // Read 'sar_len'.
-   if (read(fd, &(sar->sar_len), sizeof(int64_t)) < sizeof(int64_t))
-      goto free_and_return;
-
-   // Read Suffix Array.
-   sar->sa = malloc(sar->sar_len*sizeof(int64_t));
-   if (sar->sa == NULL)
-      goto free_and_return;
-
-   e_cnt = 0;
-   do {
-      b_cnt = read(fd, (int64_t *)sar->sa + e_cnt, sar->sar_len * sizeof(int64_t));
-      if (b_cnt == -1)
-         goto free_and_return;
-      e_cnt += b_cnt / sizeof(int64_t);
-   } while (e_cnt < sar->sar_len);
+   close(fd);
 
    return sar;
 
  free_and_return:
+   close(fd);
    sar_free(sar);
    return NULL;
 }
