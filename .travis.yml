@@ -7,7 +7,7 @@ branches:
     - master
 
 before_install:
-  - sudo pip install cpp-coveralls
+  - sudo pip install -U cpp-coveralls
 
 script: make && cd test && make test
 
