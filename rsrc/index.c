@@ -66,7 +66,7 @@ index_read
    // ann glob
    glob_t gbuf;
    sprintf(file_path, "%s.ann.*", filename_base);   
-   glob(file_path,GLOB_TILDE,NULL,&gbuf);
+   glob(file_path, 0, NULL, &gbuf);
 
    // alloc ann list
    index->ann = malloc(gbuf.gl_pathc * sizeof(void *));
