@@ -7,9 +7,9 @@ test_index_build
 {
    test_assert(index_build("fakefile.fasta", "test_base") == NULL);
    test_assert(index_build(NULL, "test_base") == NULL);
-   test_assert(index_build("fasta/repeats.fasta", NULL) == NULL);
+   test_assert(index_build("examples/repeats.fa", NULL) == NULL);
 
-   index_t * index = index_build("fasta/repeats.fasta", "test_base00");
+   index_t * index = index_build("examples/repeats.fa", "test_base00");
    test_assert_critical(index != NULL);
    test_assert(strcmp(index->fname_base, "test_base00") == 0);
    test_assert(index->sym != NULL);
@@ -48,7 +48,7 @@ void
 test_index_ann_new
 (void)
 {
-   index_t * index = index_build("fasta/repeats.fasta", "test_base01");
+   index_t * index = index_build("examples/repeats.fa", "test_base01");
    test_assert_critical(index != NULL);
 
    redirect_stderr();
@@ -89,7 +89,7 @@ void
 test_index_read
 (void)
 {
-   index_t * index = index_build("fasta/repeats.fasta", "test_base02");
+   index_t * index = index_build("examples/repeats.fa", "test_base02");
    test_assert_critical(index != NULL);
 
    redirect_stderr();
