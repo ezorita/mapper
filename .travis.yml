@@ -12,4 +12,4 @@ before_install:
 script: make && cd test && make test
 
 after_success:
-  - coveralls --verbose --gcov-options '\-lp' -r .. -E '.*test'
+  - coveralls --verbose --gcov-options '\-lp' -r .. -E '.*test|.*divsufsort'

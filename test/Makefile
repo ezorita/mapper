@@ -30,6 +30,11 @@ libunittest.so: unittest.c
 
 test: $(P)
 	./$(P)
+
+$(COVFILE): test
+
+
+coverage: $(COVFILE)
 	gcov $(COVFILE)
 
 inspect: $(P)
