@@ -2,7 +2,7 @@ vpath %.c lib
 vpath %.h lib
 
 P= runtests
-SOURCE_DIR= ../rsrc
+SOURCE_DIR= ../src
 HEADER_DIR= $(SOURCE_DIR)
 
 OBJECTS= test_index_sym.o test_index_txt.o test_index_sar.o test_index_bwt.o test_index_ann.o test_index.o libunittest.so
