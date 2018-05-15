@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <glob.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/mman.h>
