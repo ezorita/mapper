@@ -73,7 +73,6 @@ sym_new
 
    // Check arguments.
    error_test_msg(alphabet == NULL, "argument 'alphabet' is NULL.");
-   error_test_msg(complement == NULL, "argument 'complement' is NULL.");
 
    // Count number of symbols.
    int sym_count = 0;
