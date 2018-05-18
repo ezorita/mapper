@@ -67,51 +67,51 @@ sym_new
 **      sym_set_alphabet(alphabet, complement, sym_default, sym);
 */
 {
+   // Alloc names.
+   sym_t   * sym  = NULL;
+   uint8_t * used = NULL;
+
    // Check arguments.
-   if (alphabet == NULL)
-      return NULL;
+   error_test_msg(alphabet == NULL, "argument 'alphabet' is NULL.");
+   error_test_msg(complement == NULL, "argument 'complement' is NULL.");
 
    // Count number of symbols.
    int sym_count = 0;
    while (alphabet[sym_count] != NULL) sym_count++;
    
    // There must be at least two symbols to store info.
-   if (sym_count < 2 || sym_count >= SYM_MAX_ALPHABET_SIZE)
-      return NULL;
+   error_test_msg(sym_count < 2, "less than 2 symbols defined.");
+   error_test_msg(sym_count >= SYM_MAX_ALPHABET_SIZE, "alphabet size is greater than SYM_MAX_ALPHABET_SIZE.");
 
    // Check default symbol.
-   if (sym_default >= sym_count)
-      return NULL;
+   error_test_msg(sym_default >= sym_count, "'sym_default' does not belong to alphabet.");
 
    // Check symbol consistency.
-   uint8_t * used = calloc(SYM_TABLE_SIZE, 1);
+   used = calloc(SYM_TABLE_SIZE, 1);
+   error_test_mem(used);
+
    for (int i = 0; i < sym_count; i++) {
       int j = 0;
       while (alphabet[i][j] != '\0') {
          if (used[(uint8_t)alphabet[i][j]]) {
-            free(used);
-            return NULL;
+            error_throw_msg("defined symbols must be unique.");
          }
          used[(uint8_t)alphabet[i][j++]] = 1;
       }
    }
    free(used);
+   used = NULL;
 
    // Alloc sym.
-   sym_t * sym = malloc(sizeof(sym_t));
-   if (sym == NULL)
-      return NULL;
+   sym = malloc(sizeof(sym_t));
+   error_test_mem(sym);
    
    // Initialize sym_t.
    *sym = (sym_t){sym_count, NULL, NULL, NULL};
 
    // (Re)alloc canonical symbol array.
    sym->sym_canon = malloc(sym_count+1);
-   
-   if (sym->sym_canon == NULL) {
-      sym_free(sym);
-      return NULL;
-   }
+   error_test_mem(sym->sym_canon);
 
    // Fill canonicals (The first character representing each symbol).
    for (int i = 0; i < sym_count; i++) {
@@ -121,11 +121,7 @@ sym_new
 
    // Fill sym table.
    sym->sym_table = malloc(SYM_TABLE_SIZE);
-
-   if (sym->sym_table == NULL) {
-      sym_free(sym);
-      return NULL;
-   }
+   error_test_mem(sym->sym_table);
 
    // Fill all characters with default symbol.
    memset(sym->sym_table, sym_default, SYM_TABLE_SIZE);
@@ -138,19 +134,19 @@ sym_new
 
    // Alloc complements table.
    sym->com_table = malloc(sym_count + 1);
-
-   if (sym->com_table == NULL) {
-      sym_free(sym);
-      return NULL;
-   }
+   error_test_mem(sym->com_table);
    
    // Set complements, identity if not set.
-   if (sym_set_complement(complement, sym)) {
-      sym_free(sym);
-      return NULL;
+   if (sym_set_complement(complement, sym) == -1) {
+      error_throw();
    }
 
    return sym;
+
+ failure_return:
+   free(used);
+   sym_free(sym);
+   return NULL;
 }
 
 sym_t *
@@ -210,11 +206,8 @@ sym_set_complement
 */
 {
    // Check arguments.
-   if (sym == NULL)
-      return -1;
-
-   if (sym->com_table == NULL)
-      return -1;
+   error_test_msg(sym == NULL, "argument 'sym' is NULL.");
+   error_test_msg(sym->com_table == NULL, "argument 'sym->com_table' is NULL.");
 
    // Set identity base.
    for (int i = 0; i < sym->sym_count; i++) {
@@ -228,10 +221,9 @@ sym_set_complement
    int i = 0;
    char * rel;
    while ((rel = complement[i++]) != NULL) {
-      if (strlen(rel) < 2)
-         return -1;
-      if (!sym_is_canonical(rel[0], sym) || !sym_is_canonical(rel[1], sym))
-         return -1;
+      error_test_msg(strlen(rel) < 2, "incorrect complement format.");
+      error_test_msg(sym_is_canonical(rel[0], sym) == 0, "symbols must be canonicals.");
+      error_test_msg(sym_is_canonical(rel[1], sym) == 0, "symbols must be canonicals.");
    }
 
    // Apply relationships.
@@ -241,6 +233,9 @@ sym_set_complement
    }
 
    return 0;
+
+ failure_return:
+   return -1;
 }
 
 char
@@ -251,14 +246,15 @@ sym_character
 )
 {
    // Check arguments.
-   if (sym == NULL)
-      return -1;
-
-   if (sym->sym_canon == NULL || s >= sym->sym_count)
-      return -1;
+   error_test_msg(sym == NULL, "argument 'sym' is NULL.");
+   error_test_msg(sym->sym_canon == NULL, "argument 'sym->sym_canon' is NULL.");
+   error_test_msg(s >= sym->sym_count, "symbol index out of bounds.");
 
    // Return symbol representation.
    return sym->sym_canon[s];
+   
+ failure_return:
+   return -1;
 }
 
 int32_t
@@ -269,14 +265,15 @@ sym_complement
 )
 {
    // Check arguments.
-   if (sym == NULL)
-      return -1;
-
-   if (sym->com_table == NULL || s >= sym->sym_count)
-      return -1;
+   error_test_msg(sym == NULL, "argument 'sym' is NULL.");
+   error_test_msg(sym->com_table == NULL, "argument 'sym->com_table' is NULL.");
+   error_test_msg(s >= sym->sym_count, "symbol index out of bounds.");
 
    // Return symbol complement.
    return sym->com_table[s];
+
+ failure_return:
+   return -1;
 }
 
 int32_t
@@ -287,11 +284,13 @@ sym_index
 )
 {
    // Check arguments.
-   if (sym == NULL)
-      return -1;
+   error_test_msg(sym == NULL, "argument 'sym' is NULL.");
 
    // Return symbol index.
    return sym->sym_table[(uint8_t)c];
+
+ failure_return:
+   return -1;
 }
 
 int
@@ -302,14 +301,17 @@ sym_is_canonical
 )
 {
    // Check arguments.
-   if (sym == NULL)
-      return -1;
+   error_test_msg(sym == NULL, "argument 'sym' is NULL.");
 
    // Check whether symbol is in canonicals.
-   if (c == sym->sym_canon[sym->sym_table[(uint8_t)c]])
-         return 1;
-   
-   return 0;
+   if (c == sym->sym_canon[sym->sym_table[(uint8_t)c]]) {
+      return 1;
+   } else {
+      return 0;
+   }
+
+ failure_return:
+   return -1;
 }
 
 
@@ -320,11 +322,13 @@ sym_count
 )
 {
    // Check arguments.
-   if (sym == NULL)
-      return 0;
+   error_test_msg(sym == NULL, "argument 'sym' is NULL.");
    
    // Return symbol count.
    return sym->sym_count;
+
+ failure_return:
+   return -1;
 }
 
 
@@ -344,14 +348,14 @@ sym_file_write
   sym_t  * sym
 )
 {
+   int fd = -1;
    // Check arguments.
-   if (filename == NULL || sym == NULL)
-      return -1;
+   error_test_msg(filename == NULL, "argument 'filename' is NULL.");
+   error_test_msg(sym == NULL, "argument 'sym' is NULL.");
    
    // Open file.
-   int fd = creat(filename, 0644);
-   if (fd == -1)
-      return -1;
+   fd = creat(filename, 0644);
+   error_test_def(fd == -1);
 
    // Write data.
    ssize_t  e_cnt = 0;
@@ -359,19 +363,18 @@ sym_file_write
    uint64_t magic = SYM_FILE_MAGICNO;
 
    // Write magic.
-   if (write(fd, &magic, sizeof(uint64_t)) == -1)
-      goto close_and_error;
+   b_cnt = write(fd, &magic, sizeof(uint64_t));
+   error_test_def(b_cnt == -1);
 
    // Write sym_count.
-   if (write(fd, (uint8_t *)&(sym->sym_count), sizeof(uint8_t)) == -1)
-      goto close_and_error;
+   b_cnt = write(fd, (uint8_t *)&(sym->sym_count), sizeof(uint8_t));
+   error_test_def(b_cnt == -1);
 
    // Write sym_canon array.
    e_cnt = 0;
    do {
       b_cnt  = write(fd, (char *)sym->sym_canon + e_cnt, (sym->sym_count + 1 - e_cnt)*sizeof(char));
-      if (b_cnt == -1)
-         goto close_and_error;
+      error_test_def(b_cnt == -1);
       e_cnt += b_cnt / sizeof(char);
    } while (e_cnt < sym->sym_count + 1);
 
@@ -379,8 +382,7 @@ sym_file_write
    e_cnt = 0;
    do {
       b_cnt  = write(fd, (uint8_t *)sym->sym_table + e_cnt, (SYM_TABLE_SIZE - e_cnt)*sizeof(uint8_t));
-      if (b_cnt == -1)
-         goto close_and_error;
+      error_test_def(b_cnt == -1);
       e_cnt += b_cnt / sizeof(uint8_t);
    } while (e_cnt < SYM_TABLE_SIZE);
 
@@ -388,17 +390,16 @@ sym_file_write
    e_cnt = 0;
    do {
       b_cnt  = write(fd, (uint8_t *)sym->com_table + e_cnt, (sym->sym_count + 1 - e_cnt)*sizeof(uint8_t));
-      if (b_cnt == -1)
-         goto close_and_error;
+      error_test_def(b_cnt == -1);
       e_cnt += b_cnt / sizeof(uint8_t);
    } while (e_cnt < sym->sym_count + 1);
-
 
    close(fd);
    return 0;
 
- close_and_error:
-   close(fd);
+ failure_return:
+   if (fd != -1)
+      close(fd);
    return -1;
 }
 
@@ -408,19 +409,21 @@ sym_file_read
   char * filename
 )
 {
+   // Declare variables.
+   int fd = -1;
+   sym_t * sym = NULL;
+
    // Check arguments.
-   if (filename == NULL)
-      return NULL;
+   error_test_msg (filename == NULL, "argument 'filename' is NULL.");
 
    // Open file.
-   int fd = open(filename, O_RDONLY);
-   if (fd == -1)
-      return NULL;
+   fd = open(filename, O_RDONLY);
+   error_test_def(fd == -1);
 
    // Alloc memory.
-   sym_t * sym = malloc(sizeof(sym_t));
-   if (sym == NULL)
-      return NULL;
+   sym = malloc(sizeof(sym_t));
+   error_test_mem(sym);
+
    // Set NULL pointers.
    sym->sym_canon = NULL;
    sym->sym_table = sym->com_table = NULL;
@@ -430,63 +433,56 @@ sym_file_read
    ssize_t b_cnt;
    ssize_t e_cnt;
 
-   if (read(fd, &magic, sizeof(uint64_t)) < sizeof(uint64_t))
-      goto free_and_return;
-   if (magic != SYM_FILE_MAGICNO)
-      goto free_and_return;
+   b_cnt = read(fd, &magic, sizeof(uint64_t));
+   error_test_def(b_cnt == -1);
+   error_test_msg(magic != SYM_FILE_MAGICNO, "unrecognized 'sym' file format (magicno).");
 
-   if (read(fd, &(sym->sym_count), sizeof(uint8_t)) < sizeof(uint8_t))
-      goto free_and_return;
-   if (sym->sym_count < 2)
-      goto free_and_return;
+   b_cnt = read(fd, &(sym->sym_count), sizeof(uint8_t));
+   error_test_def(b_cnt < -1);
+   error_test_msg(sym->sym_count < 2, "incorrect 'sym' file format (sym_count < 2).");
 
    // Alloc canonical symbol array.
    sym->sym_canon = malloc((sym->sym_count + 1) * sizeof(uint8_t));
-   if (sym->sym_canon == NULL)
-      goto free_and_return;
+   error_test_mem(sym->sym_canon);
 
    // Read symbol canonicals.
    e_cnt = 0;
    do {
       b_cnt = read(fd, (char *)sym->sym_canon + e_cnt, (sym->sym_count + 1 - e_cnt) * sizeof(char));
-      if (b_cnt == -1)
-         goto free_and_return;
+      error_test_def(b_cnt == -1);
       e_cnt += b_cnt / sizeof(char);
    } while (e_cnt < sym->sym_count + 1);
 
    // Alloc symbol table.
    sym->sym_table = malloc(SYM_TABLE_SIZE * sizeof(uint8_t));
-   if (sym->sym_table == NULL)
-      goto free_and_return;
+   error_test_mem(sym->sym_table);
 
    // Read symbol table.
    e_cnt = 0;
    do {
       b_cnt = read(fd, (uint8_t *)sym->sym_table + e_cnt, (SYM_TABLE_SIZE - e_cnt) * sizeof(uint8_t));
-      if (b_cnt == -1)
-         goto free_and_return;
+      error_test_def(b_cnt == -1);
       e_cnt += b_cnt / sizeof(uint8_t);
    } while (e_cnt < SYM_TABLE_SIZE);
 
    // Alloc symbol complement table.
    sym->com_table = malloc((sym->sym_count + 1) * sizeof(uint8_t));
-   if (sym->com_table == NULL)
-      goto free_and_return;
+   error_test_mem(sym->com_table);
 
    // Read symbol table.
    e_cnt = 0;
    do {
       b_cnt = read(fd, (uint8_t *)sym->com_table + e_cnt, (sym->sym_count + 1 - e_cnt) * sizeof(uint8_t));
-      if (b_cnt == -1)
-         goto free_and_return;
+      error_test_def(b_cnt == -1);
       e_cnt += b_cnt / sizeof(uint8_t);
    } while (e_cnt < sym->sym_count + 1);
 
    close(fd);
    return sym;
 
- free_and_return:
-   close(fd);
+ failure_return:
+   if (fd != -1)
+      close(fd);
    sym_free(sym);
    return NULL;
 }

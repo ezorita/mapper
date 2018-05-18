@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include "errhandler.h"
 
 #ifndef _INDEX_SYM_H
 #define _INDEX_SYM_H
