@@ -1,8 +1,9 @@
 #include <errno.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#ifndef
+#ifndef ERRHANDLER_H_
 #define ERRHANDLER_H_
 
 // Macros to throw errors.
@@ -14,24 +15,40 @@
    }} while (0)
 
 #define error_test_def(x) do { \
-   if (!(x)) { \
+   if ((x)) { \
       warning(strerror(errno), __FILE__, __func__, __LINE__);    \
       goto failure_return; \
    }} while (0)
 
 #define error_test_msg(x,m) do { \
-   if (!(x)) { \
+   if ((x)) { \
       warning(m, __FILE__, __func__, __LINE__); \
       goto failure_return; \
    }} while (0)
 
+#define error_throw_def() do { \
+   warning(strerror(errno), __FILE__, __func__, __LINE__); \
+   goto failure_return; \
+   } while (0)
+
+#define error_throw_msg(m) do { \
+   warning(m, __FILE__, __func__, __LINE__); \
+   goto failure_return; \
+   } while (0)
+
 // Macros to propagate errors.
 
 #define error_test(x) do { \
-   if (!(x)) { \
+   if ((x)) { \
+      warning(NULL, __FILE__, __func__, __LINE__); \
+      goto failure_return; \
+   }} while (0)
+
+#define error_throw() do { \
    warning(NULL, __FILE__, __func__, __LINE__); \
    goto failure_return; \
-   }} while (0)
+   } while (0)
+
 
 // Helper functions.
 void    warning   (const char * msg, const char * file, const char * func, const int line);
