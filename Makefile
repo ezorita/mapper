@@ -1,7 +1,7 @@
 SRC_DIR= src
 INC_DIR= src
 OBJ_DIR= obj
-OBJECT_FILES= index_bwt.o index_sar.o index_txt.o index_sym.o index_ann.o index.o blocksearch.o
+OBJECT_FILES= index_bwt.o index_sar.o index_txt.o index_sym.o index_ann.o index.o errhandler.o blocksearch.o
 SOURCE_FILES= mapper.c divsufsort.c
 HEADER_FILES= mapper.h divsufsort.h
 OTHER_FILES = Makefile
