@@ -650,7 +650,7 @@ txt_file_read
    // Declare variables.
    int fd = -1;
    txt_t * txt = NULL;
-
+   int64_t * data = NULL;
    // Check arguments.
    error_test_msg(filename == NULL, "argument 'filename' is NULL.");
    error_test_msg(sym == NULL, "argument 'sym' is NULL.");
@@ -673,9 +673,9 @@ txt_file_read
    // Get file len and mmap file.
    struct stat sb;
    fstat(fd, &sb);
-   error_test_msg(sb.st_size <= 16, "file size is too small.");
+   error_test_msg(sb.st_size <= 16, "'txt' file size is too small (sb.st_size < 16).");
 
-   int64_t * data = mmap(NULL, sb.st_size, PROT_READ, MAP_SHARED, fd, 0);
+   data = mmap(NULL, sb.st_size, PROT_READ, MAP_SHARED, fd, 0);
    error_test_def(data == NULL);
 
    txt->mmap_len = sb.st_size;
@@ -736,6 +736,8 @@ txt_file_read
  failure_return:
    if (fd != -1)
       close(fd);
+   if (data != NULL)
+      munmap(data, sb.st_size);
    txt_free(txt);
    return NULL;
 }
