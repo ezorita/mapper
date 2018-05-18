@@ -7,7 +7,9 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/mman.h>
+#include "errhandler.h"
 #include "index_sym.h"
+
 
 #ifndef _INDEX_TXT_H
 #define _INDEX_TXT_H
