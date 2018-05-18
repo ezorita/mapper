@@ -21,25 +21,22 @@ sar_build
   txt_t  * txt
 )
 {
-   if (txt == NULL)
-      return NULL;
-
-   // Alloc memory.
+   // Declare variables.
    char      * data = NULL;
    saidx64_t * sa   = NULL;
    sar_t     * sar  = NULL;
 
+   error_test_msg(txt == NULL, "argument 'txt' is NULL.");
+
+   // Alloc memory.
    data = malloc(txt_length(txt)*sizeof(uint8_t));
-   if (data == NULL)
-      goto free_and_return;
+   error_test_mem(data);
 
    sa   = malloc(txt_length(txt)*sizeof(saidx64_t));
-   if (sa == NULL)
-       goto free_and_return;
+   error_test_mem(sa);
 
    sar  = malloc(sizeof(sar_t));
-   if (sar == NULL)
-      goto free_and_return;
+   error_test_mem(sar);
 
    sar->sa = NULL;
    sar->mmap_len = 0;
@@ -57,12 +54,12 @@ sar_build
    
    // Compact array.
    sar->sa = (int64_t *)sa;
-   compact_array(sar, txt_length(txt));
+   error_test( compact_array(sar, txt_length(txt)) == -1 );
 
    free(data);
    return sar;
 
- free_and_return:
+ failure_return:
    free(data);
    free(sa);
    sar_free(sar);
@@ -97,23 +94,26 @@ sar_get
 )
 {
    // Check arguments.
-   if (sar == NULL)
-      return -1;
+   error_test_msg(sar == NULL, "argument 'sar' is NULL.");
 
    int64_t sar_txt_len = (64*sar->sar_len)/sar->sar_bits;
-   if (pos < 0 || pos >= sar_txt_len)
-      return -1;
+   error_test_msg(pos < 0, "index must be positive.");
+   error_test_msg(pos >= sar_txt_len, "index out of bounds.");
 
    // Fetch word of 'sar_bits' bits in suffix array.
    uint64_t mask = ((uint64_t)0xFFFFFFFFFFFFFFFF) >> (64 - sar->sar_bits);
    uint64_t bit = pos*sar->sar_bits;
    uint64_t word = bit/64;
    bit %= 64;
+
    // Cast words to unsigned to avoid right shift with 1's.
    if (bit + sar->sar_bits > 64)
       return ((((uint64_t)sar->sa[word] >> bit) & mask) | ((uint64_t)sar->sa[word+1] & mask) << (64-bit)) & mask;
    else
       return ((uint64_t)sar->sa[word] >> bit) & mask;
+
+ failure_return:
+   return -1;
 }
 
 
@@ -127,12 +127,13 @@ sar_get_range
 )
 {
    // Check arguments.
-   if (vec == NULL || sar == NULL)
-      return -1;
+   error_test_msg(vec == NULL, "argument 'vec' is NULL.");
+   error_test_msg(sar == NULL, "argument 'sar' is NULL.");
 
    int64_t sar_txt_len = (64*sar->sar_len)/sar->sar_bits;
-   if (beg < 0 || size < 1 || beg + size > sar_txt_len)
-      return -1;
+   error_test_msg(beg < 0, "'beg' index must be positive.");
+   error_test_msg(size < 1, "'size' must be greater than 0.");
+   error_test_msg(beg + size > sar_txt_len, "range out of bounds.");
 
    // Fetch words of 'sar_bits' bits and store them in vec.
    uint64_t mask = ((uint64_t)0xFFFFFFFFFFFFFFFF) >> (64 - sar->sar_bits);
@@ -154,6 +155,9 @@ sar_get_range
       if (bit == 0) w = sar->sa[++word];
    }
    return 0;
+
+ failure_return:
+   return -1;
 }
 
 
@@ -165,14 +169,16 @@ sar_file_write
   sar_t  * sar
 )
 {
+   // Declare variables.
+   int fd = -1;
+
    // Check arguments.
-   if (filename == NULL || sar == NULL)
-      return -1;
+   error_test_msg(filename == NULL, "argument 'filename' is NULL.");
+   error_test_msg(sar == NULL, "argument 'sar' is NULL.");
 
    // Open file.
-   int fd = creat(filename, 0644);
-   if (fd == -1)
-      return -1;
+   fd = creat(filename, 0644);
+   error_test_def(fd == -1);
 
    // Write data.
    ssize_t  e_cnt = 0;
@@ -180,31 +186,31 @@ sar_file_write
    uint64_t magic = SAR_FILE_MAGICNO;
 
    // Write magic.
-   if (write(fd, &magic, sizeof(uint64_t)) == -1)
-      goto close_and_error;
+   b_cnt = write(fd, &magic, sizeof(uint64_t));
+   error_test_def(b_cnt == -1);
    
    // Write sar_bits.
-   if (write(fd, (int64_t *)&(sar->sar_bits), sizeof(int64_t)) == -1)
-      goto close_and_error;
+   b_cnt = write(fd, (int64_t *)&(sar->sar_bits), sizeof(int64_t));
+   error_test_def(b_cnt == -1);
 
    // Write sar_len.
-   if (write(fd, (int64_t *)&(sar->sar_len), sizeof(int64_t)) == -1)
-      goto close_and_error;
+   b_cnt = write(fd, (int64_t *)&(sar->sar_len), sizeof(int64_t));
+   error_test_def(b_cnt == -1);
 
    // Write Suffix Array.
    e_cnt = 0;
    do {
       b_cnt  = write(fd, (int64_t *)sar->sa + e_cnt, (sar->sar_len - e_cnt)*sizeof(int64_t));
-      if (b_cnt == -1)
-         goto close_and_error;
+      error_test_def(b_cnt == -1);
       e_cnt += b_cnt / sizeof(int64_t);
    } while (e_cnt < sar->sar_len);
 
    close(fd);
    return 0;
 
- close_and_error:
-   close(fd);
+ failure_return:
+   if (fd != -1)
+      close(fd);
    return -1;
 }
 
@@ -215,31 +221,32 @@ sar_file_read
   char   * filename
 )
 {
+   // Declare variables.
+   int fd = -1;
+   sar_t * sar = NULL;
+   int64_t * data = NULL;
+
    // Check arguments.
-   if (filename == NULL)
-      return NULL;
+   error_test_msg(filename == NULL, "argument 'filename' is NULL.");
 
    // Open file.
-   int fd = open(filename, O_RDONLY);
-   if (fd == -1)
-      return NULL;
+   fd = open(filename, O_RDONLY);
+   error_test_def(fd == -1);
 
    // Alloc memory.
-   sar_t * sar = malloc(sizeof(sar_t));
-   if (sar == NULL)
-      goto free_and_return;
+   sar = malloc(sizeof(sar_t));
+   error_test_mem(sar);
+
    // Set NULL pointers.
    sar->sa = NULL;
 
    // Get file len and mmap file.
    struct stat sb;
    fstat(fd, &sb);
-   if (sb.st_size < 24)
-      goto free_and_return;
+   error_test_msg(sb.st_size < 24, "'sar' file size is too small (sb.st_size < 24).");
 
-   int64_t * data = mmap(NULL, sb.st_size, PROT_READ, MAP_SHARED, fd, 0);
-   if (data == NULL)
-      goto free_and_return;
+   data = mmap(NULL, sb.st_size, PROT_READ, MAP_SHARED, fd, 0);
+   error_test_def(data == NULL);
 
    sar->mmap_len = sb.st_size;
    sar->mmap_ptr = (void *) data;
@@ -247,8 +254,7 @@ sar_file_read
    // Read file.
    // Read magic number.
    uint64_t magic = data[0];
-   if (magic != SAR_FILE_MAGICNO)
-      goto free_and_return;
+   error_test_msg(magic != SAR_FILE_MAGICNO, "unrecognized 'sar' file format (magicno).");
 
    sar->sar_bits = data[1];
    sar->sar_len  = data[2];
@@ -258,8 +264,11 @@ sar_file_read
 
    return sar;
 
- free_and_return:
-   close(fd);
+ failure_return:
+   if (fd != 1)
+      close(fd);
+   if (data != NULL)
+      munmap(data, sb.st_size);
    sar_free(sar);
    return NULL;
 }
@@ -306,8 +315,10 @@ compact_array
 
    // Realloc array.
    sar->sa = realloc(sar->sa, sar->sar_len*sizeof(int64_t));
-   if (sar->sa == NULL)
-      return -1;
+   error_test_mem(sar->sa);
 
    return 0;
+
+ failure_return:
+   return -1;
 }
