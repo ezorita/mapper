@@ -5,6 +5,7 @@ void
 test_index_build
 (void)
 {
+   redirect_stderr();
    test_assert(index_build("fakefile.fasta", "test_base") == NULL);
    test_assert(index_build(NULL, "test_base") == NULL);
    test_assert(index_build("examples/repeats.fa", NULL) == NULL);
@@ -42,12 +43,14 @@ test_index_build
    free(q);
 
    index_free(index);
+   unredirect_stderr();
 }
 
 void
 test_index_ann_new
 (void)
 {
+   redirect_stderr();
    index_t * index = index_build("examples/repeats.fa", "test_base01");
    test_assert_critical(index != NULL);
 
@@ -82,6 +85,7 @@ test_index_ann_new
    free(lci);
 
    index_free(index);
+   unredirect_stderr();
 }
 
 
@@ -89,6 +93,7 @@ void
 test_index_read
 (void)
 {
+   redirect_stderr();
    index_t * index = index_build("examples/repeats.fa", "test_base02");
    test_assert_critical(index != NULL);
 
@@ -156,6 +161,8 @@ test_index_read
    free(lci);
 
    index_free(index);
+
+   unredirect_stderr();
 }
 
 
