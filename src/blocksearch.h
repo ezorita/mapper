@@ -32,8 +32,8 @@ struct pstree_t {
 };
 
 // Block-search functions.
-void          blocksc_trail          (uint8_t *, bwtquery_t **, int, int, int, pstree_t *);
-void          blocksearch_trail_rec  (uint8_t *, int, int, int, int, bwt_t *, pstree_t *);
+int           blocksc_trail          (uint8_t *, bwtquery_t **, int, int, int, pstree_t *);
+int           blocksearch_trail_rec  (uint8_t *, int, int, int, int, bwt_t *, pstree_t *);
 // Search functions.
 int           scsearch_fw            (spath_t, uint8_t *, int, int, int, int, int, int, pathstack_t **);
 int           seqsearch_fw           (spath_t, uint8_t *, int, int, int, int, int, pathstack_t **);
