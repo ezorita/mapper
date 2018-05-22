@@ -203,6 +203,8 @@ ann_build
    ann->tau  = tau;
    ann->size = tlen/2;
    ann->info = calloc(ann->size, sizeof(uint8_t));
+   ann->mmap_len = 0;
+   ann->mmap_ptr = NULL;
    error_test_mem(ann->info);
 
    // Compute and store annotation from info.
