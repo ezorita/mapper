@@ -6,7 +6,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/mman.h>
-
+#include "errhandler.h"
 #include "index_sar.h"
 #include "index_bwt.h"
 #include "blocksearch.h"

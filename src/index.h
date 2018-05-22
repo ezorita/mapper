@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <glob.h>
+#include "errhandler.h"
 #include "index_sym.h"
 #include "index_txt.h"
 #include "index_sar.h"

@@ -28,35 +28,32 @@ txt_new
   sym_t  * sym
 )
 {
-   // Variable names carrying alloc pointers.
+   // Define variables.
    int64_t  * seq_len = NULL, * seq_beg = NULL;
    char    ** seq_name = NULL;
    uint8_t  * text = NULL;
    txt_t    * txt = NULL;
 
    // Check arguments.
-   if (sym == NULL)
-      goto failure_return;
+   error_test_msg(sym == NULL, "argument 'sym' is NULL.");
    
    // Alloc txt_t.
    txt = malloc(sizeof(txt_t));
-
-   if (txt == NULL)
-      goto failure_return;
+   error_test_mem(txt);
 
    // Alloc sequence memory.
    seq_len  = malloc(TXT_SEQ_SIZE*sizeof(uint64_t));
-   seq_beg  = malloc(TXT_SEQ_SIZE*sizeof(uint64_t));
-   seq_name = malloc(TXT_SEQ_SIZE*sizeof(char *));
+   error_test_mem(seq_len);
 
-   if (!seq_len || !seq_beg || !seq_name)
-      goto failure_return;
+   seq_beg  = malloc(TXT_SEQ_SIZE*sizeof(uint64_t));
+   error_test_mem(seq_beg);
+
+   seq_name = malloc(TXT_SEQ_SIZE*sizeof(char *));
+   error_test_mem(seq_name);
 
    // Alloc text memory.
    text = malloc(TXT_BUFFER_SIZE*sizeof(uint8_t));
-
-   if (text == NULL)
-      goto failure_return;
+   error_test_mem(text);
 
    // Initialize and return.
    txt->mmap_len = 0;
@@ -119,13 +116,14 @@ txt_sym
 )
 {
    // Check arguments.
-   if (txt == NULL) 
-      return -1;
-
-   if (pos < 0 || pos >= txt->txt_len)
-      return -1;
+   error_test_msg(txt == NULL, "argument 'txt' is NULL.");
+   error_test_msg(pos < 0, "index must be positive.");
+   error_test_msg(pos >= txt->txt_len, "index out of bounds.");
 
    return txt->text[pos];
+   
+ failure_return:
+   return -1;
 }
 
 
@@ -138,14 +136,15 @@ txt_sym_range
 )
 {
    // Check arguments.
-   if (txt == NULL)
-      return NULL;
-   
-   if (beg < 0 || beg + len > txt->txt_len)
-      return NULL;
+   error_test_msg(txt == NULL, "argument 'txt' is NULL.");
+   error_test_msg(beg < 0, "index must be positive.");
+   error_test_msg(beg + len > txt->txt_len, "range out of bounds.");
 
    // Since we are not compressing, return pointer to text.
    return txt->text + beg;
+   
+ failure_return:
+   return NULL;
 }
 
 
@@ -156,8 +155,8 @@ txt_append
  txt_t  * txt
 )
 {
-   if (text == NULL || txt == NULL)
-      return -1;
+   error_test_msg(text == NULL, "argument 'text' is NULL.");
+   error_test_msg(txt == NULL, "argument 'txt' is NULL.");
 
    // Realloc text structure if necessary.
    size_t tlen = strlen(text);
@@ -167,8 +166,7 @@ txt_append
          new_mem_size *= 2;
       }      
       txt->text = realloc(txt->text, new_mem_size * sizeof(uint8_t));
-      if (txt->text == NULL)
-         return -1;
+      error_test_mem(txt->text);
       txt->mem_txt = new_mem_size;
    }
 
@@ -180,6 +178,9 @@ txt_append
    txt->txt_len += tlen;
 
    return 0;
+
+ failure_return:
+   return -1;
 }
 
 int
@@ -192,15 +193,13 @@ txt_append_wildcard
 */
 {
    // Check arguments.
-   if (txt == NULL)
-      return -1;
+   error_test_msg(txt == NULL, "argument 'txt' is NULL.");
 
    // Realloc text structure if necessary.
    if (txt->txt_len >= txt->mem_txt) {
       size_t new_mem_size = txt->mem_txt + 1;
       txt->text = realloc(txt->text, new_mem_size * sizeof(uint8_t));
-      if (txt->text == NULL)
-         return -1;
+      error_test_mem(txt->text);
       txt->mem_txt = new_mem_size;
    }
 
@@ -209,6 +208,9 @@ txt_append_wildcard
    txt->wil_cnt++;
    
    return 0;
+
+ failure_return:
+   return -1;
 }
 
 
@@ -220,35 +222,39 @@ txt_commit_seq
 )
 {
    // Check arguments.
-   if (txt == NULL || seqname == NULL)
-      return -1;
+   error_test_msg(seqname == NULL, "argument 'seqname' is NULL.");
+   error_test_msg(txt == NULL, "argument 'txt' is NULL.");
    
    // Check seqname length.
-   if (strlen(seqname) < 1)
-      return -1;
+   error_test_msg(strlen(seqname) < 1, "argument 'seqname' is an empty String.");
 
    // Check seqname uniqueness.
    for (int64_t i = 0; i < txt->seq_cnt; i++) {
-      if (strcmp(seqname, txt->seq_name[i]) == 0)
-         return -1;
+      error_test_msg(strcmp(seqname, txt->seq_name[i]) == 0, "duplicate sequence name.");
    }
 
    // Realloc structure if necessary.
    if (txt->txt_len >= txt->mem_txt) {
       size_t new_mem_size = txt->mem_txt + 1;
+
       txt->text = realloc(txt->text, new_mem_size * sizeof(uint8_t));
-      if (txt->text == NULL)
-         return -1;
+      error_test_mem(txt->text);
+
       txt->mem_txt = new_mem_size;
    }
 
    if (txt->seq_cnt >= txt->mem_seq) {
       size_t new_mem_size = 2*txt->mem_seq;
+
       txt->seq_beg  = realloc(txt->seq_beg , new_mem_size * sizeof(uint64_t));
+      error_test_mem(txt->seq_beg);
+
       txt->seq_len  = realloc(txt->seq_len , new_mem_size * sizeof(uint64_t));
+      error_test_mem(txt->seq_len);
+
       txt->seq_name = realloc(txt->seq_name, new_mem_size * sizeof(char *));
-      if (!txt->seq_beg || !txt->seq_len || !txt->seq_name)
-         return -1;
+      error_test_mem(txt->seq_name);
+
       txt->mem_seq = new_mem_size;
    }
 
@@ -265,14 +271,15 @@ txt_commit_seq
    txt->seq_beg[txt->seq_cnt]  = beg;
    txt->seq_len[txt->seq_cnt]  = txt->txt_len - beg;
    txt->seq_name[txt->seq_cnt] = strdup(seqname);
-
-   if (txt->seq_name[txt->seq_cnt] == NULL)
-      return -1;
+   error_test_def(txt->seq_name[txt->seq_cnt] == NULL);
 
    // Update sequence count.
    txt->seq_cnt++;
    
    return 0;
+
+ failure_return:
+   return -1;
 }
 
 
@@ -283,25 +290,24 @@ txt_commit_rc
 )
 {
    // Check arguments.
-   if (txt == NULL)
-      return -1;
-
-   if (txt->txt_len < 1)
-      return 0;
+   error_test_msg(txt == NULL, "argument 'txt' is NULL.");
+   error_test_msg(txt->txt_len < 1, "text has length 0.");
 
    // Realloc structure if necessary.
    if (2*txt->txt_len >= txt->mem_txt) {
       size_t new_mem_size = 2*(txt->mem_txt + 1);
       txt->text = realloc(txt->text, new_mem_size * sizeof(uint8_t));
-      if (txt->text == NULL)
-         return -1;
+      error_test_mem(txt->text);
       txt->mem_txt = new_mem_size;
    }
    
    // Append reverse complement of text, including wildcards.
    sym_t  * sym = txt_get_symbols(txt);
+   error_test(sym == NULL);
    int64_t tlen = txt_length(txt);
+   error_test(tlen == -1);
    int     nsym = sym_count(sym);
+   error_test(nsym == -1);
 
    // Add last wildcard if not present.
    if (txt->text[tlen-1] < nsym) {
@@ -329,6 +335,9 @@ txt_commit_rc
    txt->rc_flag = 1;
 
    return 0;
+
+ failure_return:
+   return -1;
 }
 
 
@@ -340,10 +349,12 @@ txt_length
 )
 {
    // Check arguments.
-   if (txt == NULL)
-      return -1;
+   error_test_msg(txt == NULL, "argument 'txt' is NULL.");
 
    return txt->txt_len;
+
+ failure_return:
+   return -1;
 }
 
 
@@ -354,10 +365,12 @@ txt_get_symbols
 )
 {
    // Check arguments.
-   if (txt == NULL)
-      return NULL;
+   error_test_msg(txt == NULL, "argument 'txt' is NULL.");
    
    return txt->sym;
+
+ failure_return:
+   return NULL;
 }
 
 
@@ -368,10 +381,12 @@ txt_wildcard_count
 )
 {
    // Check arguments.
-   if (txt == NULL) 
-      return -1;
+   error_test_msg(txt == NULL, "argument 'txt' is NULL.");
 
    return txt->wil_cnt;
+
+ failure_return:
+   return -1;
 }
 
 
@@ -382,10 +397,12 @@ txt_seq_count
 )
 {
    // Check arguments.
-   if (txt == NULL) 
-      return -1;
+   error_test_msg(txt == NULL, "argument 'txt' is NULL.");
 
    return txt->seq_cnt;
+
+ failure_return:
+   return -1;
 }
 
 
@@ -396,12 +413,14 @@ txt_seq_start
   txt_t    * txt
 )
 {
-   if (txt == NULL)
-      return -1;
-   if (seq < 0 || seq >= txt->seq_cnt)
-      return -1;
+   error_test_msg(txt == NULL, "argument 'txt' is NULL.");
+   error_test_msg(seq < 0, "index must be positive.");
+   error_test_msg(seq >= txt->seq_cnt, "index out of bounds.");
 
    return txt->seq_beg[seq];
+
+ failure_return:
+   return -1;
 }
 
 
@@ -412,12 +431,14 @@ txt_seq_length
   txt_t    * txt
 )
 {
-   if (txt == NULL)
-      return -1;
-   if (seq < 0 || seq >= txt->seq_cnt)
-      return -1;
+   error_test_msg(txt == NULL, "argument 'txt' is NULL.");
+   error_test_msg(seq < 0, "index must be positive.");
+   error_test_msg(seq >= txt->seq_cnt, "index out of bounds.");
 
    return txt->seq_len[seq];
+
+ failure_return:
+   return -1;
 }
 
 
@@ -428,12 +449,14 @@ txt_seq_name
   txt_t    * txt
 )
 {
-   if (txt == NULL)
-      return NULL;
-   if (seq < 0 || seq >= txt->seq_cnt)
-      return NULL;
+   error_test_msg(txt == NULL, "argument 'txt' is NULL.");
+   error_test_msg(seq < 0, "index must be positive.");
+   error_test_msg(seq >= txt->seq_cnt, "index out of bounds.");
 
    return txt->seq_name[seq];
+   
+ failure_return:
+   return NULL;
 }
 
 
@@ -444,10 +467,9 @@ txt_pos_to_str
   txt_t    * txt
 )
 {
-   if (txt == NULL)
-      return NULL;
-   if (pos < 0 || pos >= txt->txt_len)
-      return NULL;
+   error_test_msg(txt == NULL, "argument 'txt' is NULL.");
+   error_test_msg(pos < 0, "index must be positive.");
+   error_test_msg(pos >= txt->txt_len, "index out of bounds.");
 
    // Check whether text has RC.
    int strand = 0;
@@ -461,12 +483,14 @@ txt_pos_to_str
 
    // Generate string.
    char * pos_str = malloc(strlen(txt->seq_name[seq_id])+30);
-   if (pos_str == NULL)
-      return NULL;
+   error_test_mem(pos_str);
 
    sprintf(pos_str, "%s:%ld:%c", txt->seq_name[seq_id], pos - txt->seq_beg[seq_id] + 1, (strand ? '-' : '+'));
 
    return pos_str;
+
+ failure_return:
+   return NULL;
 }
 
 
@@ -477,12 +501,11 @@ txt_str_to_pos
   txt_t  * txt
 )
 {
-   if (str == NULL || txt == NULL)
-      return -1;
+   error_test_msg(str == NULL, "argument 'str' is NULL.");
+   error_test_msg(txt == NULL, "argument 'txt' is NULL.");
 
    char * pos_str = strdup(str);
-   if (pos_str == NULL)
-      return -1;
+   error_test_def(pos_str == NULL);
 
    // Tokenize string.
    char * seq_name = strtok(pos_str, ":");
@@ -490,8 +513,7 @@ txt_str_to_pos
    char * seq_fw   = strtok(NULL, ":");
 
    // Incorrect format.
-   if (seq_pos == NULL)
-      return -1;
+   error_test_msg(seq_pos == NULL, "incorrect sequence format.");
 
    // Read strand (default is '+').
    int strand = 1;
@@ -506,13 +528,12 @@ txt_str_to_pos
          break;
       }
    }
-   if (seq_id < 0)
-      return -1;
+   error_test_msg(seq_id < 0, "sequence name not found.");
 
    // Convert position to int.
    int64_t pos = atol(seq_pos);
-   if (pos < 1 || pos > txt->seq_len[seq_id])
-      return -1;
+   error_test_msg(pos < 1, "sequence index must be positive");
+   error_test_msg(pos > txt->seq_len[seq_id], "sequence index out of bounds");
 
    // Find position in sequence.
    pos = txt->seq_beg[seq_id] + pos - 1;
@@ -524,6 +545,9 @@ txt_str_to_pos
    
    // Return absolute position.
    return pos;
+
+ failure_return:
+   return -1;
 }
 
 
@@ -535,14 +559,14 @@ txt_file_write
   txt_t  * txt
 )
 {
+   int fd = -1;
    // Check arguments.
-   if (filename == NULL || txt == NULL)
-      return -1;
+   error_test_msg(filename == NULL, "argument 'filename' is NULL.");
+   error_test_msg(txt == NULL, "argument 'txt' is NULL.");
    
    // Open file.
-   int fd = creat(filename, 0644);
-   if (fd == -1)
-      return -1;
+   fd = creat(filename, 0644);
+   error_test_def(fd == -1);
 
    // Write data.
    ssize_t  e_cnt = 0;
@@ -550,31 +574,30 @@ txt_file_write
    uint64_t magic = TXT_FILE_MAGICNO;
 
    // Write magic.
-   if (write(fd, &magic, sizeof(uint64_t)) == -1)
-      goto close_and_error;
+   b_cnt = write(fd, &magic, sizeof(uint64_t));
+   error_test_def(b_cnt == -1);
 
    // Write txt_len.
-   if (write(fd, (int64_t *)&(txt->txt_len), sizeof(int64_t)) == -1)
-      goto close_and_error;
+   b_cnt = write(fd, (int64_t *)&(txt->txt_len), sizeof(int64_t));
+   error_test_def(b_cnt == -1);
 
    // write seq_cnt.
-   if (write(fd, (int64_t *)&(txt->seq_cnt), sizeof(int64_t)) == -1)
-      goto close_and_error;
+   b_cnt = write(fd, (int64_t *)&(txt->seq_cnt), sizeof(int64_t));
+   error_test_def(b_cnt == -1);
 
    // write wil_cnt.
-   if (write(fd, (int64_t *)&(txt->wil_cnt), sizeof(int64_t)) == -1)
-      goto close_and_error;
+   b_cnt = write(fd, (int64_t *)&(txt->wil_cnt), sizeof(int64_t));
+   error_test_def(b_cnt == -1);
 
    // write rc_flag.
-   if (write(fd, (int64_t *)&(txt->rc_flag), sizeof(int64_t)) == -1)
-      goto close_and_error;
+   b_cnt = write(fd, (int64_t *)&(txt->rc_flag), sizeof(int64_t));
+   error_test_def(b_cnt == -1);
 
    // write seq_len array.
    e_cnt = 0;
    do {
       b_cnt  = write(fd, (int64_t *)txt->seq_len + e_cnt, (txt->seq_cnt - e_cnt)*sizeof(int64_t));
-      if (b_cnt == -1)
-         goto close_and_error;
+      error_test_def(b_cnt == -1);
       e_cnt += b_cnt / sizeof(int64_t);
    } while (e_cnt < txt->seq_cnt);
 
@@ -583,8 +606,7 @@ txt_file_write
    e_cnt = 0;
    do {
       b_cnt  = write(fd, (int64_t *)txt->seq_beg + e_cnt, (txt->seq_cnt - e_cnt)*sizeof(int64_t));
-      if (b_cnt == -1)
-         goto close_and_error;
+      error_test_def(b_cnt == -1);
       e_cnt += b_cnt / sizeof(int64_t);
    } while (e_cnt < txt->seq_cnt);
 
@@ -594,8 +616,7 @@ txt_file_write
       e_cnt = 0;
       do {
          b_cnt  = write(fd, (char *)txt->seq_name[i] + e_cnt, (namelen - e_cnt)*sizeof(char));
-         if (b_cnt == -1)
-            goto close_and_error;
+         error_test_def(b_cnt == -1);
          e_cnt += b_cnt / sizeof(char);
       } while (e_cnt < namelen);
    }
@@ -604,16 +625,16 @@ txt_file_write
    e_cnt = 0;
    do {
       b_cnt  = write(fd, (uint8_t *)txt->text + e_cnt, (txt->txt_len - e_cnt)*sizeof(uint8_t));
-      if (b_cnt == -1)
-         goto close_and_error;
+      error_test_def(b_cnt == -1);
       e_cnt += b_cnt / sizeof(uint8_t);
    } while (e_cnt < txt->txt_len);
 
    close(fd);
    return 0;
 
- close_and_error:
-   close(fd);
+ failure_return:
+   if (fd != -1)
+      close(fd);
    return -1;
 }
 
@@ -626,18 +647,20 @@ txt_file_read
   sym_t  * sym
 )
 {
+   // Declare variables.
+   int fd = -1;
+   txt_t * txt = NULL;
+   int64_t * data = NULL;
    // Check arguments.
-   if (filename == NULL || sym == NULL)
-      return NULL;
+   error_test_msg(filename == NULL, "argument 'filename' is NULL.");
+   error_test_msg(sym == NULL, "argument 'sym' is NULL.");
 
    // Open file.
-   int fd = open(filename, O_RDONLY);
-   if (fd == -1)
-      return NULL;
+   fd = open(filename, O_RDONLY);
+   error_test_def(fd == -1);
 
-   txt_t * txt = malloc(sizeof(txt_t));
-   if (txt == NULL)
-      goto free_and_return;
+   txt = malloc(sizeof(txt_t));
+   error_test_mem(txt);
 
    // Set NULL pointers.
    txt->mmap_len = 0;
@@ -650,12 +673,10 @@ txt_file_read
    // Get file len and mmap file.
    struct stat sb;
    fstat(fd, &sb);
-   if (sb.st_size <= 16)
-      goto free_and_return;
+   error_test_msg(sb.st_size <= 16, "'txt' file size is too small (sb.st_size < 16).");
 
-   int64_t * data = mmap(NULL, sb.st_size, PROT_READ, MAP_SHARED, fd, 0);
-   if (data == NULL)
-      goto free_and_return;
+   data = mmap(NULL, sb.st_size, PROT_READ, MAP_SHARED, fd, 0);
+   error_test_def(data == NULL);
 
    txt->mmap_len = sb.st_size;
    txt->mmap_ptr = (void *) data;
@@ -663,26 +684,23 @@ txt_file_read
    // Read file.
    // Read magic number.
    uint64_t magic = data[0];
-   if (magic != TXT_FILE_MAGICNO)
-      goto free_and_return;
+   error_test_msg(magic != TXT_FILE_MAGICNO, "unrecognized 'txt' file format (magicno).");
 
    // Read 'txt_len'.
    txt->txt_len = data[1];
-   if (txt->txt_len < 1)
-      goto free_and_return;
+   error_test_msg(txt->txt_len < 1, "incorrect 'txt' file format (txt_len < 1).");
 
    // Read 'seq_cnt'.
    txt->seq_cnt = data[2];
-   if (txt->seq_cnt < 1)
-      goto free_and_return;
+   error_test_msg(txt->seq_cnt < 1, "incorrect 'txt' file format (seq_cnt < 1).");
 
    // Read 'seq_cnt'.
    txt->wil_cnt = data[3];
 
    // Read 'rc_flag'.
    txt->rc_flag = data[4];
-   if (txt->rc_flag < 0 || txt->rc_flag > 1)
-      goto free_and_return;
+   error_test_msg(txt->rc_flag < 0, "incorrect 'txt' file format (rc_flag < 0).");
+   error_test_msg(txt->rc_flag > 1, "incorrect 'txt' file format (rc_flag > 1).");
    
    // Pointer to seq_beg array.
    txt->seq_len = data + 5;
@@ -692,8 +710,7 @@ txt_file_read
 
    // Alloc sequence names.
    txt->seq_name = malloc(txt->seq_cnt * sizeof(char *));
-   if (txt->seq_name == NULL)
-      return NULL;
+   error_test_mem(txt->seq_name);
 
    // Pointers to seq_names.
    char * str_ptr = (char *) (txt->seq_beg + txt->seq_cnt);
@@ -716,8 +733,11 @@ txt_file_read
 
    return txt;
    
- free_and_return:
-   close(fd);
+ failure_return:
+   if (fd != -1)
+      close(fd);
+   if (data != NULL)
+      munmap(data, sb.st_size);
    txt_free(txt);
    return NULL;
 }

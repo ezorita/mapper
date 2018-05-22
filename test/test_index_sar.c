@@ -16,6 +16,8 @@ test_sar_build
    char   * seq_5   = "$TgAgcatGGC$acTCGA$";
    int64_t  sar_5[] = {18,11,0,17,12,3,6,10,5,15,13,16,2,9,4,8,14,1,7};
 
+   redirect_stderr();
+
    sym_t * sym = sym_new_dna();
    test_assert_critical(sym != NULL);
 
@@ -127,6 +129,8 @@ test_sar_build
    txt_free(txt);
    sym_free(sym);
    free(sa_buf);
+
+   unredirect_stderr();
 }
 
 
@@ -134,6 +138,8 @@ void
 test_sar_get
 (void)
 {
+   redirect_stderr();
+
    sym_t * sym = sym_new_dna();
    test_assert_critical(sym != NULL);
    txt_t * txt = txt_new(sym);
@@ -171,6 +177,8 @@ test_sar_get
    sar_free(sar);
    txt_free(txt);
    sym_free(sym);
+
+   unredirect_stderr();
 }
 
 
@@ -178,6 +186,8 @@ void
 test_sar_get_range
 (void)
 {
+   redirect_stderr();
+
    int64_t  ref_sa[] = {18,11,0,17,12,3,6,10,5,15,13,16,2,9,4,8,14,1,7};
    int64_t * sa_buf = malloc(30*sizeof(int64_t));
    test_assert_critical(sa_buf != NULL);
@@ -207,6 +217,8 @@ test_sar_get_range
    txt_free(txt);
    sym_free(sym);
    free(sa_buf);
+
+   unredirect_stderr();
 }
 
 
@@ -214,6 +226,8 @@ void
 test_sar_file
 (void)
 {
+   redirect_stderr();
+
    int64_t  ref_sa[] = {18,11,0,17,12,3,6,10,5,15,13,16,2,9,4,8,14,1,7};
    int64_t * sa_buf = malloc(30*sizeof(int64_t));
    test_assert_critical(sa_buf != NULL);
@@ -272,6 +286,8 @@ test_sar_file
    txt_free(txt);
    sym_free(sym);
    free(sa_buf);
+
+   unredirect_stderr();
 }
 
 // Define test cases to be run (for export).

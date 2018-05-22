@@ -16,6 +16,8 @@ test_sym_new
    char * comp03[] = {"aB", "BA", "CD", "DC", NULL};
    char * comp04[] = {"AB", "BA", "CD", "dc", NULL};
    char * comp05[] = {"AB", "BA", "CD", "DC", NULL};
+
+   redirect_stderr();
    // NULL alphabet.
    sym_t * sym0 = sym_new(NULL, NULL, 0);
    test_assert(sym0 == NULL);
@@ -213,7 +215,7 @@ test_sym_new
    test_assert(sym_complement(3, sym2) == 0);
    test_assert(sym_complement(4, sym2) == 2);
    sym_free(sym2);
-
+   unredirect_stderr();
 }
 
 void
@@ -227,6 +229,7 @@ test_sym_set_complement
    char * comp03[] = {NULL};
    char * comp04[] = {"AA","BA","CD","DD",NULL};
 
+   redirect_stderr();
    test_assert(sym_set_complement(NULL, NULL) == -1);
    test_assert(sym_set_complement(comp00, NULL) == -1);
 
@@ -285,6 +288,7 @@ test_sym_set_complement
    test_assert(sym_set_complement(wrong03, sym) == -1);
 
    sym_free(sym);
+   unredirect_stderr();
 }
 
 void
@@ -294,6 +298,8 @@ test_sym_character
    sym_t * sym;
    char * alph0[] = {"Aa","Bb","Cc","Dd","Ee",NULL};
    char * alph1[] = {"aA","Bb","cC","Dd","eE",NULL};
+
+   redirect_stderr();
 
    test_assert(sym_character(0, NULL) == -1);
    
@@ -322,6 +328,8 @@ test_sym_character
    test_assert(sym_character(6, sym) == -1);
    test_assert(sym_character(-1, sym) == -1);
    sym_free(sym);   
+
+   unredirect_stderr();
 }
 
 void
@@ -331,6 +339,8 @@ test_sym_index
    sym_t * sym;
    char * alph0[] = {"Aa","Bb","Cc","Dd","Ee",NULL};
    char * alph1[] = {"aA","Bb","cC","Dd","eE",NULL};
+
+   redirect_stderr();
 
    test_assert(sym_index(0, NULL) == -1);
    
@@ -372,6 +382,7 @@ test_sym_index
    test_assert(sym_character(sym_index('9', sym), sym) == 'c');
    sym_free(sym);
 
+   unredirect_stderr();
 }
 
 void
@@ -381,6 +392,8 @@ test_sym_is_canonical
    sym_t * sym;
    char * alph0[] = {"Aa","Bb","Cc","Dd","Ee",NULL};
    char * alph1[] = {"aA","Bb","cC","Dd","eE",NULL};
+
+   redirect_stderr();
 
    test_assert(sym_is_canonical(0, NULL) == -1);
    
@@ -423,6 +436,8 @@ test_sym_is_canonical
    test_assert(sym_is_canonical('%',sym) == 0);
    test_assert(sym_is_canonical('$',sym) == 0);
    sym_free(sym);   
+
+   unredirect_stderr();
 }
 
 void
@@ -434,6 +449,8 @@ test_sym_complement
    char * comp01[] = {"AC","BD",NULL};
    char * comp02[] = {"AB","BA","CD","DC",NULL};
    char * comp03[] = {NULL};
+
+   redirect_stderr();
 
    sym_t * sym;
    sym = sym_new(alph0, NULL, 0);
@@ -483,6 +500,8 @@ test_sym_complement
    test_assert(sym_complement(-1, sym) == -1);
 
    sym_free(sym);
+
+   unredirect_stderr();
 }
 
 void
@@ -495,6 +514,8 @@ test_sym_count
    char * alph3[] = {"a","b","c","d","e","fF","gG","h","iI","Jj",NULL};
    char * alph4[] = {"a","b",NULL};
 
+   redirect_stderr();
+ 
    sym_t * sym;
    sym = sym_new(alph0, NULL, 0);
    test_assert_critical(sym != NULL);
@@ -520,6 +541,8 @@ test_sym_count
    test_assert_critical(sym != NULL);
    test_assert(sym_count(sym) == 2);
    sym_free(sym);
+
+   unredirect_stderr();
 }
 
 void
@@ -530,6 +553,8 @@ test_sym_file
    char * alph1[] = {"k", "Jm", "Ti", "jCd", "Nn", NULL};
    char * comp00[] = {"AB","CD",NULL};
    char * comp10[] = {"kT","Jj","jk","TJ",NULL};
+
+   redirect_stderr();
 
    sym_t * sym_o, * sym_i;
    sym_o = sym_new(alph0, NULL, 0);
@@ -709,6 +734,8 @@ test_sym_file
    test_assert(sym_complement(3, sym_i) == 0);
    test_assert(sym_complement(4, sym_i) == 4);
    sym_free(sym_i);
+
+   unredirect_stderr();
 }
 
 // Define test cases to be run (for export).

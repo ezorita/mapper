@@ -23,7 +23,7 @@ struct bwtquery_t {
 
 
 // Private function headers.
-uint64_t    get_occ       (int64_t ptr, bwt_t * bwt, int sym);
+int64_t     get_occ       (int64_t ptr, bwt_t * bwt, int sym);
 int         get_occ_all   (int64_t ptr, bwt_t * bwt, int64_t * occ);
 
 
@@ -34,14 +34,15 @@ bwt_new_query
   bwt_t  * bwt
 )
 {
+   // Declare variables.
+   bwtquery_t * q = NULL;
+
    // Check arguments.
-   if (bwt == NULL)
-      return NULL;
+   error_test_msg(bwt == NULL, "argument 'bwt' is NULL.");
    
    // Alloc bwt query.
-   bwtquery_t * q = malloc(sizeof(bwtquery_t));
-   if (q == NULL)
-      return NULL;
+   q = malloc(sizeof(bwtquery_t));
+   error_test_mem(q);
 
    // Fill query of depth 0.
    q->fp  = 0;
@@ -51,6 +52,10 @@ bwt_new_query
    q->bwt = bwt;
 
    return q;
+
+ failure_return:
+   free(q);
+   return NULL;
 }
 
 
@@ -60,21 +65,24 @@ bwt_dup_query
   bwtquery_t  * q
 )
 {
-   // Check arguments.
-   if (q == NULL)
-      return NULL;
+   // Declare variables.
+   bwtquery_t * qdup = NULL;
 
-   if (q->bwt == NULL)
-      return NULL;
+   // Check arguments.
+   error_test_msg(q == NULL, "argument 'q' is NULL.");
+   error_test_msg(q->bwt == NULL, "argument 'q->bwt' is NULL.");
    
-   bwtquery_t * qdup = malloc(sizeof(bwtquery_t));
-   if (qdup == NULL)
-      return NULL;
+   qdup = malloc(sizeof(bwtquery_t));
+   error_test_mem(qdup);
 
    // Copy and return pointer.
    memcpy(qdup, q, sizeof(bwtquery_t));
    
    return qdup;
+
+ failure_return:
+   free(qdup);
+   return NULL;
 }
 
 
@@ -84,24 +92,34 @@ bwt_new_vec
   bwt_t  * bwt
 )
 {
-   // Check arguments.
-   if (bwt == NULL)
-      return NULL;
+   // Declare variables.
+   bwtquery_t ** qv = NULL;
+   int32_t sym_cnt = 0;
 
-   int32_t sym_cnt = sym_count(txt_get_symbols(bwt_get_text(bwt)));
+   // Check arguments.
+   error_test_msg(bwt == NULL, "argument 'bwt' is NULL.");
+
+   sym_cnt = sym_count(txt_get_symbols(bwt_get_text(bwt)));
    
-   bwtquery_t ** qv = malloc(sym_cnt*sizeof(void *));
-   if (qv == NULL)
-      return NULL;
+   qv = calloc(sym_cnt, sizeof(void *));
+   error_test_mem(qv);
 
    // Initialize queries.
    for (int i = 0; i < sym_cnt; i++) {
       qv[i] = bwt_new_query(bwt);
-      if (qv[i] == NULL)
-         return NULL;
+      error_test(qv[i] == NULL);
    }
 
    return qv;
+
+ failure_return:
+   if (qv != NULL) {
+      for (int i = 0; i < sym_cnt; i++) {
+         free(qv[i]);
+      }
+   }
+   free(qv);
+   return NULL;
 }
 
 
@@ -111,31 +129,39 @@ bwt_dup_vec
   bwtquery_t  ** qv
 )
 {
+   // Declare variables.
+   bwtquery_t ** qvdup = NULL;
+   int32_t sym_cnt = 0;
+
    // Check arguments.
-   if (qv == NULL || qv[0] == NULL)
-      return NULL;
+   error_test_msg(qv == NULL, "argument 'qv' is NULL.");
+   error_test_msg(qv[0] == NULL, "vector 'qv' is not allocated.");
 
    bwt_t * bwt = qv[0]->bwt;
+   error_test_msg(bwt == NULL, "missing reference to bwt_t from bwtquery_t.");
 
-   if (bwt == NULL)
-      return NULL;
-
-   int32_t sym_cnt = sym_count(txt_get_symbols(bwt_get_text(bwt)));
+   sym_cnt = sym_count(txt_get_symbols(bwt_get_text(bwt)));
 
    // Alloc new vector.
-   bwtquery_t ** qvdup = malloc(sym_cnt*sizeof(void *));
-   if (qvdup == NULL)
-      return NULL;
-   
+   qvdup = calloc(sym_cnt, sizeof(void *));
+   error_test_mem(qvdup);
 
    // Duplicate all queries.
    for (int i = 0; i < sym_cnt; i++) {
       qvdup[i] = bwt_dup_query(qv[i]);
-      if (qvdup[i] == NULL)
-         return NULL;
+      error_test(qvdup[i] == NULL);
    }
 
    return qvdup;
+
+ failure_return:
+   if (qvdup != NULL) {
+      for (int i = 0; i < sym_cnt; i++) {
+         free(qvdup[i]);
+      }
+   }
+   free(qvdup);
+   return NULL;
 }
 
 
@@ -146,14 +172,11 @@ bwt_free_vec
 )
 {
    // Check arguments.
-   if (qv == NULL)
-      return -1;
-   if (qv[0] == NULL)
-      return -1;
+   error_test_msg(qv == NULL, "argument 'qv' is NULL.");
+   error_test_msg(qv[0] == NULL, "vector 'qv' is not allocated.");
 
    bwt_t * bwt = qv[0]->bwt;
-   if (bwt == NULL)
-      return -1;
+   error_test_msg(bwt == NULL, "missing reference to bwt_t from bwtquery_t.");
 
    int32_t sym_cnt = sym_count(txt_get_symbols(bwt_get_text(bwt)));
 
@@ -166,6 +189,9 @@ bwt_free_vec
    free(qv);
 
    return 0;
+
+ failure_return:
+   return -1;
 }
 
 
@@ -177,29 +203,33 @@ bwt_query_all
   bwtquery_t ** qv
 )
 {
-   // Param check.
-   if (q == NULL || qv == NULL)
-      return -1;
+   // Declare variables.
+   int64_t * occ_sp = NULL;
+   int64_t * occ_ep = NULL;
+   int64_t * fp     = NULL;
+   int64_t * rp     = NULL;
+   int64_t * sz     = NULL;
 
-   if (end != BWT_QUERY_SUFFIX && end != BWT_QUERY_PREFIX)
-      return -1;
+   // Param check.
+   error_test_msg(q == NULL, "argument 'q' is NULL.");
+   error_test_msg(qv == NULL, "argument 'qv' is NULL.");
+
+   error_test_msg(end != BWT_QUERY_SUFFIX && end != BWT_QUERY_PREFIX, "invalid 'end' flag.");
 
    bwt_t * bwt = q->bwt;
-   if (bwt == NULL)
-      return -1;
+   error_test_msg(bwt == NULL, "missing reference to bwt_t from bwtquery_t.");
 
    sym_t * sym = txt_get_symbols(bwt_get_text(bwt));
    int32_t sym_cnt = sym_count(sym);
 
    for (int j = 0; j < sym_cnt; j++) {
-      if (qv[j] == NULL)
-         return -1;
+      error_test_msg(qv[j] == NULL, "found NULL element in bwtquery vector.");
    }
 
    int64_t q_fp = q->fp;
    int64_t q_rp = q->rp;
-   int64_t q_sz = q->sz;   
-   int64_t q_dp = q->dp;   
+   int64_t q_sz = q->sz;
+   int64_t q_dp = q->dp;
 
    // Swap fp/rp for forward extension.
    if (end == BWT_QUERY_SUFFIX) {
@@ -208,11 +238,20 @@ bwt_query_all
    }
 
    // Alloc temp pointers for each symbol.
-   int64_t * occ_sp = malloc(sym_cnt * sizeof(int64_t));
-   int64_t * occ_ep = malloc(sym_cnt * sizeof(int64_t));
-   int64_t * fp     = malloc(sym_cnt * sizeof(int64_t));
-   int64_t * rp     = malloc(sym_cnt * sizeof(int64_t));
-   int64_t * sz     = malloc(sym_cnt * sizeof(int64_t));
+   occ_sp = malloc(sym_cnt * sizeof(int64_t));
+   error_test_mem(occ_sp);
+
+   occ_ep = malloc(sym_cnt * sizeof(int64_t));
+   error_test_mem(occ_ep);
+
+   fp     = malloc(sym_cnt * sizeof(int64_t));
+   error_test_mem(fp);
+
+   rp     = malloc(sym_cnt * sizeof(int64_t));
+   error_test_mem(rp);
+
+   sz     = malloc(sym_cnt * sizeof(int64_t));
+   error_test_mem(sz);
 
    // Fetch occ values to update pointers.
    get_occ_all(q_fp - 1, bwt, occ_sp);
@@ -254,6 +293,14 @@ bwt_query_all
    free(sz);
 
    return 0;
+
+ failure_return:
+   free(occ_sp);
+   free(occ_ep);
+   free(fp);
+   free(rp);
+   free(sz);
+   return -1;
 }
 
 
@@ -266,29 +313,25 @@ bwt_query
   bwtquery_t * qo
 )
 {
+   // Declare variables.
+   bwtquery_t ** qv = NULL;
    // Param check.
-   if (q == NULL || qo == NULL)
-      return -1;
+   error_test_msg(q == NULL, "argument 'q' is NULL.");
+   error_test_msg(qo == NULL, "argument 'qo' is NULL.");
    
    bwt_t * bwt = q->bwt;
-   if (bwt == NULL || sym < 0)
-      return -1;
+   error_test_msg(bwt == NULL, "missing reference to bwt_t from bwtquery_t.");
 
    int32_t sym_cnt = sym_count(txt_get_symbols(bwt_get_text(bwt)));
-
-   if (sym >= sym_cnt)
-      return -1;
+   error_test_msg(sym < 0, "sym index must be positive.");
+   error_test_msg(sym >= sym_cnt, "sym index out of bounds.");
 
    // Alloc query vector.
-   bwtquery_t ** qv = bwt_new_vec(bwt);
-   if (qv == NULL)
-      return -1;
+   qv = bwt_new_vec(bwt);
+   error_test_mem(qv);
 
    // Query all symbols (same algorithm complexity).
-   if (bwt_query_all(end, q, qv) < 0) {
-      bwt_free_vec(qv);
-      return -1;
-   }
+   error_test(bwt_query_all(end, q, qv) == -1);
 
    // Copy updated query to q.
    memcpy(qo, qv[sym], sizeof(bwtquery_t));
@@ -297,6 +340,10 @@ bwt_query
    bwt_free_vec(qv);
    
    return 0;
+
+ failure_return:
+   bwt_free_vec(qv);
+   return -1;
 }
 
 
@@ -309,26 +356,23 @@ bwt_prefix
 )
 {
    // Check arguments.
-   if (q == NULL || qo == NULL)
-      return -1;
+   error_test_msg(q == NULL, "argument 'q' is NULL.");
+   error_test_msg(qo == NULL, "argument 'qo' is NULL.");
    
    bwt_t * bwt = q->bwt;
-   if (bwt == NULL || sym < 0)
-      return -1;
+   error_test_msg(bwt == NULL, "missing reference to bwt_t from bwtquery_t.");
 
    int32_t sym_cnt = sym_count(txt_get_symbols(bwt_get_text(bwt)));
-   if (sym >= sym_cnt)
-      return -1;
+   error_test_msg(sym < 0, "sym index must be positive.");
+   error_test_msg(sym >= sym_cnt, "sym index out of bounds.");
 
    // Update start pointer.
    int64_t sp;
-   if ((sp = get_occ(q->fp - 1, bwt, sym)) < 0)
-      return -1;
+   error_test((sp = get_occ(q->fp - 1, bwt, sym)) == -1);
    sp += bwt->c[sym];
    // Update end pointer.
    int64_t ep;
-   if ((ep = get_occ(q->fp + q->sz - 1, bwt, sym)) < 0)
-      return -1;
+   error_test((ep = get_occ(q->fp + q->sz - 1, bwt, sym)) == -1);
    ep += bwt->c[sym] -1;
 
    qo->fp = sp;
@@ -338,6 +382,9 @@ bwt_prefix
    qo->bwt = bwt;
 
    return 0;
+
+ failure_return:
+   return -1;
 }
 
 int
@@ -347,19 +394,21 @@ bwt_prefix_all
   bwtquery_t ** qv
 )
 {
+   // Declare variables.
+   int64_t * occ_sp = NULL;
+   int64_t * occ_ep = NULL;
+
    // Check arguments.
-   if (q == NULL || qv == NULL)
-      return -1;
+   error_test_msg(q == NULL, "argument 'q' is NULL.");
+   error_test_msg(qv == NULL, "argument 'qv' is NULL.");
 
    bwt_t * bwt = q->bwt;
-   if (bwt == NULL)
-      return -1;
+   error_test_msg(bwt == NULL, "missing reference to bwt_t from bwtquery_t.");
 
    int32_t sym_cnt = sym_count(txt_get_symbols(bwt_get_text(bwt)));
    
    for (int j = 0; j < sym_cnt; j++) {
-      if (qv[j] == NULL)
-         return -1;
+      error_test_msg(qv[j] == NULL, "bwtquery_t vector component uninitialized.");
    }
 
    int64_t q_fp = q->fp;
@@ -367,20 +416,15 @@ bwt_prefix_all
    int64_t q_dp = q->dp;
    
    // Compute occs for all nt in one call (1 cache miss).
-   int64_t * occ_sp = malloc(sym_cnt * sizeof(int64_t));
-   int64_t * occ_ep = malloc(sym_cnt * sizeof(int64_t));
+   occ_sp = malloc(sym_cnt * sizeof(int64_t));
+   error_test_mem(occ_sp);
+   occ_ep = malloc(sym_cnt * sizeof(int64_t));
+   error_test_mem(occ_ep);
 
    // Compute occ.
-   if (get_occ_all(q_fp - 1, bwt, occ_sp)) {
-      free(occ_sp);
-      free(occ_ep);
-      return -1;
-   }
-   if (get_occ_all(q_fp + q_sz - 1, bwt, occ_ep)) {
-      free(occ_sp);
-      free(occ_ep);
-      return -1;
-   }
+   error_test(get_occ_all(q_fp - 1, bwt, occ_sp) == -1);
+   error_test(get_occ_all(q_fp + q_sz - 1, bwt, occ_ep) == -1);
+
    // Update pointers.
    for (int j = 0; j < sym_cnt; j++) {
       qv[j]->fp = bwt->c[j] + occ_sp[j];
@@ -394,6 +438,11 @@ bwt_prefix_all
    free(occ_sp);
    free(occ_ep);
    return 0;
+   
+ failure_return:
+   free(occ_sp);
+   free(occ_ep);
+   return -1;
 }
 
 
@@ -416,20 +465,25 @@ bwt_build_opt
   uint64_t    mark_intv
 )
 {
+   // Declare variables.
+   bwt_t    * bwt     = NULL;
+   uint64_t * occ_abs = NULL;
+   uint64_t * occ_tmp = NULL;
+
+   // Word and interval sizes.
    uint64_t word_size = BWT_OCC_WORD_SIZE_DEF;
    uint64_t mark_bits = mark_intv * word_size;
 
    // Check arguments.
-   if (!txt || !sar)
-      return NULL;
-
-   if (mark_intv < 1 || word_size % 8 != 0 || mark_bits < word_size)
-      return NULL;
+   error_test_msg(txt == NULL, "argument 'txt' is NULL.");
+   error_test_msg(sar == NULL, "argument 'sar' is NULL.");
+   error_test_msg(mark_intv < 1, "argument 'mark_intv' must be greater than 0.");
+   error_test_msg(word_size % 8 != 0, "argument 'word_size' must be multiple of 8.");
+   error_test_msg(mark_bits < word_size, "argument 'mark_bits' must be >= 'word_size'.");
 
    // Alloc bwt structure.
-   bwt_t * bwt = malloc(sizeof(bwt_t));
-   if (bwt == NULL)
-      return NULL;
+   bwt = malloc(sizeof(bwt_t));
+   error_test_mem(bwt);
 
    // Inherits info from text.
    bwt->mmap_len = 0;
@@ -438,6 +492,8 @@ bwt_build_opt
    bwt->occ_word_size = word_size;
    bwt->occ_mark_bits = mark_bits;
    bwt->txt           = txt;
+   bwt->occ           = NULL;
+   bwt->c             = NULL;
 
    int64_t text_len   = txt_length(txt);
    int32_t sym_cnt    = sym_count(txt_get_symbols(txt));
@@ -449,21 +505,15 @@ bwt_build_opt
 
    // Alloc OCC and C structures.
    bwt->occ = malloc((n_word + n_mark) * sym_cnt * sizeof(uint64_t));
-   if (bwt->occ == NULL) {
-      free(bwt);
-      return NULL;
-   }
-
+   error_test_mem(bwt->occ);
    bwt->c = malloc((sym_cnt+1)*sizeof(uint64_t));
-   if (bwt->c == NULL) {
-      free(bwt->occ);
-      free(bwt);
-      return NULL;
-   }
+   error_test_mem(bwt->c);
 
    // Alloc buffers.
-   uint64_t * occ_abs = malloc((sym_cnt + 1) * sizeof(uint64_t));
-   uint64_t * occ_tmp = malloc((sym_cnt + 1) * sizeof(uint64_t));
+   occ_abs = malloc((sym_cnt + 1) * sizeof(uint64_t));
+   error_test_mem(occ_abs);
+   occ_tmp = malloc((sym_cnt + 1) * sizeof(uint64_t));
+   error_test_mem(occ_tmp);
 
    // Initial values.
    for (int i = 0; i < sym_cnt; i++) {
@@ -532,6 +582,12 @@ bwt_build_opt
    }
 
    return bwt;
+
+ failure_return:
+   free(occ_tmp);
+   free(occ_abs);
+   bwt_free(bwt);
+   return NULL;
 }
 
 
@@ -561,11 +617,11 @@ bwt_get_text
   bwt_t  * bwt
 )
 {
-   // Check arguments.
-   if (bwt == NULL)
-      return NULL;
-   
+   error_test_msg(bwt == NULL, "argument 'bwt' is NULL.");
    return bwt->txt;
+
+ failure_return:
+   return NULL;
 }
 
 
@@ -575,10 +631,12 @@ bwt_start
   bwtquery_t  * q
 )
 {
-   if (q == NULL)
-      return -1;
-   else
-      return q->fp;
+   error_test_msg(q == NULL, "argument 'q' is NULL.");
+   return q->fp;
+
+ failure_return:
+   return -1;
+
 }
 
 
@@ -588,10 +646,11 @@ bwt_rcstart
   bwtquery_t  * q
 )
 {
-   if (q == NULL)
-      return -1;
-   else
-      return q->rp;
+   error_test_msg(q == NULL, "argument 'q' is NULL.");
+   return q->rp;
+
+ failure_return:
+   return -1;
 }
 
 
@@ -601,10 +660,11 @@ bwt_size
   bwtquery_t  * q
 )
 {
-   if (q == NULL)
-      return -1;
-   else
-      return q->sz;
+   error_test_msg(q == NULL, "argument 'q' is NULL.");
+   return q->sz;
+
+ failure_return:
+   return -1;
 }
 
 
@@ -614,10 +674,11 @@ bwt_depth
   bwtquery_t  * q
 )
 {
-   if (q == NULL)
-      return -1;
-   else
-      return q->dp;
+   error_test_msg(q == NULL, "argument 'q' is NULL.");
+   return q->dp;
+
+ failure_return:
+   return -1;
 }
 
 
@@ -627,10 +688,11 @@ bwt_get_bwt
   bwtquery_t  * q
 )
 {
-   if (q == NULL)
-      return NULL;
-   else
-      return q->bwt;
+   error_test_msg(q == NULL, "argument 'q' is NULL.");
+   return q->bwt;
+
+ failure_return:
+   return NULL;
 }
 
 
@@ -644,16 +706,18 @@ bwt_file_write
   bwt_t  * bwt
 )
 {
+   // Declare variables.
+   int fd = -1;
+
    // Check arguments.
-   if (filename == NULL || bwt == NULL)
-      return -1;
+   error_test_msg(filename == NULL, "argument 'filename' is NULL.");
+   error_test_msg(bwt == NULL, "argument 'bwt' is NULL.");
 
    int32_t sym_cnt = sym_count(txt_get_symbols(bwt_get_text(bwt)));
    
    // Open file.
-   int fd = creat(filename, 0644);
-   if (fd == -1)
-      return -1;
+   fd = creat(filename, 0644);
+   error_test_def(fd == -1);
 
    // Write data.
    ssize_t  e_cnt = 0;
@@ -661,31 +725,25 @@ bwt_file_write
    uint64_t magic = BWT_FILE_MAGICNO;
 
    // Write magic.
-   if (write(fd, &magic, sizeof(uint64_t)) == -1)
-      goto close_and_error;
+   error_test_def(write(fd, &magic, sizeof(uint64_t)) == -1);
    
    // Write occ_len.
-   if (write(fd, (int64_t *)&(bwt->occ_length), sizeof(int64_t)) == -1)
-      goto close_and_error;
+   error_test_def(write(fd, (int64_t *)&(bwt->occ_length), sizeof(int64_t)) == -1);
 
    // Write occ_mark_intv.
-   if (write(fd, (int64_t *)&(bwt->occ_mark_intv), sizeof(int64_t)) == -1)
-      goto close_and_error;
-
+   error_test_def(write(fd, (int64_t *)&(bwt->occ_mark_intv), sizeof(int64_t)) == -1);
+      
    // Write occ_word_size.
-   if (write(fd, (int64_t *)&(bwt->occ_word_size), sizeof(int64_t)) == -1)
-      goto close_and_error;
+   error_test_def(write(fd, (int64_t *)&(bwt->occ_word_size), sizeof(int64_t)) == -1);
 
    // Write occ_mark_bits.
-   if (write(fd, (int64_t *)&(bwt->occ_mark_bits), sizeof(int64_t)) == -1)
-      goto close_and_error;
+   error_test_def(write(fd, (int64_t *)&(bwt->occ_mark_bits), sizeof(int64_t)) == -1);
 
    // Write C array.
    e_cnt = 0;
    do {
       b_cnt  = write(fd, (uint64_t *)bwt->c + e_cnt, (sym_cnt+1 - e_cnt)*sizeof(uint64_t));
-      if (b_cnt == -1)
-         goto close_and_error;
+      error_test_def(b_cnt == -1);
       e_cnt += b_cnt / sizeof(uint64_t);
    } while (e_cnt < sym_cnt+1);
 
@@ -693,16 +751,17 @@ bwt_file_write
    e_cnt = 0;
    do {
       b_cnt  = write(fd, (uint64_t *)bwt->occ + e_cnt, (bwt->occ_length - e_cnt)*sizeof(uint64_t));
-      if (b_cnt == -1)
-         goto close_and_error;
+      error_test_def(b_cnt == -1);
       e_cnt += b_cnt / sizeof(uint64_t);
    } while (e_cnt < bwt->occ_length);
    
    close(fd);
+
    return 0;
 
- close_and_error:
-   close(fd);
+ failure_return:
+   if (fd != -1)
+      close(fd);
    return -1;
 }
 
@@ -714,21 +773,23 @@ bwt_file_read
   txt_t  * txt
 )
 {
+   // Declare variables.
+   int fd = -1;
+   uint64_t * data = NULL;
+
    // Check arguments.
-   if (filename == NULL || txt == NULL)
-      return NULL;
+   error_test_msg(filename == NULL, "argument 'filename' is NULL.");
+   error_test_msg(txt == NULL, "argument 'txt' is NULL.");
 
    int32_t sym_cnt = sym_count(txt_get_symbols(txt));
 
    // Open file.
-   int fd = open(filename, O_RDONLY);
-   if (fd == -1)
-      return NULL;
+   fd = open(filename, O_RDONLY);
+   error_test_def(fd == -1);
 
    // Alloc memory.
    bwt_t * bwt = malloc(sizeof(bwt_t));
-   if (bwt == NULL)
-      goto free_and_return;
+   error_test_mem(bwt);
 
    // Set NULL pointers.
    bwt->occ = NULL;
@@ -737,12 +798,10 @@ bwt_file_read
    // Get file len and mmap file.
    struct stat sb;
    fstat(fd, &sb);
-   if (sb.st_size < 48)
-      goto free_and_return;
+   error_test_msg(sb.st_size < 48, "'bwt' file is too small (sb.st_size < 48).");
 
-   uint64_t * data = mmap(NULL, sb.st_size, PROT_READ, MAP_SHARED, fd, 0);
-   if (data == NULL)
-      goto free_and_return;
+   data = mmap(NULL, sb.st_size, PROT_READ, MAP_SHARED, fd, 0);
+   error_test_def(data == NULL);
 
    bwt->mmap_len = sb.st_size;
    bwt->mmap_ptr = (void *) data;
@@ -750,8 +809,7 @@ bwt_file_read
    // Read file.
    // Read magic number.
    uint64_t magic = data[0];
-   if (magic != BWT_FILE_MAGICNO)
-      goto free_and_return;
+   error_test_msg(magic != BWT_FILE_MAGICNO, "unrecognized 'bwt' file format (magicno).");
 
    bwt->occ_length    = data[1];
    bwt->occ_mark_intv = data[2];
@@ -766,8 +824,11 @@ bwt_file_read
 
    return bwt;
 
- free_and_return:
-   close(fd);
+ failure_return:
+   if (fd != -1)
+      close(fd);
+   if (data != NULL)
+      munmap(data, sb.st_size);
    bwt_free(bwt);
    return NULL;
 }
@@ -783,9 +844,12 @@ get_occ_all
   int64_t  * occ
 )
 {
+   // Declare variables.
+   uint64_t * offset = NULL;
+
    // Check arguments.
-   if (bwt == NULL || occ == NULL)
-      return -1;
+   error_test_msg(bwt == NULL, "argument 'bwt' is NULL.");
+   error_test_msg(occ == NULL, "argument 'occ' is NULL.");
 
    int32_t sym_cnt = sym_count(txt_get_symbols(bwt_get_text(bwt)));
 
@@ -801,10 +865,8 @@ get_occ_all
    int64_t mrkptr = (((wrdnum + bwt->occ_mark_intv/2)/bwt->occ_mark_intv) * (bwt->occ_mark_intv+1)) * sym_cnt;
    int64_t bit    = ptr % bwt->occ_word_size;
 
-   uint64_t * offset = calloc(sym_cnt, sizeof(uint64_t));
-   if (offset == NULL) {
-      return 1;
-   }
+   offset = calloc(sym_cnt, sizeof(uint64_t));
+   error_test_mem(offset);
 
    if (wrdptr > mrkptr) {
       // Sum bit offsets.
@@ -835,11 +897,15 @@ get_occ_all
 
    free(offset);
    return 0;
+   
+ failure_return:
+   free(offset);
+   return -1;
 }
 
 
 
-uint64_t
+int64_t
 get_occ
 (
   int64_t    ptr,
@@ -848,13 +914,12 @@ get_occ
 )
 {
    // Check arguments.
-   if (bwt == NULL)
-      return -1;
+   error_test_msg(bwt == NULL, "argument 'bwt' is NULL.");
 
    int32_t sym_cnt = sym_count(txt_get_symbols(bwt_get_text(bwt)));
 
-   if (sym < 0 || sym >= sym_cnt)
-      return -1;
+   error_test_msg(sym < 0, "argument 'sym' must be positive.");
+   error_test_msg(sym >= sym_cnt, "index 'sym' out of bounds.");
 
    // Depth 0 pointer, return full span.
    if (ptr == -1) return bwt->occ[sym];
@@ -885,5 +950,8 @@ get_occ
       // Return subtraction.
       occ -= offset;
    }
-   return occ;
+   return (int64_t)occ;
+
+ failure_return:
+   return -1;
 }

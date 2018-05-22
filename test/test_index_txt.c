@@ -7,6 +7,8 @@ test_txt_new
 {
    sym_t * sym = sym_new_dna();
    test_assert_critical(sym != NULL);
+
+   redirect_stderr();
    
    txt_t * txt;
 
@@ -42,6 +44,8 @@ test_txt_new
 
    txt_free(txt);
    sym_free(sym);
+
+   unredirect_stderr();
 }
 
 
@@ -49,6 +53,8 @@ void
 test_txt_sym
 (void)
 {
+   redirect_stderr();
+
    sym_t * sym = sym_new_dna();
    test_assert_critical(sym != NULL);
    
@@ -81,6 +87,8 @@ test_txt_sym
 
    txt_free(txt);
    sym_free(sym);
+
+   unredirect_stderr();
 }
 
 
@@ -88,6 +96,8 @@ void
 test_txt_sym_range
 (void)
 {
+   redirect_stderr();
+
    sym_t * sym = sym_new_dna();
    test_assert_critical(sym != NULL);
    
@@ -134,6 +144,8 @@ test_txt_sym_range
 
    txt_free(txt);
    sym_free(sym);
+
+   unredirect_stderr();
 }
 
 
@@ -141,6 +153,8 @@ void
 test_txt_append
 (void)
 {
+   redirect_stderr();
+
    sym_t * sym = sym_new_dna();
    test_assert_critical(sym != NULL);
    
@@ -210,6 +224,8 @@ test_txt_append
 
    txt_free(txt);
    sym_free(sym);
+
+   unredirect_stderr();
 }
 
 
@@ -217,6 +233,8 @@ void
 test_txt_append_wildcard
 (void)
 {
+   redirect_stderr();
+
    sym_t * sym = sym_new_dna();
    test_assert_critical(sym != NULL);
    
@@ -252,6 +270,8 @@ test_txt_append_wildcard
 
    txt_free(txt);
    sym_free(sym);
+
+   unredirect_stderr();
 }
 
 
@@ -259,6 +279,8 @@ void
 test_txt_commit_seq
 (void)
 {
+   redirect_stderr();
+
    sym_t * sym = sym_new_dna();
    test_assert_critical(sym != NULL);
    
@@ -297,6 +319,8 @@ test_txt_commit_seq
 
    txt_free(txt);
    sym_free(sym);
+
+   unredirect_stderr();
 }
 
 
@@ -304,6 +328,8 @@ void
 test_txt_commit_rc
 (void)
 {
+   redirect_stderr();
+
    sym_t * sym = sym_new_dna();
    test_assert_critical(sym != NULL);
    
@@ -404,6 +430,8 @@ test_txt_commit_rc
 
    txt_free(txt);
    sym_free(sym);
+
+   unredirect_stderr();
 }
 
 
@@ -411,6 +439,8 @@ void
 test_txt_length
 (void)
 {
+   redirect_stderr();
+
    sym_t * sym = sym_new_dna();
    test_assert_critical(sym != NULL);
 
@@ -435,6 +465,8 @@ test_txt_length
 
    txt_free(txt);
    sym_free(sym);
+
+   unredirect_stderr();
 }
 
 
@@ -442,6 +474,8 @@ void
 test_txt_wildcard_count
 (void)
 {
+   redirect_stderr();
+
    sym_t * sym = sym_new_dna();
    test_assert_critical(sym != NULL);
 
@@ -463,6 +497,8 @@ test_txt_wildcard_count
 
    txt_free(txt);
    sym_free(sym);
+
+   unredirect_stderr();
 }
 
 
@@ -470,6 +506,8 @@ void
 test_txt_get_symbols
 (void)
 {
+   redirect_stderr();
+
    sym_t * sym = sym_new_dna();
    test_assert_critical(sym != NULL);
    
@@ -481,6 +519,8 @@ test_txt_get_symbols
 
    txt_free(txt);
    sym_free(sym);
+
+   unredirect_stderr();
 }
 
 
@@ -488,6 +528,8 @@ void
 test_txt_seq_helpers
 (void)
 {
+   redirect_stderr();
+
    sym_t * sym = sym_new_dna();
    test_assert_critical(sym != NULL);
    
@@ -523,6 +565,8 @@ test_txt_seq_helpers
 
    txt_free(txt);
    sym_free(sym);
+
+   unredirect_stderr();
 }
 
 
@@ -530,6 +574,8 @@ void
 test_txt_pos_to_str
 (void)
 {
+   redirect_stderr();
+
    sym_t * sym = sym_new_dna();
    test_assert_critical(sym != NULL);
    
@@ -555,12 +601,16 @@ test_txt_pos_to_str
 
    txt_free(txt);
    sym_free(sym);
+
+   unredirect_stderr();
 }
 
 void
 test_txt_str_to_pos
 (void)
 {
+   redirect_stderr();
+
    sym_t * sym = sym_new_dna();
    test_assert_critical(sym != NULL);
    
@@ -594,6 +644,8 @@ test_txt_str_to_pos
 
    txt_free(txt);
    sym_free(sym);
+
+   unredirect_stderr();
 }
 
 
@@ -602,6 +654,8 @@ void
 test_txt_file
 (void)
 {
+   redirect_stderr();
+
    sym_t * sym = sym_new_dna();
    test_assert_critical(sym != NULL);
    
@@ -685,6 +739,8 @@ test_txt_file
 
    txt_free(txt);
    sym_free(sym);
+
+   unredirect_stderr();
 }
 
 
