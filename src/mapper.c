@@ -1,7 +1,15 @@
 #include "mapper.h"
 
-int main(int argc, char *argv[])
+int
+mapper
+(
+ char    * qfile,
+ index_t * index
+)
 {
-   
+   error_throw_msg("not yet implemented.");
    return 0;
+
+ failure_return:
+   return -1;
 }
