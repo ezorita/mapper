@@ -24,6 +24,7 @@ struct annjob_t {
    uint64_t          end;
    uint64_t        * computed;
    int             * done;
+   int             * error;
    pthread_mutex_t * mutex;
    pthread_cond_t  * monitor;
    bwt_t           * bwt;
@@ -35,12 +36,12 @@ struct annjob_t {
 // Private function headers.
 
 void  * ann_build_mt    (void *);
-void    jobs_by_prefix  (bwtquery_t * q, int tau, int n_cnt, int depth, int max_depth, int * jobcnt, annjob_t * jobs);
-void    neigh_push      (uint8_t * info, uint8_t * ann, int alnsize, int reverse_kmer);
+int     jobs_by_prefix  (bwtquery_t * q, int tau, int n_cnt, int depth, int max_depth, int * jobcnt, annjob_t * jobs);
+int     neigh_push      (uint8_t * info, uint8_t * ann, int alnsize, int reverse_kmer);
 int     neigh_next      (int32_t, int32_t, int64_t, int64_t *, int32_t *, uint8_t *, uint8_t *, bwtquery_t **, sar_t *);
-void    aln_merge       (uint8_t * a, uint8_t * b, int len);
-void    aln_positions   (uint64_t * bits, uint8_t * pos, int nbits, int npos, int reverse);
-void    hits_push       (annjob_t * job, pathstack_t * stack, bwtquery_t * q);
+int     aln_merge       (uint8_t * a, uint8_t * b, int len);
+int     aln_positions   (uint64_t * bits, uint8_t * pos, int nbits, int npos, int reverse);
+int     hits_push       (annjob_t * job, pathstack_t * stack, bwtquery_t * q);
 void    update_progress (int64_t sa_pos, int64_t * computed, annjob_t * job);
 
 // Private macros.
@@ -62,21 +63,7 @@ ann_build
  int        threads
 )
 {
-   if (kmer < 2 || tau >= 4 || tau >= kmer || tau < 1 || threads < 1)
-      return NULL;
-
-   if (bwt == NULL || sar == NULL)
-      return NULL;
-
-   // Constant parameters.
-   int job_to_thread_ratio = 5;
-   int           word_size = max(3,tau) + 3;
-
-   // Progress vars.
-   uint64_t computed = 0;
-   int32_t  done = 0;
-
-   // Memory that will be alloc'ed.
+   // Declare variables.
    pthread_mutex_t * mutex    = NULL;
    pthread_cond_t  * monitor  = NULL;
    uint8_t         * tmp_info = NULL;
@@ -85,12 +72,29 @@ ann_build
    ann_t           * ann      = NULL;
    int64_t         * range    = NULL;
 
+   // Check arguments.
+   error_test_msg(kmer < 2, "argument 'kmer' must be greater than 1.");
+   error_test_msg(tau < 1, "argument 'tau' must be greater than 0.");
+   error_test_msg(tau >= 4, "argument 'tau' must be less than 4.");
+   error_test_msg(tau >= kmer, "incompatible arguments (tau >= kmer).");
+   error_test_msg(threads < 1, "argument 'threads' must be greater than 0.");
+   error_test_msg(bwt == NULL, "argument 'bwt' is NULL.");
+   error_test_msg(sar == NULL, "argument 'sar' is NULL.");
+
+   // Constant parameters.
+   int job_to_thread_ratio = 5;
+   int           word_size = max(3,tau) + 3;
+
+   // Progress vars.
+   uint64_t computed   = 0;
+   int32_t  done       = 0;
+   int      error_flag = 0;
+
    // Alloc variables.
    mutex = malloc(sizeof(pthread_mutex_t));
+   error_test_mem(mutex);
    monitor = malloc(sizeof(pthread_cond_t));
-   
-   if (mutex == NULL || monitor == NULL)
-      goto failure_return;
+   error_test_mem(monitor);
 
    // Index information.
    txt_t   * txt      = bwt_get_text(bwt);
@@ -106,8 +110,7 @@ ann_build
    //   M is max(3,tau). If the number of mutations is > M, the alignment is not stored.
 
    tmp_info = calloc(tlen, word_size*sizeof(uint8_t));
-   if (tmp_info == NULL)
-      goto failure_return;
+   error_test_mem(tmp_info);
 
    // Initialization.
    pthread_mutex_init(mutex,NULL);
@@ -129,16 +132,14 @@ ann_build
 
    // Create jobs based on prefixes of depth 'prefix_depth'.
    jobs = malloc(num_jobs*sizeof(annjob_t));
-   if (jobs == NULL) 
-      goto failure_return;
+   error_test_mem(jobs);
 
    num_jobs = 0;
    // Fill specific job info.
    q = bwt_new_query(bwt);
-   if (q == NULL)
-      goto failure_return;
+   error_test(q == NULL);
 
-   jobs_by_prefix(q, tau, 0, 0, prefix_depth, &num_jobs, jobs);
+   error_test(jobs_by_prefix(q, tau, 0, 0, prefix_depth, &num_jobs, jobs) == -1);
 
    // Fill job info.
    for (int i = 0; i < num_jobs; i++) {
@@ -147,6 +148,7 @@ ann_build
       jobs[i].wsize    = (uint16_t) word_size;
       jobs[i].computed = &computed;
       jobs[i].done     = &done;
+      jobs[i].error    = &error_flag;
       jobs[i].mutex    = mutex;
       jobs[i].monitor  = monitor;
       jobs[i].bwt      = bwt;
@@ -158,19 +160,22 @@ ann_build
    // Run threads.
    for (int i = 0; i < min(threads, num_jobs); i++) {
       pthread_t thread;
-      pthread_create(&thread, NULL, ann_build_mt, jobs+i);
-      pthread_detach(thread);
+      error_test_def(pthread_create(&thread, NULL, ann_build_mt, jobs+i) != 0);
+      error_test_def(pthread_detach(thread) != 0);
    }
 
    // Sleep and wait for thread signals.
    int runcount = threads;
    pthread_mutex_lock(mutex);
    while (done < num_jobs) {
+      // Check error flag.
+      error_test(error_flag != 0);
+
       // Run new threads.
       for (int i = runcount; i < min(done + threads, num_jobs); i++) {
          pthread_t thread;
-         pthread_create(&thread, NULL, ann_build_mt, jobs+i);
-         pthread_detach(thread);
+         error_test_def(pthread_create(&thread, NULL, ann_build_mt, jobs+i) != 0);
+         error_test_def(pthread_detach(thread) != 0);
       }
       // Update submitted jobs.
       runcount = done + threads;
@@ -181,6 +186,9 @@ ann_build
    }
    pthread_mutex_unlock(mutex);
 
+   // Check error flag.
+   error_test(error_flag != 0);
+
    // Report time.
    double elapsed = ((clock()-clk)*1.0/CLOCKS_PER_SEC);
    fprintf(stderr, "\r[proc] computing neighbors... done [%.3fs with %d threads (%.3fs/thread)]\n", elapsed, threads, elapsed/threads);
@@ -189,17 +197,13 @@ ann_build
 
    // Alloc annotation.
    ann = malloc(sizeof(ann_t));
-   if (ann == NULL)
-      goto failure_return;
+   error_test_mem(ann);
 
    ann->kmer = kmer;
    ann->tau  = tau;
    ann->size = tlen/2;
    ann->info = calloc(ann->size, sizeof(uint8_t));
-
-   
-   if (ann->info == NULL)
-      goto failure_return;
+   error_test_mem(ann->info);
 
    // Compute and store annotation from info.
    uint64_t i = 0;
@@ -222,8 +226,7 @@ ann_build
          size++;
       // Get SA values.
       range = malloc(size*sizeof(int64_t));
-      if (range == NULL)
-         goto failure_return;
+      error_test_mem(range);
 
       sar_get_range(i, size, range, sar);
       
@@ -232,9 +235,9 @@ ann_build
          // Store annotation in forward strand.
          if (range[j] >= tlen/2)
             // Convert reverse to fw strand.
-            neigh_push(info, ann->info + tlen - range[j] - kmer, word_size-3, kmer);
+            error_test(neigh_push(info, ann->info + tlen - range[j] - kmer, word_size-3, kmer) == -1);
          else
-            neigh_push(info, ann->info + range[j], word_size-3, 0);
+            error_test(neigh_push(info, ann->info + range[j], word_size-3, 0) == -1);
       }
 
       // Free temp memory.
@@ -254,6 +257,8 @@ ann_build
    return ann;
 
  failure_return:
+   if (mutex != NULL)
+      pthread_mutex_unlock(mutex);
    free(range);
    free(jobs);
    free(mutex);
@@ -290,11 +295,13 @@ ann_query
   ann_t    * ann
 )
 {
-   if (ann == NULL)
-      return NULL;
-
-   if (pos < 0 || pos >= ann->size*2)
-      return NULL;
+   // Declare variables.
+   int32_t * aln_pos = NULL;
+   locinfo_t * locinfo = NULL;
+   // Check arguments.
+   error_test_msg(ann == NULL, "argument 'ann' is NULL.");
+   error_test_msg(pos < 0, "argument 'pos' must be positive.");
+   error_test_msg(pos >= ann->size*2, "index 'pos' out of bounds.");
 
    // Annotation data structure:
    // 8 bits per genomic locus.
@@ -315,7 +322,8 @@ ann_query
    
    uint8_t   info    = ann->info[pos];
    int32_t   aln_cnt = 0;
-   int32_t * aln_pos = malloc(ann->kmer*sizeof(int32_t));
+   aln_pos = malloc(ann->kmer*sizeof(int32_t));
+   error_test_mem(aln_pos);
    if ((info >> 6) & 1) {
       for (int i = 0; i < ann->kmer; i++) {
          if ((ann->info[pos+i] >> 7) & 1) {
@@ -324,9 +332,8 @@ ann_query
       }
    }
    
-   locinfo_t * locinfo = malloc(sizeof(locinfo_t) + aln_cnt*sizeof(int32_t));
-   if (locinfo == NULL)
-      return NULL;
+   locinfo = malloc(sizeof(locinfo_t) + aln_cnt*sizeof(int32_t));
+   error_test_mem(locinfo);
 
    int cnt = (info & 0x0F);
    
@@ -345,6 +352,11 @@ ann_query
    free(aln_pos);
 
    return locinfo;
+
+ failure_return:
+   free(aln_pos);
+   free(locinfo);
+   return NULL;
 }
 
 
@@ -357,10 +369,11 @@ ann_get_kmer
   ann_t  * ann
 )
 {
-   if (ann == NULL)
-      return -1;
-
+   error_test_msg(ann == NULL, "argument 'ann' is NULL.");
    return ann->kmer;
+
+ failure_return:
+   return -1;
 }
 
 
@@ -370,10 +383,11 @@ ann_get_dist
   ann_t  * ann
 )
 {
-   if (ann == NULL)
-      return -1;
-
+   error_test_msg(ann == NULL, "argument 'ann' is NULL.");
    return ann->tau;
+
+ failure_return:
+   return -1;
 }
 
 
@@ -387,14 +401,16 @@ ann_file_write
   ann_t  * ann
 )
 {
+   // Declare variables.
+   int fd = -1;
+
    // Check arguments.
-   if (filename == NULL || ann == NULL)
-      return -1;
+   error_test_msg(filename == NULL, "argument 'filename' is NULL.");
+   error_test_msg(ann == NULL, "argument 'ann' is NULL.");
    
    // Open file.
-   int fd = creat(filename, 0644);
-   if (fd == -1)
-      return -1;
+   fd = creat(filename, 0644);
+   error_test_def(fd == -1);
 
    // Write data.
    ssize_t  e_cnt = 0;
@@ -402,35 +418,31 @@ ann_file_write
    uint64_t magic = ANN_FILE_MAGICNO;
 
    // Write magic.
-   if (write(fd, &magic, sizeof(uint64_t)) == -1)
-      goto close_and_error;
+   error_test_def(write(fd, &magic, sizeof(uint64_t)) == -1);
    
    // Write kmer.
-   if (write(fd, (int64_t *)&(ann->kmer), sizeof(int64_t)) == -1)
-      goto close_and_error;
+   error_test_def(write(fd, (int64_t *)&(ann->kmer), sizeof(int64_t)) == -1);
 
    // Write tau.
-   if (write(fd, (int64_t *)&(ann->tau), sizeof(int64_t)) == -1)
-      goto close_and_error;
+   error_test_def(write(fd, (int64_t *)&(ann->tau), sizeof(int64_t)) == -1);
 
    // Write size.
-   if (write(fd, (int64_t *)&(ann->size), sizeof(int64_t)) == -1)
-      goto close_and_error;
+   error_test_def(write(fd, (int64_t *)&(ann->size), sizeof(int64_t)) == -1);
 
    // Write info array.
    e_cnt = 0;
    do {
       b_cnt  = write(fd, (uint8_t *)ann->info + e_cnt, (ann->size - e_cnt)*sizeof(uint8_t));
-      if (b_cnt == -1)
-         goto close_and_error;
+      error_test_def(b_cnt == -1);
       e_cnt += b_cnt / sizeof(uint8_t);
    } while (e_cnt < ann->size);
 
    close(fd);
    return 0;
    
- close_and_error:
-   close(fd);
+ failure_return:
+   if (fd != -1)
+      close(fd);
    return -1;
 }
 
@@ -441,19 +453,21 @@ ann_file_read
   char * filename
 )
 {
+   // Declare variables.
+   int fd = -1;
+   ann_t   * ann  = NULL;
+   int64_t * data = NULL;
+
    // Check arguments.
-   if (filename == NULL)
-      return NULL;
+   error_test_msg(filename == NULL, "argument 'filename' is NULL.");
 
    // Open file.
-   int fd = open(filename, O_RDONLY);
-   if (fd == -1)
-      return NULL;
+   fd = open(filename, O_RDONLY);
+   error_test_def(fd == -1);
 
    // Alloc memory.
-   ann_t * ann = malloc(sizeof(ann_t));
-   if (ann == NULL)
-      goto free_and_return;
+   ann = malloc(sizeof(ann_t));
+   error_test_mem(ann);
 
    // Set NULL pointers.
    ann->info = NULL;
@@ -461,12 +475,10 @@ ann_file_read
    // Get file len and mmap file.
    struct stat sb;
    fstat(fd, &sb);
-   if (sb.st_size < 48)
-      goto free_and_return;
-
-   int64_t * data = mmap(NULL, sb.st_size, PROT_READ, MAP_SHARED, fd, 0);
-   if (data == NULL)
-      goto free_and_return;
+   error_test_msg(sb.st_size < 48, "'ann' file size is too small (sb.st_size < 48).");
+ 
+   data = mmap(NULL, sb.st_size, PROT_READ, MAP_SHARED, fd, 0);
+   error_test_def(data == NULL);
    
    ann->mmap_len = sb.st_size;
    ann->mmap_ptr = (void *) data;
@@ -474,8 +486,7 @@ ann_file_read
    // Read file.
    // Read magic number.
    uint64_t magic = data[0];
-   if (magic != ANN_FILE_MAGICNO)
-      goto free_and_return;
+   error_test_msg(magic != ANN_FILE_MAGICNO, "incorrect 'ann' file format (magicno).");
 
    ann->kmer = data[1];
    ann->tau  = data[2];
@@ -486,8 +497,11 @@ ann_file_read
 
    return ann;
 
- free_and_return:
-   close(fd);
+ failure_return:
+   if (fd != -1)
+      close(fd);
+   if (data != NULL)
+      munmap(data, sb.st_size);
    ann_free(ann);
    return NULL;
 }
@@ -502,6 +516,13 @@ ann_build_mt
  void * argp
  )
 {
+   // Declare variables.
+   uint8_t * query_1 = NULL;
+   uint8_t * query_2 = NULL;
+   bwtquery_t ** path = NULL;
+   pstree_t * stack_tree_1 = NULL;
+   pstree_t * stack_tree_2 = NULL;
+
    // Read job.
    annjob_t * job      = (annjob_t *)argp;
    bwt_t    * bwt      = job->bwt;
@@ -512,19 +533,28 @@ ann_build_mt
    int        num_symb = sym_count(txt_get_symbols(bwt_get_text(bwt)));
 
    // Translated query.
-   uint8_t * query_1 = malloc(kmer*sizeof(uint8_t));
-   uint8_t * query_2 = malloc(kmer*sizeof(uint8_t));
+   query_1 = malloc(kmer*sizeof(uint8_t));
+   error_test_mem(query_1);
+   query_2 = malloc(kmer*sizeof(uint8_t));
+   error_test_mem(query_2);
+
    memset(query_1, num_symb, kmer*sizeof(uint8_t));
    memset(query_2, num_symb, kmer*sizeof(uint8_t));
+
    // BWT path.
-   bwtquery_t ** path = malloc((kmer+1)*sizeof(bwtquery_t *));
+   path = malloc((kmer+1)*sizeof(bwtquery_t *));
+   error_test_mem(path);
+
    for (int i = 0; i <= kmer; i++) {
       path[i] = bwt_new_query(bwt);
+      error_test(path[i] == NULL);
    }
 
    // Hit stack.
-   pstree_t * stack_tree_1 = alloc_stack_tree(tau);
-   pstree_t * stack_tree_2 = alloc_stack_tree(tau);
+   stack_tree_1 = alloc_stack_tree(tau);
+   error_test(stack_tree_1 == NULL);
+   stack_tree_2 = alloc_stack_tree(tau);
+   error_test(stack_tree_2 == NULL);
 
    // Aux vars.
    int64_t computed = sa_ptr;
@@ -537,8 +567,9 @@ ann_build_mt
       update_progress(sa_ptr, &computed, job);
       // This updates query and path, and makes sa_ptr point to the position of the next sequence in the SA.
       int trail = neigh_next(kmer, tau, sa_ptr, &next_sa, &last_fragment, query_1, query_2, path, sar);
+      error_test(trail == -1);
       // Check valid query sequence.
-      if (trail < 0) {
+      if (trail == -2) {
          // Flag 'sa_ptr' as ANN_NO_INFO.
          *(uint16_t *)(job->info + sa_ptr * job->wsize) = ANN_NO_INFO;
       } else {
@@ -548,7 +579,7 @@ ann_build_mt
          else
             blocksc_trail(query_1, path, kmer, tau, trail, stack_tree_1);
          // Update annotation info.
-         hits_push(job, (last_fragment ? stack_tree_2->stack : stack_tree_1->stack), path[kmer]);
+         error_test(hits_push(job, (last_fragment ? stack_tree_2->stack : stack_tree_1->stack), path[kmer]) == -1);
       }
       sa_ptr = next_sa;
    }
@@ -572,10 +603,23 @@ ann_build_mt
 
    return NULL;
 
+ failure_return:
+   pthread_mutex_lock(job->mutex);
+   *(job->error) = 1;
+   pthread_cond_signal(job->monitor);
+   pthread_mutex_unlock(job->mutex);
+   free_stack_tree(stack_tree_1);
+   free_stack_tree(stack_tree_2);
+   free(query_1);
+   free(query_2);
+   for (int i = 0; i <= kmer; i++) {
+      free(path[i]);
+   }
+   return NULL;
 }
 
 
-void
+int
 jobs_by_prefix
 (
  bwtquery_t  * q,
@@ -587,9 +631,13 @@ jobs_by_prefix
  annjob_t    * jobs
 )
 {
+   // Declare variables.
+   bwt_t       * bwt = NULL;
+   bwtquery_t ** qv  = NULL;
+
    // Too many 'N'.
    if (n_cnt > tau) 
-      return;
+      return 0;
    // If reached suffix depth, make and store job.
    if (depth == max_depth) {
       annjob_t job = {
@@ -597,27 +645,33 @@ jobs_by_prefix
          .end = bwt_start(q) + bwt_size(q)
       };
       jobs[(*jobcnt)++] = job;
-      return;
+      return 0;
    }
    
    // Otherwise continue exploring the suffix trie.
-   bwt_t       * bwt = bwt_get_bwt(q);
-   bwtquery_t ** qv  = bwt_new_vec(bwt);
+   bwt = bwt_get_bwt(q);
+   qv  = bwt_new_vec(bwt);
+   error_test(qv == NULL);
    
-   bwt_query_all(BWT_QUERY_SUFFIX, q, qv);
+   error_test(bwt_query_all(BWT_QUERY_SUFFIX, q, qv) == -1);
 
    // Iterate over all symbols.
    int num_symb = sym_count(txt_get_symbols(bwt_get_text(bwt)));
    for (int i = 0; i < num_symb; i++) {
-      jobs_by_prefix(qv[i], tau, n_cnt + (i == UNKNOWN_BASE), depth + 1, max_depth, jobcnt, jobs);
+      error_test(jobs_by_prefix(qv[i], tau, n_cnt + (i == UNKNOWN_BASE), depth + 1, max_depth, jobcnt, jobs) == -1);
    }
+
    bwt_free_vec(qv);
 
-   return;
+   return 0;
+
+ failure_return:
+   bwt_free_vec(qv);
+   return -1;
 }
 
 
-void
+int
 neigh_push
 (
  uint8_t * info,
@@ -642,7 +696,7 @@ neigh_push
    uint8_t * aln = info + sizeof(uint16_t) + sizeof(uint8_t);
 
    // Return if kmer has perfect match or no info.
-   if (cnt == 0 || cnt == ANN_NO_INFO) return;
+   if (cnt == 0 || cnt == ANN_NO_INFO) return 0;
 
    // Count.
    if      (cnt <= 10)               *ann |= (uint8_t)cnt;
@@ -659,6 +713,8 @@ neigh_push
    if (*aln != 255) {
       // Copy alignment data.
       aln = malloc(alnsize);
+      error_test_mem(aln);
+
       memcpy(aln, info + sizeof(uint16_t) + sizeof(uint8_t), alnsize);
 
       // Update alignments from reverse strand.
@@ -676,7 +732,10 @@ neigh_push
       free(aln);
    }
 
-   return;
+   return 0;
+
+ failure_return:
+   return -1;
 }
 
 
@@ -694,6 +753,10 @@ neigh_next
  sar_t       * sar
 )
 {
+   // Declare variables.
+   uint8_t * tmp = NULL;
+
+   // Local variables.
    int n_cnt = 0;
    int trail_1 = 0, trail_2 = 0, truncated = 0;
 
@@ -710,21 +773,23 @@ neigh_next
 
    // Check text limits.
    if (txt_pos + qlen > txt_length(txt)) {
-      return -1;
+      return -2;
    }
 
    // Get symbols.
    uint8_t * seq = txt_sym_range(txt_pos, qlen, txt);
    
-   // Report sequences containing '$'.
+   // Report sequences containing wildcards.
    for (int i = 0; i < qlen; i++) {
       if (seq[i] >= num_symb) {
-         return -1;
+         return -2;
       }
    }
 
    // Iterate over qlen nucleotides.
-   uint8_t * tmp = malloc(qlen*sizeof(uint8_t));
+   tmp = malloc(qlen*sizeof(uint8_t));
+   error_test_mem(tmp);
+
    for (int i = 0; i < qlen && !truncated; i++) {
       n_cnt += seq[i] == UNKNOWN_BASE;
       // Track trail.
@@ -733,7 +798,7 @@ neigh_next
       if (trail_2 == i && seq[i] == query_2[i])
          trail_2++;
       // Extend BWT search.
-      bwt_query(seq[i], BWT_QUERY_SUFFIX, q[i], q[i+1]);
+      error_test(bwt_query(seq[i], BWT_QUERY_SUFFIX, q[i], q[i+1]) == -1);
 
       // Update tmp query.
       tmp[i] = seq[i];
@@ -742,7 +807,7 @@ neigh_next
    // Check whether sequence is valid (all in same strand).
    if (bwt_size(q[qlen]) == 0 || truncated) {
       free(tmp);
-      return -1;
+      return -2;
    }
 
    // Update sa_ptr (point the start of the next suffix).
@@ -751,7 +816,7 @@ neigh_next
    // Check N count.
    if (n_cnt > tau) {
       free(tmp);
-      return -1;
+      return -2;
    }
 
    // Copy tmp to query.
@@ -768,10 +833,14 @@ neigh_next
 
    // Return trail.
    return *last_fragment ? trail_2 : trail_1;
+
+ failure_return:
+   free(tmp);
+   return -1;
 }
 
 
-void
+int
 aln_merge
 (
  uint8_t * a,
@@ -780,6 +849,7 @@ aln_merge
 )
 {
    uint8_t * tmp = calloc(2*len, sizeof(uint8_t));
+   error_test_mem(tmp);
 
    // Merge values, halt if a or b equals 0.
    int i = 0, j = 0, k = 0;
@@ -811,11 +881,15 @@ aln_merge
 
    // Return.
    free(tmp);
-   return;
+   return 0;
+
+ failure_return:
+   free(tmp);
+   return -1;
 }
 
 
-void
+int
 aln_positions
 (
  uint64_t * bits,
@@ -826,6 +900,8 @@ aln_positions
 )
 {
    uint8_t * tmp = calloc(npos+1, sizeof(uint8_t));
+   error_test_mem(tmp);
+
    int a = 0;
 
    // Store positions of bits set to '1'.
@@ -843,11 +919,15 @@ aln_positions
    }
    
    free(tmp);
-   return;
+   return 0;
+   
+ failure_return:
+   free(tmp);
+   return -1;
 }
 
 
-void
+int
 hits_push
 (
  annjob_t     * job,
@@ -858,6 +938,10 @@ hits_push
 // Information is always stored/updated in the lexicographically
 // smallest between the queried/hit sequence and its rev complement.
 {
+   // Declare variables.
+   uint64_t * qalign = NULL;
+   
+   // Local variables.
    int hits     = 0;
    int tau      = job->tau + 1;
    int aln_size = job->wsize - 3;
@@ -879,11 +963,12 @@ hits_push
       if (*(uint16_t *)(job->info + min(fp, rp) * (size_t)(job->wsize)) == 0)
          *(uint16_t *)(job->info + min(fp, rp) * (size_t)(job->wsize)) = ANN_NO_INFO;
       pthread_mutex_unlock(job->mutex);
-      return;
+      return 0;
    }
 
    // Aggregate query alignment.
-   uint64_t * qalign = calloc(ALIGN_WORDS, sizeof(uint64_t));
+   qalign = calloc(ALIGN_WORDS, sizeof(uint64_t));
+   error_test_mem(qalign);
 
    // Store hits info in their SA start position.
    for (int i = 0; i < stack->pos; i++) {
@@ -916,9 +1001,9 @@ hits_push
          if (*naln != 0xFF) {
             // Compute mismatch positions.
             uint8_t hit_aln[aln_size];
-            aln_positions(path.align, hit_aln, job->kmer, aln_size, nrev);
+            error_test(aln_positions(path.align, hit_aln, job->kmer, aln_size, nrev) == -1);
             // Merge mismatch positions and store in neighbor memory (naln).
-            aln_merge(naln, hit_aln, aln_size);
+            error_test(aln_merge(naln, hit_aln, aln_size) == -1);
          }
       }
       // Reset neighbor.
@@ -928,7 +1013,7 @@ hits_push
          *ntau = path.score;
          // Compute mismatch positions.
          uint8_t hit_aln[aln_size];
-         aln_positions(path.align, hit_aln, job->kmer, aln_size, nrev);
+         error_test(aln_positions(path.align, hit_aln, job->kmer, aln_size, nrev) == -1);
          // Store mismatch positions.
          memcpy(naln, hit_aln, aln_size);
       }
@@ -968,7 +1053,7 @@ hits_push
       *qtau = (uint8_t)  tau;
       *qcnt = (uint16_t) min(ANN_NO_INFO - 1, hits);
       // Compute and directly store mismatch positions for query sequence.
-      aln_positions(qalign, qaln, job->kmer, aln_size, qrev);
+      error_test(aln_positions(qalign, qaln, job->kmer, aln_size, qrev) == -1);
    }
    // Update query.
    else if (*qtau == tau) {
@@ -978,14 +1063,21 @@ hits_push
       if (*qaln != 0xFF) {
          // Compute mismatch positions for query sequence.
          uint8_t tmp_aln[aln_size];
-         aln_positions(qalign, tmp_aln, job->kmer, aln_size, qrev);
+         error_test(aln_positions(qalign, tmp_aln, job->kmer, aln_size, qrev) == -1);
          // Update alignments in query by merging.
-         aln_merge(qaln, tmp_aln, aln_size);
+         error_test(aln_merge(qaln, tmp_aln, aln_size) == -1);
       }
    }
    pthread_mutex_unlock(job->mutex);
 
    free(qalign);
+
+   return 0;
+
+ failure_return:
+   pthread_mutex_unlock(job->mutex);
+   free(qalign);
+   return -1;
 }
 
 void
