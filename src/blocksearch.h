@@ -1,7 +1,9 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include "errhandler.h"
 #include "index_bwt.h"
+
 
 #ifndef _BLOCKSEARCH_H
 #define _BLOCKSEARCH_H
