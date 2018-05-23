@@ -336,6 +336,78 @@ test_ui_parse
    unredirect_stderr();
    sprintf(buffer, "%s%c\n%s", ERROR_INCORRECT_OPT, 'j', USAGE_BUILD);
    test_assert_stderr(buffer);
+
+   // Other tests.
+   char * argv34[] = {"./mapper", "index", "view", "ui_test00", NULL};
+   redirect_stderr();
+   optind = 1;
+   test_assert(ui_parse(4, argv34) == EXIT_SUCCESS);
+   unredirect_stderr();
+
+   char * argv35[] = {"./mapper", "index", "view", "fake-index-file", NULL};
+   redirect_stderr();
+   optind = 1;
+   test_assert(ui_parse(4, argv35) == EXIT_FAILURE);
+   unredirect_stderr();
+
+
+   char * argv36[] = {"./mapper", "ui_test00", "fake-input-file", NULL};
+   redirect_stderr();
+   optind = 1;
+   test_assert(ui_parse(3, argv36) == EXIT_FAILURE);
+   unredirect_stderr();
+
+   // Repeated or incorrect option values.
+   char * argv37[] = {"./mapper", "index", "add", "-k10", "-d1", "-t-12", "fake-index-file", NULL};
+   redirect_stderr();
+   optind = 1;
+   test_assert(ui_parse(7, argv37) == EXIT_FAILURE);
+   unredirect_stderr();
+   test_assert_stderr(OPT_THREAD_POSITIVE);
+
+   char * argv38[] = {"./mapper", "index", "add", "-k10", "-d1", "-t12", "-t8", "fake-index-file", NULL};
+   redirect_stderr();
+   optind = 1;
+   test_assert(ui_parse(8, argv38) == EXIT_FAILURE);
+   unredirect_stderr();
+   test_assert_stderr(OPT_THREAD_REPEAT);
+
+   char * argv39[] = {"./mapper", "index", "add", "-k-10", "-d1", "-t12", "fake-index-file", NULL};
+   redirect_stderr();
+   optind = 1;
+   test_assert(ui_parse(7, argv39) == EXIT_FAILURE);
+   unredirect_stderr();
+   test_assert_stderr(OPT_KMER_POSITIVE);
+
+   char * argv40[] = {"./mapper", "index", "add", "-k10", "-d1", "-t12", "-k32", "fake-index-file", NULL};
+   redirect_stderr();
+   optind = 1;
+   test_assert(ui_parse(8, argv40) == EXIT_FAILURE);
+   unredirect_stderr();
+   test_assert_stderr(OPT_KMER_REPEAT);
+
+   char * argv41[] = {"./mapper", "index", "add", "-k10", "-d-1", "-t12", "fake-index-file", NULL};
+   redirect_stderr();
+   optind = 1;
+   test_assert(ui_parse(7, argv41) == EXIT_FAILURE);
+   unredirect_stderr();
+   test_assert_stderr(OPT_DIST_POSITIVE);
+
+   char * argv42[] = {"./mapper", "index", "add", "-k10", "-d1", "-t12", "-d4", "fake-index-file", NULL};
+   redirect_stderr();
+   optind = 1;
+   test_assert(ui_parse(8, argv42) == EXIT_FAILURE);
+   unredirect_stderr();
+   test_assert_stderr(OPT_DIST_REPEAT);
+
+   char * argv43[] = {"./mapper", "index", "build", "-o", "output-f1", "-o", "output-f2", "fake-fasta-file", NULL};
+   redirect_stderr();
+   optind = 1;
+   test_assert(ui_parse(8, argv43) == EXIT_FAILURE);
+   unredirect_stderr();
+   test_assert_stderr(OPT_OUTPUT_REPEAT);
+
+
 }
 
 // Define test cases to be run (for export).
