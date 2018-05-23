@@ -1,5 +1,10 @@
 #include "user_interface.h"
 
+char *ERROR_MAX_ARG = "error: too many arguments.\n";
+char *ERROR_INSUF_ARG = "error: not enough arguments.\n";
+char *ERROR_COMMAND = "error: incorrect command.\n";
+char *ERROR_INCORRECT_OPT = "error: incorrect option - ";
+
 char *USAGE_MAP =
    "\n"
    "usage:\n"
@@ -95,6 +100,9 @@ ui_parse
    // Declare variables.
    index_t * index = NULL;
 
+   error_test_msg(argc < 1, "argument 'argc' < 1.");
+   error_test_msg(argv == NULL, "argument 'argv' is NULL.");
+
    // No arguments.
    if (argc == 1) {
       say_map_usage();
@@ -176,10 +184,16 @@ ui_parse
             say_view_usage();
             return EXIT_SUCCESS;
          } else if (argc != 4) {
-            fprintf(stderr, "error: too many arguments.\n");
+            fprintf(stderr, "%s", ERROR_MAX_ARG);
             say_view_usage();
             return EXIT_FAILURE;
          }
+         
+         if (strcmp(argv[3],"-h") == 0 || strcmp(argv[3],"--help") == 0) {
+            say_view_usage();
+            return EXIT_SUCCESS;
+         }
+
          // Parse params.
          char * index_basename = argv[3];
          // Read index file.
@@ -191,6 +205,10 @@ ui_parse
          index_free(index);
 
          return EXIT_SUCCESS;
+      } else {
+         fprintf(stderr, "%s", ERROR_COMMAND);
+            say_index_usage();
+            return EXIT_FAILURE;
       }
    } else {
       int rval;
@@ -224,6 +242,8 @@ ui_index_info
  index_t  * index
 )
 {
+   error_test_msg(index == NULL, "argument 'index' is NULL.");
+
    // Index basic info.
    fprintf(stderr, "[basic info]\n");
    fprintf(stderr, " index basename:   %s\n", index->fname_base);
@@ -291,6 +311,9 @@ ui_index_info
    }
 
    return 0;
+
+ failure_return:
+   return -1;
 }
 
 
@@ -314,23 +337,33 @@ ui_index_build
          {0, 0, 0, 0}
       };
 
+      opterr = 0;
       c = getopt_long(argc, argv, "ho:", long_options, &option_index);
 
       if (c == -1) break;
       switch (c) {
+      case '?':
+         fprintf(stderr, "%s%c\n", ERROR_INCORRECT_OPT, optopt);
+         say_build_usage();
+         return -1;
+
       case 'o':
          *ofile = optarg;
          break;
       case 'h':
          say_build_usage();
-         return 0;
+         return 1;
       }
    }
 
    if (optind + 2 == argc-1) {
       *gfile = argv[argc-1];
-   } else {
-      fprintf(stderr, "error: incorrect options.\n");
+   } else if (optind + 2 < argc - 1) {
+      fprintf(stderr, "%s", ERROR_MAX_ARG);
+      say_build_usage();
+      return -1;
+   } else if (optind + 2 > argc - 1) {
+      fprintf(stderr, "%s", ERROR_INSUF_ARG);
       say_build_usage();
       return -1;
    }
@@ -360,10 +393,15 @@ ui_index_add
          {0, 0, 0, 0}
       };
 
+      opterr = 0;
       c = getopt_long(argc, argv, "t:k:d:h", long_options, &option_index);
 
       if (c == -1) break;
       switch (c) {
+      case '?':
+         fprintf(stderr, "%s%c\n", ERROR_INCORRECT_OPT, optopt);
+         say_add_usage();
+         return -1;
       case 't':
          if (arg_t < 0) {
             int v = atoi(optarg);
@@ -410,18 +448,17 @@ ui_index_add
       }
    }
 
-   if (optind + 2 != argc-1) {
-      fprintf(stderr, "error: incorrect options.\n");
+   if (argc-1 < optind + 2 || arg_k < 0 || arg_d < 0) {
+      fprintf(stderr, "%s", ERROR_INSUF_ARG);
+      say_add_usage();
+      return -1;
+   } else if (argc-1 > optind + 2) {
+      fprintf(stderr, "%s", ERROR_MAX_ARG);
       say_add_usage();
       return -1;
    }
 
    *ifile = argv[argc-1];
-
-   if (arg_k < 0 || arg_d < 0) {
-      fprintf(stderr, "error: kmer (-k) and distance (-d) are required options.\n");
-      return -1;
-   }
 
    opt->k          = arg_k;
    opt->d          = arg_d;
@@ -456,10 +493,15 @@ ui_map
          {0, 0, 0, 0}
       };
 
-      c = getopt_long(argc, argv, "ahvt:e:q:",
-            long_options, &option_index);
+      opterr = 0;
+      c = getopt_long(argc, argv, "hv", long_options, &option_index);
       if (c == -1) break;
       switch (c) {
+      case '?':
+         fprintf(stderr, "%s%c\n", ERROR_INCORRECT_OPT, optopt);
+         say_map_usage();
+         return -1;
+
       case 'a':
          if (arg_a) {
             fprintf(stderr, "error: option -a set more than once.\n");
@@ -518,8 +560,12 @@ ui_map
       }
    }
 
-   if (optind != argc-2) {
-      fprintf(stderr, "error: incorrect options.\n");
+   if (argc-2 < optind) {
+      fprintf(stderr, "%s", ERROR_INSUF_ARG);
+      say_map_usage();
+      return -1;
+   } else if (argc-2 > optind) {
+      fprintf(stderr, "%s", ERROR_MAX_ARG);
       say_map_usage();
       return -1;
    }
