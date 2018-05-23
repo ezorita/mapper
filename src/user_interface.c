@@ -92,12 +92,6 @@ void say_build_usage(void) { fprintf(stderr, "%s\n", USAGE_BUILD); }
 void say_view_usage(void) { fprintf(stderr, "%s\n", USAGE_VIEW); }
 void say_version(void) { fprintf(stderr, "mapper version: %s\n", MAPPER_VERSION); }
 
-int  ui_index_info(index_t *);
-int  ui_index_build(int, char **, char **, char **);
-int  ui_index_add(int, char **, opt_add_t *, char **);
-int  ui_map(int, char **, opt_map_t *, char **, char **);
-
-
 int
 ui_parse
 (
@@ -108,7 +102,8 @@ ui_parse
    // Declare variables.
    index_t * index = NULL;
 
-   error_test_msg(argc < 1, "argument 'argc' < 1.");
+   // Check arguments.
+   error_test_msg(argc <= 0, "argument 'argc' must be greater than 0.");
    error_test_msg(argv == NULL, "argument 'argv' is NULL.");
 
    // No arguments.
@@ -250,6 +245,7 @@ ui_index_info
  index_t  * index
 )
 {
+   // Check arguments.
    error_test_msg(index == NULL, "argument 'index' is NULL.");
 
    // Index basic info.
@@ -334,6 +330,12 @@ ui_index_build
  char        ** ofile
  )
 {
+   // Check arguments.
+   error_test_msg(argc <= 0, "argument 'argc' must be greater than 0.");
+   error_test_msg(argv == NULL, "argument 'argv' is NULL.");
+   error_test_msg(gfile == NULL, "argument '*gfile' is NULL.");
+   error_test_msg(ofile == NULL, "argument '*ofile' is NULL.");
+
    int c;
    *ofile = NULL;
   
@@ -381,6 +383,9 @@ ui_index_build
    }
 
    return 0;
+
+ failure_return:
+   return -1;
 }
 
 
@@ -393,6 +398,12 @@ ui_index_add
  char      ** ifile
 )
 {
+   // Check arguments.
+   error_test_msg(argc <= 0, "argument 'argc' must be greater than 0.");
+   error_test_msg(argv == NULL, "argument 'argv' is NULL.");
+   error_test_msg(opt == NULL, "argument 'opt' is NULL.");
+   error_test_msg(ifile == NULL, "argument 'ifile' is NULL.");
+
    int arg_k = -1, arg_d = -1, arg_t = -1;
    int c;
    while (1) {
@@ -477,6 +488,9 @@ ui_index_add
    opt->threads    = (arg_t < 0 ? 1 : arg_t);
 
    return 0;
+
+ failure_return:
+   return -1;
 }
 
 int
@@ -489,7 +503,15 @@ ui_map
  char     ** qfile
 )
 {
+   // Check arguments.
+   error_test_msg(argc <= 0, "argument 'argc' must be greater than 0.");
+   error_test_msg(argv == NULL, "argument 'argv' is NULL.");
+   error_test_msg(opt == NULL, "argument 'opt' is NULL.");
+   error_test_msg(ifile == NULL, "argument 'ifile' is NULL.");
+   error_test_msg(qfile == NULL, "argument 'qfile' is NULL.");
+
    //   int arg_t = 0, arg_a = 0, arg_e = 0, arg_q = 0;
+
    int c;
    while (1) {
       int option_index = 0;
@@ -587,4 +609,7 @@ ui_map
    *qfile = argv[optind+1];
 
    return 0;
+
+ failure_return:
+   return -1;
 }

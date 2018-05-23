@@ -45,4 +45,10 @@ struct opt_add_t {
 
 int    ui_parse  (int argc, char * argv[]);
 
+int  ui_index_info(index_t *);
+int  ui_index_build(int, char **, char **, char **);
+int  ui_index_add(int, char **, opt_add_t *, char **);
+int  ui_map(int, char **, opt_map_t *, char **, char **);
+
+
 #endif
