@@ -390,6 +390,21 @@ txt_wildcard_count
 }
 
 
+int
+txt_has_rc
+(
+  txt_t * txt
+)
+{
+   error_test_msg(txt == NULL, "argument 'txt' is NULL.");
+   
+   return txt->rc_flag;
+
+ failure_return:
+   return -1;
+}
+
+
 int64_t
 txt_seq_count
 (
