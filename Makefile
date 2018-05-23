@@ -17,12 +17,14 @@ CFLAGS= -std=c99 -Wall -g -O0 -mpopcnt
 LDLIBS= -lm -lpthread
 CC= gcc
 
-all: mapper
+all: dirs mapper
+
+dirs: $(OBJ_DIR)
 
 mapper: $(OBJECTS) $(SOURCES) $(HEADERS) $(OTHER_FILES)
 	$(CC) $(CFLAGS) $(SOURCES) $(OBJECTS) $(LDLIBS) -o $@
 
-$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c $(SRC_DIR)/%.h $(OBJ_DIR)
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c $(SRC_DIR)/%.h
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
 $(OBJ_DIR):
