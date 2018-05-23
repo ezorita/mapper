@@ -5,6 +5,14 @@ char *ERROR_INSUF_ARG = "error: not enough arguments.\n";
 char *ERROR_COMMAND = "error: incorrect command.\n";
 char *ERROR_INCORRECT_OPT = "error: incorrect option - ";
 
+char *OPT_THREAD_POSITIVE = "error: threads option (-t) must be a positive number.\n";
+char *OPT_THREAD_REPEAT   = "error: threads option (-t) set more than once.\n";
+char *OPT_KMER_POSITIVE   = "error: kmer option (-k) must be a positive number.\n";
+char *OPT_KMER_REPEAT     = "error: kmer option (-k) set more than once.\n";
+char *OPT_DIST_POSITIVE   = "error: distance option (-d) must be a non-negative number.\n";
+char *OPT_DIST_REPEAT     = "error: distance option (-d) set more than once.\n;";
+char *OPT_OUTPUT_REPEAT   = "error: output option (-o) set more than once.\n";
+
 char *USAGE_MAP =
    "\n"
    "usage:\n"
@@ -348,6 +356,10 @@ ui_index_build
          return -1;
 
       case 'o':
+         if (*ofile != NULL) {
+            fprintf(stderr, "%s", OPT_OUTPUT_REPEAT);
+            return -1;
+         }
          *ofile = optarg;
          break;
       case 'h':
@@ -406,12 +418,12 @@ ui_index_add
          if (arg_t < 0) {
             int v = atoi(optarg);
             if (v <= 0) {
-               fprintf(stderr, "error: threads option (-t) must be a positive number.\n");
+               fprintf(stderr, "%s", OPT_THREAD_POSITIVE);
                return -1;
             }
             arg_t = v;
          } else {
-            fprintf(stderr,"error: threads option (-t) set more than once.\n");
+            fprintf(stderr,"%s", OPT_THREAD_REPEAT);
          }
          break;
 
@@ -419,12 +431,12 @@ ui_index_add
          if (arg_k < 0) {
             int v = atoi(optarg);
             if (v <= 0) {
-               fprintf(stderr, "error: kmer option (-k) must be a positive number.\n");
+               fprintf(stderr, "%s", OPT_KMER_POSITIVE);
                return -1;
             }
             arg_k = v;
          } else {
-            fprintf(stderr,"error: kmer option (-k) set more than once.\n");
+            fprintf(stderr, "%s", OPT_KMER_REPEAT);
          }
          break;
 
@@ -432,12 +444,12 @@ ui_index_add
          if (arg_d < 0) {
             int v = atoi(optarg);
             if (v < 0) {
-               fprintf(stderr, "error: distance option (-d) must be a non-negative number.\n");
+               fprintf(stderr, "%s", OPT_DIST_POSITIVE);
                return -1;
             }
             arg_d = v;
          } else {
-            fprintf(stderr,"error: distance option (-d) set more than once.\n");
+            fprintf(stderr, "%s", OPT_DIST_REPEAT);
          }
          break;
 
@@ -477,7 +489,7 @@ ui_map
  char     ** qfile
 )
 {
-   int arg_t = 0, arg_a = 0, arg_e = 0, arg_q = 0;
+   //   int arg_t = 0, arg_a = 0, arg_e = 0, arg_q = 0;
    int c;
    while (1) {
       int option_index = 0;
@@ -501,7 +513,7 @@ ui_map
          fprintf(stderr, "%s%c\n", ERROR_INCORRECT_OPT, optopt);
          say_map_usage();
          return -1;
-
+         /*
       case 'a':
          if (arg_a) {
             fprintf(stderr, "error: option -a set more than once.\n");
@@ -513,14 +525,14 @@ ui_map
          break;
       case 't':
          if (arg_t) {
-            fprintf(stderr, "error: option -t set more than once.\n");
+            fprintf(stderr, "%s", OPT_THREAD_REPEAT);
             say_map_usage();
             exit(EXIT_FAILURE);
          }
          arg_t = 1;
          opt->threads = atoi(optarg);
          if (opt->threads < 1) {
-            fprintf(stderr, "error: threads option (-t) must be a positive number.\n");
+            fprintf(stderr, "%s", OPT_THREAD_POSITIVE);
             exit(EXIT_FAILURE);
          }
          break;
@@ -549,7 +561,7 @@ ui_map
          }
          opt->mapq_thr = q;
          break;
-
+         */
       case 'v':
          say_version();
          return 1;

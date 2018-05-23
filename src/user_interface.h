@@ -21,6 +21,14 @@ char * ERROR_MAX_ARG;
 char * ERROR_INSUF_ARG;
 char * ERROR_COMMAND;
 char * ERROR_INCORRECT_OPT;
+char * OPT_THREAD_POSITIVE;
+char * OPT_THREAD_REPEAT;
+char * OPT_KMER_POSITIVE;
+char * OPT_KMER_REPEAT;
+char * OPT_DIST_POSITIVE;
+char * OPT_DIST_REPEAT;
+char * OPT_OUTPUT_REPEAT;
+
 
 struct opt_map_t {
    int print_first;
