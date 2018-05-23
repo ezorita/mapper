@@ -35,7 +35,7 @@ char *USAGE_INDEX =
    "  commands:\n"
    "    build:  build a new index from scratch.\n"
    "    add:    add annotation data to an existing index.\n"
-   "    view:   view index annotations.\n"
+   "    view:   view index information.\n"
    "\n"
    "  for more help type: index command\n";
 
@@ -149,8 +149,8 @@ ui_parse
             return EXIT_SUCCESS;
          }
          // Parse params.
-         char * genome_file;
-         char * output_file;
+         char * genome_file = NULL;
+         char * output_file = NULL;
          int rval;
          if ((rval = ui_index_build(argc, argv, &genome_file, &output_file))) {
             return (rval == -1 ? EXIT_FAILURE : EXIT_SUCCESS);
@@ -266,6 +266,19 @@ ui_index_info
       }
    }
 
+   // SAR info.
+   if (index->sar != NULL) {
+      fprintf(stderr, "\n[suffix array]\n");
+      fprintf(stderr, " path:             %s.sar\n", index->fname_base);
+   }
+
+   // BWT info.
+   if (index->sar != NULL) {
+      fprintf(stderr, "\n[FM index]\n");
+      fprintf(stderr, " path:             %s.bwt\n", index->fname_base);
+   }
+
+
    // Annotation info.
    if (index->ann_cnt > 0) {
       fprintf(stderr, "\n[annotations]\n");
@@ -317,7 +330,7 @@ ui_index_build
    if (optind + 2 == argc-1) {
       *gfile = argv[argc-1];
    } else {
-      fprintf(stderr, "error: incorrect parameters.\n");
+      fprintf(stderr, "error: incorrect options.\n");
       say_build_usage();
       return -1;
    }
@@ -398,7 +411,7 @@ ui_index_add
    }
 
    if (optind + 2 != argc-1) {
-      fprintf(stderr, "error: not enough parameters.\n");
+      fprintf(stderr, "error: incorrect options.\n");
       say_add_usage();
       return -1;
    }
@@ -406,7 +419,7 @@ ui_index_add
    *ifile = argv[argc-1];
 
    if (arg_k < 0 || arg_d < 0) {
-      fprintf(stderr, "error: kmer (-k) and distance (-d) are required parameters.\n");
+      fprintf(stderr, "error: kmer (-k) and distance (-d) are required options.\n");
       return -1;
    }
 
@@ -506,7 +519,7 @@ ui_map
    }
 
    if (optind != argc-2) {
-      fprintf(stderr, "error: not enough parameters.\n");
+      fprintf(stderr, "error: incorrect options.\n");
       say_map_usage();
       return -1;
    }
