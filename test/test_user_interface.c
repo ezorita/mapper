@@ -11,6 +11,13 @@ test_ui_parse
 {
    char * buffer = malloc(10000);
    test_assert_critical(buffer != NULL);
+
+   char * argv[] = {"./mapper", NULL};
+
+   redirect_stderr();
+   test_assert(ui_parse(-1, argv) == EXIT_FAILURE);
+   test_assert(ui_parse(1, NULL) == EXIT_FAILURE);
+   unredirect_stderr();
    
    char * argv0[] = {"./mapper", NULL};
    redirect_stderr();
@@ -406,13 +413,80 @@ test_ui_parse
    test_assert(ui_parse(8, argv43) == EXIT_FAILURE);
    unredirect_stderr();
    test_assert_stderr(OPT_OUTPUT_REPEAT);
-
-
 }
+
+
+void
+test_ui_index_info
+(void)
+{
+   redirect_stderr();
+   test_assert(ui_index_info(NULL) == -1);
+   unredirect_stderr();
+}
+
+void
+test_ui_index_build
+(void)
+{
+   char * argv[] = {"./mapper", "index", "build", "fake-fasta-file", NULL};
+   char * gfile = "fake-fasta-file";
+   char * ofile = "fake-output-file";
+
+   redirect_stderr();
+   test_assert(ui_index_build(-1, argv, &gfile, &ofile)  == -1);
+   test_assert(ui_index_build(4, NULL, &gfile, &ofile)  == -1);
+   test_assert(ui_index_build(4, argv, NULL, &ofile)  == -1);
+   test_assert(ui_index_build(4, argv, &gfile, NULL)  == -1);
+   unredirect_stderr();
+}
+
+void
+test_ui_index_add
+(void)
+{
+   char * argv[] = {"./mapper", "index", "add", "-k10", "-d1", "-k12", "fake-index-file", NULL};
+   char * ifile = "fake-index-file";
+
+   opt_add_t opt;
+
+   redirect_stderr();
+   test_assert(ui_index_add(-1, argv, &opt, &ifile)  == -1);
+   test_assert(ui_index_add(7, NULL, &opt, &ifile)  == -1);
+   test_assert(ui_index_add(7, argv, NULL, &ifile)  == -1);
+   test_assert(ui_index_add(7, argv, &opt, NULL)  == -1);
+   unredirect_stderr();
+}
+
+void
+test_ui_map
+(void)
+{
+   char * argv[] = {"./mapper", "fake-index-file", "fake-query-file", NULL};
+   char * ifile = "fake-index-file";
+   char * qfile = "fake-query-file";
+
+   opt_map_t opt;
+
+   redirect_stderr();
+   test_assert(ui_map(-1, argv, &opt, &ifile, &qfile)  == -1);
+   test_assert(ui_map(3, NULL, &opt, &ifile, &qfile)  == -1);
+   test_assert(ui_map(3, argv, NULL, &ifile, &qfile)  == -1);
+   test_assert(ui_map(3, argv, &opt, NULL, &qfile)  == -1);
+   test_assert(ui_map(3, argv, &opt, &ifile, NULL)  == -1);
+   unredirect_stderr();
+}
+
+
+
 
 // Define test cases to be run (for export).
 const test_case_t test_cases_ui[] = {
    {"ui/ui_parse",         test_ui_parse},
+   {"ui/ui_index_info",    test_ui_index_info},
+   {"ui/ui_index_build",   test_ui_index_build},
+   {"ui/ui_index_add",     test_ui_index_add},
+   {"ui/ui_map",           test_ui_map},
    {NULL, NULL}, // Sentinel. //
 };
 
