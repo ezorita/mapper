@@ -35,7 +35,7 @@ char *USAGE_INDEX =
    "  commands:\n"
    "    build:  build a new index from scratch.\n"
    "    add:    add annotation data to an existing index.\n"
-   //   "    view:   view index annotations.\n"
+   "    view:   view index annotations.\n"
    "\n"
    "  for more help type: index command\n";
 
@@ -65,12 +65,21 @@ char *USAGE_BUILD =
    "  annotation data:\n"
    "    genome.fasta.ann.#\n";
 
+char *USAGE_VIEW =
+   "\n"
+   "usage:\n"
+   " mapper index view <index-name>\n"
+   "\n"
+   "  displays index information.\n";
+
 void say_map_usage(void) { fprintf(stderr, "%s\n", USAGE_MAP); }
 void say_add_usage(void) { fprintf(stderr, "%s\n", USAGE_ADD); }
 void say_index_usage(void) { fprintf(stderr, "%s\n", USAGE_INDEX); }
 void say_build_usage(void) { fprintf(stderr, "%s\n", USAGE_BUILD); }
+void say_view_usage(void) { fprintf(stderr, "%s\n", USAGE_VIEW); }
 void say_version(void) { fprintf(stderr, "mapper version: %s\n", MAPPER_VERSION); }
 
+int  ui_index_info(index_t *);
 int  ui_index_build(int, char **, char **, char **);
 int  ui_index_add(int, char **, opt_add_t *, char **);
 int  ui_map(int, char **, opt_map_t *, char **, char **);
@@ -158,6 +167,31 @@ ui_parse
          
          return EXIT_SUCCESS;
       }
+      
+      /*
+      ** ./mapper index view
+      */
+      else if (strcmp(argv[2], "view") == 0) {
+         if (argc == 3) {
+            say_view_usage();
+            return EXIT_SUCCESS;
+         } else if (argc != 4) {
+            fprintf(stderr, "error: too many arguments.\n");
+            say_view_usage();
+            return EXIT_FAILURE;
+         }
+         // Parse params.
+         char * index_basename = argv[3];
+         // Read index file.
+         index = index_read(index_basename);
+         error_test(index == NULL);
+         // Show index info.
+         ui_index_info(index);
+         // Free index.
+         index_free(index);
+
+         return EXIT_SUCCESS;
+      }
    } else {
       int rval;
       opt_map_t opt;
@@ -182,6 +216,68 @@ ui_parse
  failure_return:
    index_free(index);
    return EXIT_FAILURE;
+}
+
+int
+ui_index_info
+(
+ index_t  * index
+)
+{
+   // Index basic info.
+   fprintf(stderr, "[basic info]\n");
+   fprintf(stderr, " index basename:   %s\n", index->fname_base);
+   fprintf(stderr, " index structures:\n");
+   fprintf(stderr, "  symbols info:    %s\n", (index->sym == NULL ? "NO" : "YES"));
+   fprintf(stderr, "  reference text:  %s\n", (index->txt == NULL ? "NO" : "YES"));
+   fprintf(stderr, "  suffix array:    %s\n", (index->sar == NULL ? "NO" : "YES"));
+   fprintf(stderr, "  FM index:        %s\n", (index->bwt == NULL ? "NO" : "YES"));
+   fprintf(stderr, "  annotations:     %s\n", (index->ann_cnt == 0 ? "NO" : "YES"));
+
+   // Symbols info.
+   if (index->sym != NULL) {
+      int s_cnt = sym_count(index->sym);
+      fprintf(stderr, "\n[index symbols]\n");
+      fprintf(stderr, " path:             %s.sym\n", index->fname_base);
+      fprintf(stderr, " symbol count:     %d\n", s_cnt);
+      fprintf(stderr, " alphabet:         { ");
+      for (int i = 0; i < s_cnt; i++) {
+         fprintf(stderr, "%c ", sym_character(i, index->sym));
+      }
+      fprintf(stderr, "}\n");
+      fprintf(stderr, " complement rel.:  { ");
+      for (int i = 0; i < s_cnt; i++) {
+         fprintf(stderr, "%c->%c ", sym_character(i, index->sym), \
+                 sym_character(sym_complement(i,index->sym), index->sym));
+      }
+      fprintf(stderr, "}\n");
+   }
+
+   // Text info.
+   if (index->txt != NULL) {
+      fprintf(stderr, "\n[reference text]\n");
+      fprintf(stderr, " path:             %s.txt\n", index->fname_base);
+      fprintf(stderr, " bidirectional:    %s\n", (txt_has_rc(index->txt) ? "YES" : "NO"));
+      fprintf(stderr, " text length:      %ld\n", txt_length(index->txt));
+      fprintf(stderr, " sequence count:   %ld\n", txt_seq_count(index->txt));
+      fprintf(stderr, " sequences (id, name, length):\n");
+      for (int i = 0; i < txt_seq_count(index->txt); i++) {
+         fprintf(stderr, "  %d. %s\t%ld\n", i, txt_seq_name(i,index->txt), txt_seq_length(i,index->txt));
+      }
+   }
+
+   // Annotation info.
+   if (index->ann_cnt > 0) {
+      fprintf(stderr, "\n[annotations]\n");
+      fprintf(stderr, " path:             %s.ann.#.#\n", index->fname_base);
+      fprintf(stderr, " annotation count: %d", index->ann_cnt);
+      fprintf(stderr, " annotations: (id, kmer, distance):\n");
+      for (int i = 0; i < index->ann_cnt; i++) {
+         fprintf(stderr, "   %d. (%d,%d)\n", i, ann_get_kmer(index->ann[i]), ann_get_dist(index->ann[i]));
+      }
+   }
+
+   return 0;
 }
 
 
