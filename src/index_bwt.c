@@ -776,6 +776,7 @@ bwt_file_read
    // Declare variables.
    int fd = -1;
    uint64_t * data = NULL;
+   bwt_t * bwt = NULL;
 
    // Check arguments.
    error_test_msg(filename == NULL, "argument 'filename' is NULL.");
@@ -788,7 +789,7 @@ bwt_file_read
    error_test_def(fd == -1);
 
    // Alloc memory.
-   bwt_t * bwt = malloc(sizeof(bwt_t));
+   bwt = malloc(sizeof(bwt_t));
    error_test_mem(bwt);
 
    // Set NULL pointers.
