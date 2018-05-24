@@ -544,7 +544,7 @@ ann_build_mt
    memset(query_2, num_symb, kmer*sizeof(uint8_t));
 
    // BWT path.
-   path = malloc((kmer+1)*sizeof(bwtquery_t *));
+   path = calloc(kmer+1, sizeof(bwtquery_t *));
    error_test_mem(path);
 
    for (int i = 0; i <= kmer; i++) {
@@ -601,7 +601,7 @@ ann_build_mt
    for (int i = 0; i <= kmer; i++) {
       free(path[i]);
    }
-
+   free(path);
 
    return NULL;
 
@@ -614,9 +614,12 @@ ann_build_mt
    free_stack_tree(stack_tree_2);
    free(query_1);
    free(query_2);
-   for (int i = 0; i <= kmer; i++) {
-      free(path[i]);
+   if (path != NULL) {
+      for (int i = 0; i <= kmer; i++) {
+         free(path[i]);
+      }
    }
+   free(path);
    return NULL;
 }
 
