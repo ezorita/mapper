@@ -1,39 +1,31 @@
 #include "unittest.h"
 
-// Standard malloc() and realloc() //
-extern void *__libc_malloc(size_t);
-extern void *__libc_realloc(void *, size_t);
-extern void *__libc_calloc(size_t, size_t);
+//     Constants     //
+#define UTEST_BUFFER_SIZE 1024
+#define MAX_N_ERROR_MSG 20
+
 // Private functions // 
 void   redirect_stderr (void);
-void * run_testset (void *); 
+void * run_test (void *); 
 char * sent_to_stderr (void);
 void   unit_test_clean (void);
 void   unit_test_init (void);
 void   unredirect_stderr (void);
 void   test_case_clean (void);
 void   test_case_init (void);
-void * fail_countdown_calloc (size_t, size_t);
-void * fail_countdown_malloc (size_t);
-void * fail_countdown_realloc (void *, size_t);
-void * fail_prone_calloc (size_t, size_t);
-void * fail_prone_malloc (size_t);
-void * fail_prone_realloc (void *, size_t);
-
 
 //     Global variables     //
-void *(*MALLOC_CALL)(size_t) = __libc_malloc;
-void *(*REALLOC_CALL)(void *, size_t) = __libc_realloc;
-void *(*CALLOC_CALL)(size_t, size_t) = __libc_calloc;
+static double ALLOC_ERR_PROB = 0.0;
+static int    ALLOC_FAIL_COUNTER = 0;
+static FILE * DEBUG_DUMP_FILE = NULL;
+static int    N_ERROR_MSG = 0;
+static int    ORIG_STDERR_DESCRIPTOR = -1;
+static char * STDERR_BUFFER = NULL;
+static int    STDERR_OFF = 0;
+static int    TEST_CASE_FAILED = 0;
 
-static double ALLOC_ERR_PROB;
-static int    ALLOC_FAIL_COUNTER;
-static FILE * DEBUG_DUMP_FILE;
-static int    N_ERROR_MESSAGES;
-static int    ORIG_STDERR_DESCRIPTOR;
-static char * STDERR_BUFFER;
-static int    STDERR_OFF;
-static int    TEST_CASE_FAILED;
+static int    SHOWALL = 0;
+static int    INSPECT = 0;
 
 
 //     Function definitions     //
@@ -78,56 +70,9 @@ terminate_thread
 
 }
 
-int
-run_unittest
-(
-         int            argc,
-         char        ** argv,
-   const test_case_t  * test_case_list[]
-)
-{
-
-   // Initialize test set. //
-   unit_test_init();
-
-   pthread_t tid;
-
-   int nbad = 0;
-
-   // Run test cases in sequential order.
-   for (int j = 0 ; test_case_list[j] != NULL ; j++) {
-
-      const test_case_t *tests = test_case_list[j];
-      for (int i = 0 ; tests[i].fixture != NULL ; i++) {
-
-         // Test display. //
-         fprintf(stderr, "%s%*s", tests[i].test_name,
-                  28 - (int) strlen(tests[i].test_name), "");
-
-         // Run test case in thread. //
-         pthread_create(&tid, NULL, run_testset, (void *) &tests[i]);
-         pthread_join(tid, NULL);
-
-         if (TEST_CASE_FAILED) {
-            nbad++;
-         }
-         else {
-            update_display_success();
-         }
-
-      }
-
-   }
-
-   // Clean and return. //
-   unit_test_clean();
-   return nbad;
-
-}
-
 
 void *
-run_testset
+run_test
 (
    void * data
 )
@@ -157,7 +102,6 @@ run_testset
    test_case_clean();
 
    return NULL;
-  
 
 }
 
@@ -166,7 +110,8 @@ void
 unit_test_init
 (void)
 {
-
+   // In inspect mode, no debug information is recorded.
+   if (INSPECT) return;
    DEBUG_DUMP_FILE = fopen(".inspect.gdb", "w");
    if (DEBUG_DUMP_FILE == NULL) {
       fprintf(stderr, "unittest error: %s:%d\n", __FILE__, __LINE__);
@@ -180,9 +125,12 @@ unit_test_clean
 (void)
 {
 
-   fprintf(DEBUG_DUMP_FILE, "b run_unittest\n");
-   fprintf(DEBUG_DUMP_FILE, "run\n");
-   fclose(DEBUG_DUMP_FILE);
+   // In inspect mode, no debug information is recorded.
+   if (INSPECT || DEBUG_DUMP_FILE != NULL) {
+      fprintf(DEBUG_DUMP_FILE, "b run_unittest\n");
+      fprintf(DEBUG_DUMP_FILE, "run --inspect\n");
+      fclose(DEBUG_DUMP_FILE);
+   }
 
 }
 
@@ -194,7 +142,7 @@ test_case_init
 
    reset_alloc();
 
-   N_ERROR_MESSAGES = 0;
+   N_ERROR_MSG = 0;
 
    TEST_CASE_FAILED = 0;
    STDERR_OFF = 0;
@@ -276,13 +224,16 @@ unredirect_stderr
 
 
 void
-assert_fail_non_critical
+fail_non_critical
 (
-   const char         * assertion,
-   const char         * file,
-   const unsigned int   lineno,
-   const char         * function
+   const char * assertion,
+   const char * file,
+         int    lineno,
+   const char * function
 )
+// Handle failure of non critical assert statements.
+// Set the test status to failed and update the display
+// and print error message.
 {
 
    // If first failed assertion of the test
@@ -293,23 +244,19 @@ assert_fail_non_critical
 
    TEST_CASE_FAILED = 1;
 
-   // Don't show more than 'MAX_N_ERROR_MESSAGES'.
-   // TODO: allow the user to show all error messages.
-   if (++N_ERROR_MESSAGES > MAX_N_ERROR_MESSAGES + 1) return;
-
    // If stderr is redirected, we will need to
    // take it back to display the error message.
    int toggle_stderr = STDERR_OFF;
    if (toggle_stderr) unredirect_stderr();
 
-   if (N_ERROR_MESSAGES == MAX_N_ERROR_MESSAGES + 1) {
-      fprintf(stderr, "more than %d failed assertions...\n",
-            MAX_N_ERROR_MESSAGES);
+   // Don't show more than 'MAX_N_ERROR_MSG', unless
+   // user passed the --showall or -a option.
+   if (N_ERROR_MSG++ < MAX_N_ERROR_MSG || SHOWALL) {
+      fprintf(stderr, "%s:%d: `%s'\n", file, lineno, assertion);
    }
-
-   else {
-      fprintf(stderr, "assertion failed in %s(), %s:%d: `%s'\n",
-            function, file, lineno, assertion);
+   else if (N_ERROR_MSG == MAX_N_ERROR_MSG + 1) {
+      fprintf(stderr, "more than %d failed assertions...\n",
+            MAX_N_ERROR_MSG);
    }
 
    // Flush stderr and put it back as it was (ie redirect
@@ -321,13 +268,16 @@ assert_fail_non_critical
 
 
 void
-assert_fail_critical
+fail_critical
 (
-   const char         * assertion,
-   const char         * file,
-   const unsigned int   lineno,
-   const char         * function
+   const char * assertion,
+   const char * file,
+         int    lineno,
+   const char * function
 )
+// Handle failure of critical (fatal) assert statements.
+// Set the test status to failed and update the display
+// and print error message.
 {
    // If test was not failed so far, update display.
    if (!TEST_CASE_FAILED) {
@@ -339,7 +289,7 @@ assert_fail_critical
    // That's the end of the test case. We can
    // take back stderr without worries.
    unredirect_stderr();
-   fprintf(stderr, "assertion failed in %s(), %s:%d: `%s' (CRITICAL)\n",
+   fprintf(stderr, "assertion failed in %s, %s:%d: `%s' (CRITICAL)\n",
          function, file, lineno, assertion);
    fflush(stderr);
 
@@ -347,15 +297,16 @@ assert_fail_critical
 
 
 void
-debug_fail_dump
+fail_debug_dump
 (
-   const char         * file,
-   const unsigned int   lineno,
-   const char         * function
+   const char * file,
+         int    lineno,
+   const char * function
 )
+// When a test fails, write a gdb file with a breakpoint at
+// the line where the failured happened.
 {
    fprintf(DEBUG_DUMP_FILE, "b %s:%d\n", file, lineno);
-   fprintf(DEBUG_DUMP_FILE, "b %s\n", function);
    fflush(DEBUG_DUMP_FILE);
 }
 
@@ -368,32 +319,121 @@ caught_in_stderr
 }
 
 
-void *
-malloc
-(
-   size_t size
-)
+
+void
+machine_specific_initialization
+(void)
 {
+#ifdef __APPLE__
+   malloc_zone_t *zone = malloc_default_zone();
+   SYSTEM_MALLOC = zone->malloc;
+   SYSTEM_CALLOC = zone->calloc;
+   SYSTEM_REALLOC = zone->realloc;
+#endif
+}
+
+
+#ifdef __APPLE__
+// Intercept calls to 'malloc()' on MacOS //
+#include <malloc/malloc.h>
+void *(*SYSTEM_MALLOC) (malloc_zone_t *, size_t);
+void *(*SYSTEM_CALLOC) (malloc_zone_t *, size_t, size_t);
+void *(*SYSTEM_REALLOC) (malloc_zone_t *, void *, size_t);
+
+
+void *
+fail_countdown_malloc(malloc_zone_t *zone, size_t size)
+{
+   if (ALLOC_FAIL_COUNTER >= 0) ALLOC_FAIL_COUNTER--;
+   return ALLOC_FAIL_COUNTER < 0 ? NULL : SYSTEM_MALLOC(zone, size);
+}
+
+void *
+fail_countdown_calloc(malloc_zone_t *zone, size_t nitems, size_t size)
+{
+   if (ALLOC_FAIL_COUNTER >= 0) ALLOC_FAIL_COUNTER--;
+   return ALLOC_FAIL_COUNTER < 0 ? NULL : \
+      SYSTEM_CALLOC(zone, nitems, size);
+}
+
+void *
+fail_countdown_realloc(malloc_zone_t *zone, void *ptr, size_t size)
+{
+   if (ALLOC_FAIL_COUNTER >= 0) ALLOC_FAIL_COUNTER--;
+   return ALLOC_FAIL_COUNTER < 0 ? NULL : \
+      SYSTEM_REALLOC(zone, ptr, size);
+}
+
+void *
+fail_prone_malloc(malloc_zone_t *zone, size_t size)
+{
+   return drand48() < ALLOC_ERR_PROB ? NULL : SYSTEM_MALLOC(zone, size);
+}
+
+void *
+fail_prone_calloc(malloc_zone_t *zone, size_t nitems, size_t size)
+{
+   return drand48() < ALLOC_ERR_PROB ? NULL : \
+      SYSTEM_CALLOC(zone, nitems, size);
+}
+
+void *
+fail_prone_realloc(malloc_zone_t *zone, void *ptr, size_t size)
+{
+   return drand48() < ALLOC_ERR_PROB ? NULL : \
+      SYSTEM_REALLOC(zone, ptr, size);
+}
+
+
+void
+set_alloc_failure_rate_to(double p)
+{
+
+   ALLOC_ERR_PROB = p;
+   malloc_zone_t *zone = malloc_default_zone();
+   zone->malloc = fail_prone_malloc;
+   zone->calloc = fail_prone_calloc;
+   zone->realloc = fail_prone_realloc;
+}
+
+void
+set_alloc_failure_countdown_to(int count)
+{
+   ALLOC_FAIL_COUNTER = count;
+   malloc_zone_t *zone = malloc_default_zone();
+   zone->malloc = fail_countdown_malloc;
+   zone->calloc = fail_countdown_calloc;
+   zone->realloc = fail_countdown_realloc;
+}
+
+void
+reset_alloc
+(void)
+{
+   ALLOC_ERR_PROB = 0.0;
+   malloc_zone_t *zone = malloc_default_zone();
+   zone->malloc = SYSTEM_MALLOC;
+   zone->calloc = SYSTEM_CALLOC;
+   zone->realloc = SYSTEM_REALLOC;
+}
+#else
+// Intercept 'malloc()' calls in a Linux environment //
+extern void *__libc_malloc(size_t);
+extern void *__libc_calloc(size_t, size_t);
+extern void *__libc_realloc(void *, size_t);
+
+void *(*MALLOC_CALL)(size_t) = __libc_malloc;
+void *(*REALLOC_CALL)(void *, size_t) = __libc_realloc;
+void *(*CALLOC_CALL)(size_t, size_t) = __libc_calloc;
+
+// Overwrite the symbols //
+void * malloc (size_t size) {
    return (*MALLOC_CALL)(size);
 }
-
-void *
-realloc
-(
-   void *ptr,
-   size_t size
-)
-{
+void * realloc (void *ptr, size_t size) {
    return (*REALLOC_CALL)(ptr, size);
 }
-
-void *
-calloc
-(
-   size_t nitems,
-   size_t size
-)
-{
+void * calloc (size_t nitems, size_t size) {
    return (*CALLOC_CALL)(nitems, size);
 }
 
@@ -405,17 +445,17 @@ fail_countdown_malloc(size_t size)
 }
 
 void *
-fail_countdown_realloc(void *ptr, size_t size)
-{
-   if (ALLOC_FAIL_COUNTER >= 0) ALLOC_FAIL_COUNTER--;
-   return ALLOC_FAIL_COUNTER < 0 ? NULL : __libc_realloc(ptr, size);
-}
-
-void *
 fail_countdown_calloc(size_t nitems, size_t size)
 {
    if (ALLOC_FAIL_COUNTER >= 0) ALLOC_FAIL_COUNTER--;
    return ALLOC_FAIL_COUNTER < 0 ? NULL : __libc_calloc(nitems, size);
+}
+
+void *
+fail_countdown_realloc(void *ptr, size_t size)
+{
+   if (ALLOC_FAIL_COUNTER >= 0) ALLOC_FAIL_COUNTER--;
+   return ALLOC_FAIL_COUNTER < 0 ? NULL : __libc_realloc(ptr, size);
 }
 
 void *
@@ -425,24 +465,25 @@ fail_prone_malloc(size_t size)
 }
 
 void *
+fail_prone_calloc(size_t nitems, size_t size)
+{
+   return drand48() < ALLOC_ERR_PROB ? NULL : __libc_calloc(nitems, size);
+}
+
+void *
 fail_prone_realloc(void *ptr, size_t size)
 {
    return drand48() < ALLOC_ERR_PROB ? NULL : __libc_realloc(ptr, size);
 }
 
-void *
-fail_prone_calloc(size_t nitems, size_t size)
-{
-   return drand48() < ALLOC_ERR_PROB ? NULL : __libc_calloc(nitems, size);
-}
 
 void
 set_alloc_failure_rate_to(double p)
 {
    ALLOC_ERR_PROB = p;
    MALLOC_CALL = fail_prone_malloc;
-   REALLOC_CALL = fail_prone_realloc;
    CALLOC_CALL = fail_prone_calloc;
+   REALLOC_CALL = fail_prone_realloc;
 }
 
 void
@@ -450,8 +491,8 @@ set_alloc_failure_countdown_to(int count)
 {
    ALLOC_FAIL_COUNTER = count;
    MALLOC_CALL = fail_countdown_malloc;
-   REALLOC_CALL = fail_countdown_realloc;
    CALLOC_CALL = fail_countdown_calloc;
+   REALLOC_CALL = fail_countdown_realloc;
 }
 
 void
@@ -460,6 +501,88 @@ reset_alloc
 {
    ALLOC_ERR_PROB = 0.0;
    MALLOC_CALL = __libc_malloc;
-   REALLOC_CALL = __libc_realloc;
    CALLOC_CALL = __libc_calloc;
+   REALLOC_CALL = __libc_realloc;
+}
+#endif
+
+
+int
+run_unittest
+(
+         int            argc,
+         char        ** argv,
+   const test_case_t  * test_case_list[]
+)
+{
+
+   machine_specific_initialization();
+
+	// Parse command line options.
+   while(1) {
+      int option_index = 0;
+      static struct option long_options[] = {
+         {"showall", no_argument, &SHOWALL,  1},
+         {"inspect", no_argument, &INSPECT,  1},
+         {0, 0, 0, 0}
+      };
+
+      int c = getopt_long(argc, argv, "ai",
+            long_options, &option_index);
+
+      // Done parsing named options. //
+      if (c == -1) break;
+
+      switch (c) {
+      case 0:
+         break;
+		case 'a':
+			SHOWALL = 1;
+			break;
+		case 'i':
+			INSPECT = 1;
+			break;
+		default:
+			fprintf(stderr, "cannot parse command line arguments\n");
+			return EXIT_FAILURE;
+		}
+	}
+
+   // Initialize test. //
+   unit_test_init();
+
+   pthread_t tid;
+
+   int nbad = 0;
+
+   // Run test cases in sequential order.
+   for (int j = 0 ; test_case_list[j] != NULL ; j++) {
+
+      const test_case_t *tests = test_case_list[j];
+      for (int i = 0 ; tests[i].fixture != NULL ; i++) {
+
+         // Display of the test. //
+         fprintf(stderr, "%s%*s", tests[i].test_name,
+                  28 - (int) strlen(tests[i].test_name), "");
+
+         // Run test case in thread. //
+         pthread_create(&tid, NULL, run_test, (void *) &tests[i]);
+         pthread_join(tid, NULL);
+
+         if (TEST_CASE_FAILED) {
+				// Display was updated if test failed. 
+            nbad++;
+         }
+         else {
+            update_display_success();
+         }
+
+      }
+
+   }
+
+   // Clean and return. //
+   unit_test_clean();
+   return nbad;
+
 }

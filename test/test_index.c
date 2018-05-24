@@ -96,6 +96,13 @@ test_index_read
    redirect_stderr();
    index_t * index = index_build("examples/repeats.fa", "test_base02");
    test_assert_critical(index != NULL);
+   test_assert(index->sym != NULL);
+   test_assert(index->txt != NULL);
+   test_assert(index->sar != NULL);
+   test_assert(index->bwt != NULL);
+   test_assert(index->ann == NULL);
+   test_assert(index->ann_cnt == 0);
+
 
    redirect_stderr();
    index_ann_new(25, 1, 1, index);

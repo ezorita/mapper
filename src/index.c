@@ -66,8 +66,12 @@ index_read
    glob(file_path, 0, NULL, &gbuf);
 
    // alloc ann list
-   index->ann = malloc(gbuf.gl_pathc * sizeof(void *));
-   error_test(index->ann == NULL);
+   if (gbuf.gl_pathc == 0) {
+      index->ann = NULL;
+   } else {
+      index->ann = malloc(gbuf.gl_pathc * sizeof(void *));
+      error_test(index->ann == NULL);
+   }
 
    // ann
    index->ann_cnt = gbuf.gl_pathc;

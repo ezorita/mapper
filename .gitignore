@@ -21,6 +21,12 @@ test/test*.sar
 test/test*.bwt
 test/test*.ann
 test/test*.ann.*
+test/ui_test*.sym
+test/ui_test*.txt
+test/ui_test*.sar
+test/ui_test*.bwt
+test/ui_test*.ann
+test/ui_test*.ann.*
 test/runtests
 test/*.so
 *.o
