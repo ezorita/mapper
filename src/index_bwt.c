@@ -254,8 +254,8 @@ bwt_query_all
    error_test_mem(sz);
 
    // Fetch occ values to update pointers.
-   get_occ_all(q_fp - 1, bwt, occ_sp);
-   get_occ_all(q_fp + q_sz - 1, bwt, occ_ep);
+   error_test(get_occ_all(q_fp - 1, bwt, occ_sp) == -1);
+   error_test(get_occ_all(q_fp + q_sz - 1, bwt, occ_ep) == -1);
 
    // Update forward pointers and result sizes.
    int64_t tot = 0;
