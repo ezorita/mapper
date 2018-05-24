@@ -8,6 +8,8 @@ main(
 {
 
    // Import the test cases from linked files. //
+
+   // Unit tests.
    extern test_case_t test_cases_index_sym[];
    extern test_case_t test_cases_index_txt[];
    extern test_case_t test_cases_index_sar[];
@@ -15,6 +17,9 @@ main(
    extern test_case_t test_cases_index_ann[];
    extern test_case_t test_cases_index[];
    extern test_case_t test_cases_ui[];
+
+   // Memory tests.
+   extern test_case_t test_mem_index_sym[];
 
    const test_case_t *test_case_list[] = {
       test_cases_index_sym,
@@ -24,6 +29,7 @@ main(
       test_cases_index_ann,
       test_cases_index,
       test_cases_ui,
+      test_mem_index_sym,
       NULL, // Sentinel. //
    };
 
