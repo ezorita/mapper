@@ -101,6 +101,7 @@ ui_parse
 {
    // Declare variables.
    index_t * index = NULL;
+   char * index_path = NULL;
 
    // Check arguments.
    error_test_msg(argc <= 0, "argument 'argc' must be greater than 0.");
@@ -140,13 +141,15 @@ ui_parse
             return (rval == -1 ? EXIT_FAILURE : EXIT_SUCCESS);
          }
 
+         index_path = get_filename_base(index_file);
          // Load index.
-         index = index_read(index_file);
+         index = index_read(index_path);
          error_test(index == NULL);
          // Compute annotation.
          error_test(index_ann_new(opt.k, opt.d, opt.threads, index) == -1);
          // Free index mem.
          index_free(index);
+         free(index_path);
          
          return EXIT_SUCCESS;
       } 
@@ -198,14 +201,16 @@ ui_parse
          }
 
          // Parse params.
-         char * index_basename = argv[3];
+         char * index_file = argv[3];
+         index_path = get_filename_base(index_file);
          // Read index file.
-         index = index_read(index_basename);
+         index = index_read(index_path);
          error_test(index == NULL);
          // Show index info.
          ui_index_info(index);
          // Free index.
          index_free(index);
+         free(index_path);
 
          return EXIT_SUCCESS;
       } else {
@@ -223,19 +228,23 @@ ui_parse
          return (rval == -1 ? EXIT_FAILURE : EXIT_SUCCESS);
       }
 
+      index_path = get_filename_base(index_file);
+
       // Load index.
-      index = index_read(index_file);
+      index = index_read(index_path);
       error_test(index == NULL);
       // Map query file.
       error_test(mapper(query_file, index) == -1);
       // Free index.
       index_free(index);
+      free(index_path);
          
       return EXIT_SUCCESS;
    }
 
  failure_return:
    index_free(index);
+   free(index_path);
    return EXIT_FAILURE;
 }
 
@@ -612,4 +621,36 @@ ui_map
 
  failure_return:
    return -1;
+}
+
+char *
+get_filename_base
+(
+ char  * path
+)
+{
+   char * index_path = NULL;
+   
+   error_test_msg(path == NULL, "argument 'index_path' is NULL.");
+
+   index_path = malloc(strlen(path) + 1);
+   error_test_mem(index_path);
+   memcpy(index_path, path, strlen(path)+1);
+
+
+   char * ext = index_path + strlen(index_path) - 4;
+
+   if ((strcmp(ext, ".sym") == 0) || \
+       (strcmp(ext, ".txt") == 0) || \
+       (strcmp(ext, ".bwt") == 0) || \
+       (strcmp(ext, ".sar") == 0) || \
+       (strcmp(ext, ".ann") == 0)) {
+      index_path[strlen(index_path) - 4] = 0;
+   }
+
+   return index_path;
+   
+ failure_return:
+   free(index_path);
+   return NULL;
 }

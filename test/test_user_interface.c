@@ -478,6 +478,50 @@ test_ui_map
 }
 
 
+void
+test_get_filename_base
+(void)
+{
+   char * ifile0 = "index.fasta";
+   char * ifile1 = "index.fasta.sym";
+   char * ifile2 = "index.fasta.txt";
+   char * ifile3 = "index.fasta.sar";
+   char * ifile4 = "index.fasta.bwt";
+   char * ifile5 = "index.fasta.ann";
+
+   char * path;
+
+   path = get_filename_base(ifile0);
+   test_assert_critical(path != NULL);
+   test_assert(strcmp(path, "index.fasta") == 0);
+   free(path);
+
+   path = get_filename_base(ifile1);
+   test_assert_critical(path != NULL);
+   test_assert(strcmp(path, "index.fasta") == 0);
+   free(path);
+
+   path = get_filename_base(ifile2);
+   test_assert_critical(path != NULL);
+   test_assert(strcmp(path, "index.fasta") == 0);
+   free(path);
+
+   path = get_filename_base(ifile3);
+   test_assert_critical(path != NULL);
+   test_assert(strcmp(path, "index.fasta") == 0);
+   free(path);
+
+   path = get_filename_base(ifile4);
+   test_assert_critical(path != NULL);
+   test_assert(strcmp(path, "index.fasta") == 0);
+   free(path);
+
+   path = get_filename_base(ifile5);
+   test_assert_critical(path != NULL);
+   test_assert(strcmp(path, "index.fasta") == 0);
+   free(path);
+}
+
 
 
 // Define test cases to be run (for export).
@@ -487,6 +531,7 @@ const test_case_t test_cases_ui[] = {
    {"ui/ui_index_build",   test_ui_index_build},
    {"ui/ui_index_add",     test_ui_index_add},
    {"ui/ui_map",           test_ui_map},
+   {"ui/get_fname_base",   test_get_filename_base},
    {NULL, NULL}, // Sentinel. //
 };
 
