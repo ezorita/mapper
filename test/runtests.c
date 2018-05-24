@@ -23,6 +23,7 @@ main(
    extern test_case_t test_mem_index_txt[];
    extern test_case_t test_mem_index_sar[];
    extern test_case_t test_mem_index_bwt[];
+   extern test_case_t test_mem_index_ann[];
 
    const test_case_t *test_case_list[] = {
       test_cases_index_sym,
@@ -36,6 +37,7 @@ main(
       test_mem_index_txt,
       test_mem_index_sar,
       test_mem_index_bwt,
+      test_mem_index_ann,
       NULL, // Sentinel. //
    };
 
