@@ -20,6 +20,7 @@ main(
 
    // Memory tests.
    extern test_case_t test_mem_index_sym[];
+   extern test_case_t test_mem_index_txt[];
 
    const test_case_t *test_case_list[] = {
       test_cases_index_sym,
@@ -30,6 +31,7 @@ main(
       test_cases_index,
       test_cases_ui,
       test_mem_index_sym,
+      test_mem_index_txt,
       NULL, // Sentinel. //
    };
 
