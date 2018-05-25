@@ -747,7 +747,9 @@ test_txt_file
    test_assert(txt_seq_start(99,txt) == 5049);
    test_assert(txt_seq_start(100,txt) == -1);
 
-   test_assert(strcmp(txt_pos_to_str(0,txt), "seq0:1:+") == 0);
+   char * str = txt_pos_to_str(0,txt);
+   test_assert(strcmp(str, "seq0:1:+") == 0);
+   free(str);
 
    txt_free(txt);
    sym_free(sym);
