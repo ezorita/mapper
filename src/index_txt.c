@@ -90,8 +90,10 @@ txt_free
 {
    if (txt != NULL) {
       if (txt->mmap_ptr == NULL) {
-         for (int64_t i = 0; i < txt->seq_cnt; i++) {
-            free(txt->seq_name[i]);
+         if (txt->seq_name != NULL) {
+            for (int64_t i = 0; i < txt->seq_cnt; i++) {
+               free(txt->seq_name[i]);
+            }
          }
          free(txt->seq_len);
          free(txt->seq_beg);
@@ -516,10 +518,14 @@ txt_str_to_pos
   txt_t  * txt
 )
 {
+   // Declare variables.
+   char * pos_str = NULL;
+
+   // Check arguments.
    error_test_msg(str == NULL, "argument 'str' is NULL.");
    error_test_msg(txt == NULL, "argument 'txt' is NULL.");
 
-   char * pos_str = strdup(str);
+   pos_str = strdup(str);
    error_test_def(pos_str == NULL);
 
    // Tokenize string.
@@ -562,6 +568,7 @@ txt_str_to_pos
    return pos;
 
  failure_return:
+   free(pos_str);
    return -1;
 }
 
