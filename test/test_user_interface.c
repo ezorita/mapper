@@ -197,7 +197,9 @@ test_ui_parse
    }
    test_assert(bwt_size(q) == 1);
    test_assert(bwt_depth(q) == 25);
-   test_assert(strcmp(txt_pos_to_str(sar_get(bwt_start(q), index->sar), index->txt), "one:1:+") == 0);
+   char * str = txt_pos_to_str(sar_get(bwt_start(q), index->sar), index->txt);
+   test_assert(strcmp(str, "one:1:+") == 0);
+   free(str);
    free(q);
 
    q = bwt_new_query(index->bwt);
@@ -206,7 +208,9 @@ test_ui_parse
    }
    test_assert(bwt_size(q) == 1);
    test_assert(bwt_depth(q) == 25);
-   test_assert(strcmp(txt_pos_to_str(sar_get(bwt_start(q), index->sar), index->txt), "two:1:+") == 0);
+   str = txt_pos_to_str(sar_get(bwt_start(q), index->sar), index->txt);
+   test_assert(strcmp(str, "two:1:+") == 0);
+   free(str);
    free(q);
 
    // Test annotation.
@@ -413,6 +417,8 @@ test_ui_parse
    test_assert(ui_parse(8, argv43) == EXIT_FAILURE);
    unredirect_stderr();
    test_assert_stderr(OPT_OUTPUT_REPEAT);
+
+   free(buffer);
 }
 
 
