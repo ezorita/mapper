@@ -148,6 +148,36 @@ test_mem_sym_index
 }
 
 void
+test_mem_sym_str_index
+(void)
+{
+   sym_t * sym = sym_new_dna();
+   test_assert_critical(sym != NULL);
+   
+   char * text = "ATGCATCGTAGCA";
+
+   redirect_stderr();
+   // Set alloc failure rate to 0.1.
+   set_alloc_failure_rate_to(0.1);
+   for (int i = 0; i < 100; i++) {
+      int32_t * s = sym_str_index(text, sym);
+      free(s);   
+   }
+   reset_alloc();
+
+   // Set alloc countdown 0->10.
+   for (int i = 0; i <= 100; i++) {
+      set_alloc_failure_countdown_to(i);
+      int32_t * s = sym_str_index(text, sym);
+      free(s);   
+   }
+   reset_alloc();
+
+   sym_free(sym);
+}
+
+
+void
 test_mem_sym_is_canonical
 (void)
 {
@@ -315,6 +345,7 @@ const test_case_t test_mem_index_sym[] = {
    {"mem/index_sym/sym_character",       test_mem_sym_character},
    {"mem/index_sym/sym_complement",      test_mem_sym_complement},
    {"mem/index_sym/sym_index",           test_mem_sym_index},
+   {"mem/index_sym/sym_str_index",       test_mem_sym_str_index},
    {"mem/index_sym/sym_is_canonical",    test_mem_sym_is_canonical},
    {"mem/index_sym/sym_count",           test_mem_sym_count},
    {"mem/index_sym/sym_file",            test_mem_sym_file},

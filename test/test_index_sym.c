@@ -386,6 +386,40 @@ test_sym_index
 }
 
 void
+test_sym_str_index
+(void)
+{
+   sym_t * sym = sym_new_dna();
+   test_assert_critical(sym != NULL);
+   
+   char * t1 = "ATGCATCGTAGCA";
+   int32_t s1[] = {0,3,2,1,0,3,1,2,3,0,2,1,0};
+
+   char * t2 = "ATGTCNATNNCCA";
+   int32_t s2[] = {0,3,2,3,1,4,0,3,4,4,1,1,0};
+
+   char * t3 = "GTKGA0ACGPT!$";
+   int32_t s3[] = {2,3,4,2,0,4,0,1,2,4,3,4,4};
+
+   int32_t * s = sym_str_index(t1, sym);
+   test_assert_critical(s != NULL);
+   test_assert(memcmp(s, s1, 13*sizeof(int32_t)) == 0);
+   free(s);
+
+   s = sym_str_index(t2, sym);
+   test_assert_critical(s != NULL);
+   test_assert(memcmp(s, s2, 13*sizeof(int32_t)) == 0);
+   free(s);
+
+   s = sym_str_index(t3, sym);
+   test_assert_critical(s != NULL);
+   test_assert(memcmp(s, s3, 13*sizeof(int32_t)) == 0);
+   free(s);
+
+   sym_free(sym);
+}
+
+void
 test_sym_is_canonical
 (void)
 {
@@ -745,6 +779,7 @@ const test_case_t test_cases_index_sym[] = {
    {"index_sym/sym_character",       test_sym_character},
    {"index_sym/sym_complement",      test_sym_complement},
    {"index_sym/sym_index",           test_sym_index},
+   {"index_sym/sym_str_index",       test_sym_str_index},
    {"index_sym/sym_is_canonical",    test_sym_is_canonical},
    {"index_sym/sym_count",           test_sym_count},
    {"index_sym/sym_file",            test_sym_file},

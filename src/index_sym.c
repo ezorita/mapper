@@ -290,6 +290,34 @@ sym_index
    return -1;
 }
 
+int32_t *
+sym_str_index
+(
+ char  * str,
+ sym_t * sym
+)
+{
+   // Declare variables.
+   int32_t * syms = NULL;
+
+   // Check arguments.
+   error_test_msg(str == NULL, "argument 'str' is NULL.");
+   error_test_msg(sym == NULL, "argument 'sym' is NULL.");
+   
+   syms = malloc(strlen(str) * sizeof(int32_t));
+   error_test_mem(syms);
+
+   for (int i = 0; i < strlen(str); i++) {
+      syms[i] = sym_index(str[i], sym);
+   }
+
+   return syms;
+   
+ failure_return:
+   free(syms);
+   return NULL;
+}
+
 int
 sym_is_canonical
 (
