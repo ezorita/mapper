@@ -9,6 +9,7 @@ branches:
 
 before_install:
   - sudo pip install -U cpp-coveralls
+  - sudo apt-get install valgrind
 
 script: make && cd test && make test-full
 
