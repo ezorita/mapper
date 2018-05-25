@@ -6,12 +6,13 @@ struct sar_t {
    void     * mmap_ptr;
    int64_t    sar_bits;
    int64_t    sar_len;
+   int64_t    txt_len;
    int64_t  * sa;
 };
 
 
 // Private function headers.
-int     compact_array   (sar_t * sar, uint64_t len);
+int     compact_array   (sar_t * sar);
 
 
 // Interface functions source.
@@ -32,7 +33,7 @@ sar_build
    data = malloc(txt_length(txt)*sizeof(uint8_t));
    error_test_mem(data);
 
-   sa   = malloc(txt_length(txt)*sizeof(saidx64_t));
+   sa   = calloc(txt_length(txt), sizeof(saidx64_t));
    error_test_mem(sa);
 
    sar  = malloc(sizeof(sar_t));
@@ -54,7 +55,9 @@ sar_build
    
    // Compact array.
    sar->sa = (int64_t *)sa;
-   error_test( compact_array(sar, txt_length(txt)) == -1 );
+   sar->txt_len = txt_length(txt);
+   error_test(compact_array(sar) == -1);
+
 
    free(data);
    return sar;
@@ -95,10 +98,8 @@ sar_get
 {
    // Check arguments.
    error_test_msg(sar == NULL, "argument 'sar' is NULL.");
-
-   int64_t sar_txt_len = (64*sar->sar_len)/sar->sar_bits;
    error_test_msg(pos < 0, "index must be positive.");
-   error_test_msg(pos >= sar_txt_len, "index out of bounds.");
+   error_test_msg(pos >= sar->txt_len, "index out of bounds.");   
 
    // Fetch word of 'sar_bits' bits in suffix array.
    uint64_t mask = ((uint64_t)0xFFFFFFFFFFFFFFFF) >> (64 - sar->sar_bits);
@@ -130,10 +131,9 @@ sar_get_range
    error_test_msg(vec == NULL, "argument 'vec' is NULL.");
    error_test_msg(sar == NULL, "argument 'sar' is NULL.");
 
-   int64_t sar_txt_len = (64*sar->sar_len)/sar->sar_bits;
    error_test_msg(beg < 0, "'beg' index must be positive.");
    error_test_msg(size < 1, "'size' must be greater than 0.");
-   error_test_msg(beg + size > sar_txt_len, "range out of bounds.");
+   error_test_msg(beg + size > sar->txt_len, "range out of bounds.");
 
    // Fetch words of 'sar_bits' bits and store them in vec.
    uint64_t mask = ((uint64_t)0xFFFFFFFFFFFFFFFF) >> (64 - sar->sar_bits);
@@ -197,6 +197,10 @@ sar_file_write
    b_cnt = write(fd, (int64_t *)&(sar->sar_len), sizeof(int64_t));
    error_test_def(b_cnt == -1);
 
+   // Write sar_len.
+   b_cnt = write(fd, (int64_t *)&(sar->txt_len), sizeof(int64_t));
+   error_test_def(b_cnt == -1);
+
    // Write Suffix Array.
    e_cnt = 0;
    do {
@@ -258,7 +262,8 @@ sar_file_read
 
    sar->sar_bits = data[1];
    sar->sar_len  = data[2];
-   sar->sa       = data + 3;
+   sar->txt_len  = data[3];
+   sar->sa       = data + 4;
 
    close(fd);
 
@@ -278,12 +283,11 @@ sar_file_read
 int
 compact_array
 (
- sar_t     * sar,
- uint64_t    len
+ sar_t     * sar
 )
 {
    int bits = 0;
-   while (len > ((uint64_t)1 << bits)) bits++;
+   while (sar->txt_len > ((uint64_t)1 << bits)) bits++;
 
    uint64_t mask = ((uint64_t)0xFFFFFFFFFFFFFFFF) >> (64-bits);
    uint64_t word = 0;
@@ -293,7 +297,7 @@ compact_array
    int64_t * array = sar->sa;
    array[0] &= mask;
 
-   for (uint64_t i = 0, current; i < len; i++) {
+   for (uint64_t i = 0, current; i < sar->txt_len; i++) {
       // Save the current value.
       current = array[i];
       // Store the compact version.
@@ -311,7 +315,7 @@ compact_array
    
    // New array size.
    sar->sar_bits = bits;
-   sar->sar_len  = word + (lastbit > 0);
+   sar->sar_len  = word + 1 + (lastbit > 0);
 
    // Realloc array.
    sar->sa = realloc(sar->sa, sar->sar_len*sizeof(int64_t));
