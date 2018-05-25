@@ -108,6 +108,8 @@ blocksearch_trail_rec
  pstree_t  * tree
 )
 {
+   // Declare variables.
+   bwtquery_t * q = NULL;
    // Reset hits. (Free bwtquery first)
    for (int i = 0; i < tree->stack->pos; i++) {
       free(tree->stack->path[i].bwtq);
@@ -116,8 +118,10 @@ blocksearch_trail_rec
 
    // Compute single block and return.
    if (blocks == 1) {
-      spath_t empty = {.bwtq = bwt_new_query(bwt), .score = 0};
+      q = bwt_new_query(bwt);
+      spath_t empty = {.bwtq = q, .score = 0};
       error_test(seqsearch_bw(empty, query, end, pos, 0, 0, 0, &(tree->stack)) == -1);
+      free(q);
       return 0;
    }
 
@@ -150,6 +154,7 @@ blocksearch_trail_rec
    return 0;
 
  failure_return:
+   free(q);
    return -1;
 }
 
