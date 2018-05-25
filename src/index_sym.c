@@ -132,13 +132,11 @@ sym_new
    }
 
    // Alloc complements table.
-   sym->com_table = malloc(sym_count + 1);
+   sym->com_table = calloc(sym_count + 1,sizeof(uint8_t));
    error_test_mem(sym->com_table);
    
    // Set complements, identity if not set.
-   if (sym_set_complement(complement, sym) == -1) {
-      error_throw();
-   }
+   error_test(sym_set_complement(complement, sym) == -1);
 
    return sym;
 
@@ -209,7 +207,7 @@ sym_set_complement
    error_test_msg(sym->com_table == NULL, "argument 'sym->com_table' is NULL.");
 
    // Set identity base.
-   for (int i = 0; i < sym->sym_count; i++) {
+   for (int i = 0; i < sym->sym_count + 1; i++) {
       sym->com_table[i] = i;
    }
    
