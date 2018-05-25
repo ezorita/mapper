@@ -170,15 +170,21 @@ test_ui_parse
 
    index_free(index);
 
-   char * argv20[] = {"./mapper", "index", "add", "-k25", "-d1", "-t1", "ui_test00", NULL};
+   char * argv192[] = {"./mapper", "index", "build", "--output", "ui_test01", "examples/repeats.fa", NULL};
+   redirect_stderr();
+   optind = 1;
+   test_assert(ui_parse(6, argv192) == EXIT_SUCCESS);
+   unredirect_stderr();
+
+   char * argv20[] = {"./mapper", "index", "add", "-k25", "-d1", "-t1", "ui_test01", NULL};
    redirect_stderr();
    optind = 1;
    test_assert(ui_parse(7, argv20) == EXIT_SUCCESS);
    unredirect_stderr();
 
    // Test index.
-   index = index_read("ui_test00");
-   test_assert(strcmp(index->fname_base, "ui_test00") == 0);
+   index = index_read("ui_test01");
+   test_assert(strcmp(index->fname_base, "ui_test01") == 0);
    test_assert_critical(index != NULL);
    test_assert(index->sym != NULL);
    test_assert(index->txt != NULL);
