@@ -361,6 +361,12 @@ test_ui_parse
    test_assert(ui_parse(4, argv34) == EXIT_SUCCESS);
    unredirect_stderr();
 
+   char * argv342[] = {"./mapper", "index", "view", "ui_test01", NULL};
+   redirect_stderr();
+   optind = 1;
+   test_assert(ui_parse(4, argv342) == EXIT_SUCCESS);
+   unredirect_stderr();
+
    char * argv35[] = {"./mapper", "index", "view", "fake-index-file", NULL};
    redirect_stderr();
    optind = 1;
