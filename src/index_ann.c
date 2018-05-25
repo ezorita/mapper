@@ -64,8 +64,8 @@ ann_build
 )
 {
    // Declare variables.
-   pthread_mutex_t * mutex    = NULL;
-   pthread_cond_t  * monitor  = NULL;
+   pthread_mutex_t   mutex    = PTHREAD_MUTEX_INITIALIZER;
+   pthread_cond_t    monitor  = PTHREAD_COND_INITIALIZER;
    uint8_t         * tmp_info = NULL;
    annjob_t        * jobs     = NULL;
    bwtquery_t      * q        = NULL;
@@ -90,12 +90,6 @@ ann_build
    int32_t  done       = 0;
    int      error_flag = 0;
 
-   // Alloc variables.
-   mutex = malloc(sizeof(pthread_mutex_t));
-   error_test_mem(mutex);
-   monitor = malloc(sizeof(pthread_cond_t));
-   error_test_mem(monitor);
-
    // Index information.
    txt_t   * txt      = bwt_get_text(bwt);
    int64_t   tlen     = txt_length(txt);
@@ -111,10 +105,6 @@ ann_build
 
    tmp_info = calloc(tlen, word_size*sizeof(uint8_t));
    error_test_mem(tmp_info);
-
-   // Initialization.
-   pthread_mutex_init(mutex,NULL);
-   pthread_cond_init(monitor,NULL);
 
    // Divide job ranges.
    // For consistency, the best is to split the jobs in ranges of prefixes.
@@ -149,8 +139,8 @@ ann_build
       jobs[i].computed = &computed;
       jobs[i].done     = &done;
       jobs[i].error    = &error_flag;
-      jobs[i].mutex    = mutex;
-      jobs[i].monitor  = monitor;
+      jobs[i].mutex    = &mutex;
+      jobs[i].monitor  = &monitor;
       jobs[i].bwt      = bwt;
       jobs[i].sar      = sar;
       jobs[i].info     = tmp_info;
@@ -166,7 +156,7 @@ ann_build
 
    // Sleep and wait for thread signals.
    int runcount = threads;
-   pthread_mutex_lock(mutex);
+   pthread_mutex_lock(&mutex);
    while (done < num_jobs) {
       // Check error flag.
       error_test(error_flag != 0);
@@ -182,9 +172,9 @@ ann_build
       // Report progress.
       fprintf(stderr, "\r[proc] computing neighbors... %.2f%%", computed*100.0/tlen);
       // Wait for signal.
-      pthread_cond_wait(monitor,mutex);
+      pthread_cond_wait(&monitor,&mutex);
    }
-   pthread_mutex_unlock(mutex);
+   pthread_mutex_unlock(&mutex);
 
    // Check error flag.
    error_test(error_flag != 0);
@@ -252,19 +242,14 @@ ann_build
    
    // Free variables.
    free(jobs);
-   free(mutex);
-   free(monitor);
    free(tmp_info);
    free(q);
    return ann;
 
  failure_return:
-   if (mutex != NULL)
-      pthread_mutex_unlock(mutex);
+   pthread_mutex_unlock(&mutex);
    free(range);
    free(jobs);
-   free(mutex);
-   free(monitor);
    free(tmp_info);
    free(q);
    ann_free(ann);
