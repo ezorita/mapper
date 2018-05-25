@@ -17,6 +17,7 @@ main(
    extern test_case_t test_cases_index_ann[];
    extern test_case_t test_cases_index[];
    extern test_case_t test_cases_ui[];
+   extern test_case_t test_cases_blocksearch[];
 
    // Memory tests.
    extern test_case_t test_mem_index_sym[];
@@ -35,6 +36,7 @@ main(
       test_cases_index_ann,
       test_cases_index,
       test_cases_ui,
+      test_cases_blocksearch,
       test_mem_index_sym,
       test_mem_index_txt,
       test_mem_index_sar,
