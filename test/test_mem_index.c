@@ -47,7 +47,7 @@ test_mem_index_ann_new
    reset_alloc();
 
    // Set alloc countdown 0->10.
-   for (int i = 0; i <= 200; i++) {
+   for (int i = 0; i <= 1000; i++) {
       set_alloc_failure_countdown_to(i);
       if (index_ann_new(25, 1, 1, index) == 0) {
          unlink("test_base20.ann.25.1");
