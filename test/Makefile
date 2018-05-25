@@ -19,6 +19,8 @@ HEADERS= $(addprefix $(HEADER_DIR)/,$(HEADER))
 CFLAGS= -std=gnu99 -g -Wall -O0 $(INCLUDES) $(COVERAGE)
 LDLIBS= -L`pwd` -Wl,-rpath=`pwd` -lunittest -lpthread
 
+test-full: test valgrind
+
 $(P): $(OBJECTS) $(SOURCES) $(HEADERS) runtests.c
 	$(CC) $(CFLAGS) runtests.c $(SOURCES) $(OBJECTS) $(LDLIBS) -o $@
 
@@ -43,7 +45,7 @@ coverage: $(COVFILE)
 inspect: $(P)
 	gdb --command=.inspect.gdb --args $(P)
 
-valgrind: $(P)
+valgrind: clean-examples $(P)
 	#valgrind --vgdb=yes --vgdb-error=0 ./$(P)
 	valgrind --leak-check=full ./$(P)
 
