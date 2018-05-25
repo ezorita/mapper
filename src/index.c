@@ -30,14 +30,17 @@ index_read
    index = malloc(sizeof(index_t));
    error_test_mem(index);
 
-   index->fname_base = strdup(filename_base);
-   error_test_mem(index->fname_base);
-   index->ann_cnt = 0;
+   index->fname_base = NULL;
    index->sym = NULL;
    index->txt = NULL;
    index->sar = NULL;
    index->bwt = NULL;
    index->ann = NULL;
+   index->ann_cnt = 0;
+
+   // index path
+   index->fname_base = strdup(filename_base);
+   error_test_mem(index->fname_base);
    
    file_path = malloc(strlen(filename_base)+7);
    error_test_mem(file_path);
