@@ -31,6 +31,13 @@ blocksc_trail
 //       tau    = floor(tau_max/2)
 //     Then extend right up to tau_max.
 {
+   error_test_msg(query == NULL, "argument 'query' is NULL.");
+   error_test_msg(qarray == NULL, "argument 'qarray' is NULL.");
+   error_test_msg(tree == NULL, "argument 'tree' is NULL.");
+   error_test_msg(slen < 1,"argument 'slen' must be greater than 0.");
+   error_test_msg(tau < 0,"argument 'tau' must be positive.");
+   error_test_msg(trail < 0,"argument 'trail' must be positive.");
+
    if (trail >= slen) {
       return 0;
    }
