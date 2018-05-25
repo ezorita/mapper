@@ -5,7 +5,7 @@ P= runtests
 SOURCE_DIR= ../src
 HEADER_DIR= $(SOURCE_DIR)
 
-OBJECTS= test_index_sym.o test_index_txt.o test_index_sar.o test_index_bwt.o test_index_ann.o test_index.o test_user_interface.o test_mem_index_sym.o test_mem_index_txt.o test_mem_index_sar.o test_mem_index_bwt.o test_mem_index_ann.o test_mem_index.o libunittest.so
+OBJECTS= test_index_sym.o test_index_txt.o test_index_sar.o test_index_bwt.o test_index_ann.o test_index.o test_user_interface.o test_mem_index_sym.o test_mem_index_txt.o test_mem_index_sar.o test_mem_index_bwt.o test_mem_index_ann.o test_mem_index.o test_mem_user_interface.o libunittest.so
 SOURCE= index_sym.c index_txt.c index_sar.c index_bwt.c index_ann.c index.c blocksearch.c errhandler.c user_interface.c mapper.c divsufsort.c
 HEADER= index_sym.h index_txt.h index_sar.h index_bwt.h index_ann.h index.h blocksearch.h errhandler.h user_interface.h mapper.h divsufsort.h divsufsort_private.h
 INCLUDE= lib $(SOURCE_DIR) $(HEADER_DIR)
