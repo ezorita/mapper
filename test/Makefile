@@ -47,7 +47,7 @@ inspect: $(P)
 
 valgrind: clean-examples $(P)
 	#valgrind --vgdb=yes --vgdb-error=0 ./$(P)
-	valgrind --leak-check=full ./$(P)
+	valgrind --leak-check=full --error-exitcode=1 ./$(P)
 
 vgdb: $(P)
 	valgrind --vgdb=yes --vgdb-error=0 ./$(P)

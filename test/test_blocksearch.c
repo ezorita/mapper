@@ -321,12 +321,7 @@ test_seqsearch
    char * seven = "ATCGATATaAGCCACTACGAGACAA";
    char * none =  "NNNNATATCAGCCACTACGAGACAA";
 
-   pstree_t * pstree = alloc_stack_tree(1);
-   test_assert_critical(pstree != NULL);
-
    // Prepare query.
-   bwtquery_t ** qarray = malloc((strlen(five)+1)*sizeof(bwtquery_t *));
-   test_assert_critical(qarray != NULL);
    path->bwtq = bwt_new_query(index->bwt);
    test_assert_critical(path->bwtq != NULL);
 
@@ -349,6 +344,10 @@ test_seqsearch
          free(locus);
       }
    }
+   for (int i = 0; i < hits->pos; i++) {
+      free(hits->path[i].bwtq);
+   }
+
    // Query sequence FIVE (bw).
    hits->pos = 0;
    test_assert(seqsearch_bw(*path, query8, 24, 0, 1, 0, 0, &hits) == 0);
@@ -361,6 +360,10 @@ test_seqsearch
          free(locus);
       }
    }
+   for (int i = 0; i < hits->pos; i++) {
+      free(hits->path[i].bwtq);
+   }
+
    free(query32);
 
    // Query sequence THREE (fw).
@@ -381,6 +384,10 @@ test_seqsearch
          free(locus);
       }
    }
+   for (int i = 0; i < hits->pos; i++) {
+      free(hits->path[i].bwtq);
+   }
+
    // Query sequence THREE (bw).
    hits->pos = 0;
    test_assert(seqsearch_bw(*path, query8, 24, 0, 1, 0, 0, &hits) == 0);
@@ -392,6 +399,9 @@ test_seqsearch
          test_assert(strcmp("one:1:+", locus) == 0);
          free(locus);
       }
+   }
+   for (int i = 0; i < hits->pos; i++) {
+      free(hits->path[i].bwtq);
    }
    free(query32);
 
@@ -413,6 +423,10 @@ test_seqsearch
          free(locus);
       }
    }
+   for (int i = 0; i < hits->pos; i++) {
+      free(hits->path[i].bwtq);
+   }
+
    // Query sequence SEVEN (bw).
    hits->pos = 0;
    test_assert(seqsearch_bw(*path, query8, 24, 0, 1, 0, 0, &hits) == 0);
@@ -424,6 +438,9 @@ test_seqsearch
          test_assert(strcmp("one:1:+", locus) == 0 || strcmp("eight:1:+", locus) == 0);
          free(locus);
       }
+   }
+   for (int i = 0; i < hits->pos; i++) {
+      free(hits->path[i].bwtq);
    }
    free(query32);
 
@@ -437,10 +454,16 @@ test_seqsearch
    hits->pos = 0;
    test_assert(seqsearch_fw(*path, query8, 0, 24, 1, 0, 0, &hits) == 0);
    test_assert(hits->pos == 8);
+   for (int i = 0; i < hits->pos; i++) {
+      free(hits->path[i].bwtq);
+   }
    // bw
    hits->pos = 0;
    test_assert(seqsearch_bw(*path, query8, 24, 0, 1, 0, 0, &hits) == 0);
    test_assert(hits->pos == 8);
+   for (int i = 0; i < hits->pos; i++) {
+      free(hits->path[i].bwtq);
+   }
    free(query32);
 
    // Query sequence NONE (in seqsearch_* 'N' are treated as wildcards)
@@ -453,15 +476,22 @@ test_seqsearch
    hits->pos = 0;
    test_assert(seqsearch_fw(*path, query8, 0, 24, 1, 0, 0, &hits) == 0);
    test_assert(hits->pos == 8);
+   for (int i = 0; i < hits->pos; i++) {
+      free(hits->path[i].bwtq);
+   }
    // bw
    hits->pos = 0;
    test_assert(seqsearch_bw(*path, query8, 24, 0, 1, 0, 0, &hits) == 0);
    test_assert(hits->pos == 8);
+   for (int i = 0; i < hits->pos; i++) {
+      free(hits->path[i].bwtq);
+   }
    free(query32);
 
    // Free memory.   
    free(query8);
    free(hits);
+   free(path->bwtq);
    free(path);
    index_free(index);
    unredirect_stderr();
@@ -511,12 +541,7 @@ test_scsearch
    char * eight = "ATCGATATtAGCCACTACGAGACAA";
    char * none =  "NNNNATATCAGCCACTACGAGACAA";
 
-   pstree_t * pstree = alloc_stack_tree(1);
-   test_assert_critical(pstree != NULL);
-
    // Prepare query.
-   bwtquery_t ** qarray = malloc((strlen(five)+1)*sizeof(bwtquery_t *));
-   test_assert_critical(qarray != NULL);
    path->bwtq = bwt_new_query(index->bwt);
    test_assert_critical(path->bwtq != NULL);
 
@@ -539,6 +564,9 @@ test_scsearch
          free(locus);
       }
    }
+   for (int i = 0; i < hits->pos; i++) {
+      free(hits->path[i].bwtq);
+   }
    free(query32);
 
    // Query sequence THREE (sc).
@@ -559,6 +587,9 @@ test_scsearch
          free(locus);
       }
    }
+   for (int i = 0; i < hits->pos; i++) {
+      free(hits->path[i].bwtq);
+   }
    free(query32);
 
    // Query sequence SEVEN (sc).
@@ -571,6 +602,9 @@ test_scsearch
    hits->pos = 0;
    test_assert(scsearch_fw(*path, query8, 0, 24, 1, 0, 0, 1, &hits) == 0);
    test_assert(hits->pos == 1);
+   for (int i = 0; i < hits->pos; i++) {
+      free(hits->path[i].bwtq);
+   }
    free(query32);
 
    // Query sequence EIGHT (sc).
@@ -591,6 +625,9 @@ test_scsearch
          free(locus);
       }
    }
+   for (int i = 0; i < hits->pos; i++) {
+      free(hits->path[i].bwtq);
+   }
    free(query32);
 
    // Query sequence ONE.
@@ -599,7 +636,7 @@ test_scsearch
    for (int i = 0; i < strlen(one); i++) {
       query8[i] = (uint8_t)query32[i];
    }
-   // fw
+   // sc
    hits->pos = 0;
    test_assert(scsearch_fw(*path, query8, 0, 24, 1, 0, 0, 1, &hits) == 0);
    test_assert(hits->pos == 3);
@@ -611,6 +648,9 @@ test_scsearch
          free(locus);
       }
    }
+   for (int i = 0; i < hits->pos; i++) {
+      free(hits->path[i].bwtq);
+   }
    free(query32);
 
    // Query sequence NONE (in seqsearch_* 'N' are treated as wildcards)
@@ -619,15 +659,19 @@ test_scsearch
    for (int i = 0; i < strlen(none); i++) {
       query8[i] = (uint8_t)query32[i];
    }
-   // fw
+   // sc
    hits->pos = 0;
    test_assert(seqsearch_fw(*path, query8, 0, 24, 1, 0, 0, &hits) == 0);
    test_assert(hits->pos == 8);
+   for (int i = 0; i < hits->pos; i++) {
+      free(hits->path[i].bwtq);
+   }
    free(query32);
 
    // Free memory.   
    free(query8);
    free(hits);
+   free(path->bwtq);
    free(path);
    index_free(index);
    unredirect_stderr();
