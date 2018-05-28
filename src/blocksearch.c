@@ -117,6 +117,17 @@ blocksearch_trail_rec
 {
    // Declare variables.
    bwtquery_t * q = NULL;
+
+   // Check arguments.
+   error_test_msg(query == NULL, "argument 'query' is NULL.");
+   error_test_msg(tree == NULL, "argument 'tree' is NULL.");
+   error_test_msg(bwt == NULL, "argument 'bwt' is NULL.");
+   error_test_msg(pos < 0, "argument 'pos' must be positive.");
+   error_test_msg(pos > end, "invalid arguments (pos > end).");
+   error_test_msg(end < 0, "argument 'end' must be positive.");
+   error_test_msg(blocks < 0,"argument 'blocks' must be positive.");
+   error_test_msg(trail < 0,"argument 'trail' must be positive.");
+
    // Reset hits. (Free bwtquery first)
    for (int i = 0; i < tree->stack->pos; i++) {
       free(tree->stack->path[i].bwtq);
