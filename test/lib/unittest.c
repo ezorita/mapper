@@ -50,6 +50,7 @@ terminate_thread
    int sig
 )
 {
+   unredirect_stderr();
 
    // If test was not failed so far, update display.
    if (!TEST_CASE_FAILED) {
@@ -62,7 +63,6 @@ terminate_thread
    TEST_CASE_FAILED = 1;
 
    // Clean it all. //
-   unredirect_stderr();
    test_case_clean();
 
    // Return to main thread.

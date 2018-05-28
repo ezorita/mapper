@@ -31,6 +31,13 @@ blocksc_trail
 //       tau    = floor(tau_max/2)
 //     Then extend right up to tau_max.
 {
+   error_test_msg(query == NULL, "argument 'query' is NULL.");
+   error_test_msg(qarray == NULL, "argument 'qarray' is NULL.");
+   error_test_msg(tree == NULL, "argument 'tree' is NULL.");
+   error_test_msg(slen < 1,"argument 'slen' must be greater than 0.");
+   error_test_msg(tau < 0,"argument 'tau' must be positive.");
+   error_test_msg(trail < 0,"argument 'trail' must be positive.");
+
    if (trail >= slen) {
       return 0;
    }
@@ -108,6 +115,19 @@ blocksearch_trail_rec
  pstree_t  * tree
 )
 {
+   // Declare variables.
+   bwtquery_t * q = NULL;
+
+   // Check arguments.
+   error_test_msg(query == NULL, "argument 'query' is NULL.");
+   error_test_msg(tree == NULL, "argument 'tree' is NULL.");
+   error_test_msg(bwt == NULL, "argument 'bwt' is NULL.");
+   error_test_msg(pos < 0, "argument 'pos' must be positive.");
+   error_test_msg(pos > end, "invalid arguments (pos > end).");
+   error_test_msg(end < 0, "argument 'end' must be positive.");
+   error_test_msg(blocks < 0,"argument 'blocks' must be positive.");
+   error_test_msg(trail < 0,"argument 'trail' must be positive.");
+
    // Reset hits. (Free bwtquery first)
    for (int i = 0; i < tree->stack->pos; i++) {
       free(tree->stack->path[i].bwtq);
@@ -116,8 +136,10 @@ blocksearch_trail_rec
 
    // Compute single block and return.
    if (blocks == 1) {
-      spath_t empty = {.bwtq = bwt_new_query(bwt), .score = 0};
+      q = bwt_new_query(bwt);
+      spath_t empty = {.bwtq = q, .score = 0};
       error_test(seqsearch_bw(empty, query, end, pos, 0, 0, 0, &(tree->stack)) == -1);
+      free(q);
       return 0;
    }
 
@@ -150,6 +172,7 @@ blocksearch_trail_rec
    return 0;
 
  failure_return:
+   free(q);
    return -1;
 }
 

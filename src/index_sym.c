@@ -132,13 +132,11 @@ sym_new
    }
 
    // Alloc complements table.
-   sym->com_table = malloc(sym_count + 1);
+   sym->com_table = calloc(sym_count + 1,sizeof(uint8_t));
    error_test_mem(sym->com_table);
    
    // Set complements, identity if not set.
-   if (sym_set_complement(complement, sym) == -1) {
-      error_throw();
-   }
+   error_test(sym_set_complement(complement, sym) == -1);
 
    return sym;
 
@@ -209,7 +207,7 @@ sym_set_complement
    error_test_msg(sym->com_table == NULL, "argument 'sym->com_table' is NULL.");
 
    // Set identity base.
-   for (int i = 0; i < sym->sym_count; i++) {
+   for (int i = 0; i < sym->sym_count + 1; i++) {
       sym->com_table[i] = i;
    }
    
@@ -290,6 +288,34 @@ sym_index
 
  failure_return:
    return -1;
+}
+
+int32_t *
+sym_str_index
+(
+ char  * str,
+ sym_t * sym
+)
+{
+   // Declare variables.
+   int32_t * syms = NULL;
+
+   // Check arguments.
+   error_test_msg(str == NULL, "argument 'str' is NULL.");
+   error_test_msg(sym == NULL, "argument 'sym' is NULL.");
+   
+   syms = malloc(strlen(str) * sizeof(int32_t));
+   error_test_mem(syms);
+
+   for (int i = 0; i < strlen(str); i++) {
+      syms[i] = sym_index(str[i], sym);
+   }
+
+   return syms;
+   
+ failure_return:
+   free(syms);
+   return NULL;
 }
 
 int

@@ -20,6 +20,8 @@ index_read
    // Declare variables.
    char * file_path = NULL;
    index_t * index = NULL;
+   glob_t gbuf;
+   int glob_flag = 0;
 
    // Check arguments.
    error_test_msg(filename_base == NULL, "argument 'filename_base' is NULL.");
@@ -28,14 +30,17 @@ index_read
    index = malloc(sizeof(index_t));
    error_test_mem(index);
 
-   index->fname_base = strdup(filename_base);
-   error_test_mem(index->fname_base);
-   index->ann_cnt = 0;
+   index->fname_base = NULL;
    index->sym = NULL;
    index->txt = NULL;
    index->sar = NULL;
    index->bwt = NULL;
    index->ann = NULL;
+   index->ann_cnt = 0;
+
+   // index path
+   index->fname_base = strdup(filename_base);
+   error_test_mem(index->fname_base);
    
    file_path = malloc(strlen(filename_base)+7);
    error_test_mem(file_path);
@@ -61,14 +66,12 @@ index_read
    error_test(index->bwt == NULL);
 
    // ann glob
-   glob_t gbuf;
    sprintf(file_path, "%s.ann.*", filename_base);   
    glob(file_path, 0, NULL, &gbuf);
+   glob_flag = 1;
 
    // alloc ann list
-   if (gbuf.gl_pathc == 0) {
-      index->ann = NULL;
-   } else {
+   if (gbuf.gl_pathc > 0) {
       index->ann = malloc(gbuf.gl_pathc * sizeof(void *));
       error_test(index->ann == NULL);
    }
@@ -80,10 +83,13 @@ index_read
       error_test(index->ann[i] == NULL);
    }
 
+   globfree(&gbuf);
    free(file_path);
    return index;
 
  failure_return:
+   if (glob_flag)
+      globfree(&gbuf);
    index_free(index);
    free(file_path);
    return NULL;
@@ -181,8 +187,9 @@ index_ann_new
    }
 
    // Realloc annotation list.
-   index->ann = realloc(index->ann, (index->ann_cnt+1) * sizeof(void *));
-   error_test_mem(index->ann);
+   ann_t ** new_ann = realloc(index->ann, (index->ann_cnt+1) * sizeof(void *));
+   error_test_mem(new_ann);
+   index->ann = new_ann;
 
    // Compute annotation.
    index->ann[index->ann_cnt] = ann_build(kmer, tau, index->bwt, index->sar, threads);
@@ -243,6 +250,7 @@ read_fasta
    char * seqname = NULL;
    char * buffer  = NULL;
    txt_t * txt    = NULL;
+   sym_t * sym    = NULL;
 
    // Check arguments.
    error_test_msg(filename == NULL, "argument 'filename' is NULL.");
@@ -257,7 +265,9 @@ read_fasta
    ungetc('>', input);
 
    // Alloc txt structure.
-   txt = txt_new(sym_new_dna());
+   sym = sym_new_dna();
+   error_test(sym == NULL);
+   txt = txt_new(sym);
    error_test(txt == NULL);
 
    // File read vars
@@ -273,6 +283,8 @@ read_fasta
          // Commit previous sequence
          if (seqname != NULL) {
             error_test(txt_commit_seq(seqname, txt) == -1);
+            free(seqname);
+            seqname = NULL;
          }
          // Parse new sequence name (from '>' to first space or \0).
          buffer[rlen-1] = 0;
@@ -314,5 +326,6 @@ read_fasta
    free(buffer);
    free(seqname);
    txt_free(txt);
+   sym_free(sym);
    return NULL;
 }

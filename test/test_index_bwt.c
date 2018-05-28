@@ -532,6 +532,7 @@ test_bwt_dup_vec
    test_assert(bwt_depth(qv2[3]) == 1);
    test_assert(bwt_size(qv2[4]) == 0);
 
+   bwt_free_vec(qv2);
    bwt_free_vec(qv);
    bwt_free(bwt);
    sar_free(sar);

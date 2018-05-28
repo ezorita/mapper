@@ -170,15 +170,21 @@ test_ui_parse
 
    index_free(index);
 
-   char * argv20[] = {"./mapper", "index", "add", "-k25", "-d1", "-t1", "ui_test00", NULL};
+   char * argv192[] = {"./mapper", "index", "build", "--output", "ui_test01", "examples/repeats.fa", NULL};
+   redirect_stderr();
+   optind = 1;
+   test_assert(ui_parse(6, argv192) == EXIT_SUCCESS);
+   unredirect_stderr();
+
+   char * argv20[] = {"./mapper", "index", "add", "-k25", "-d1", "-t1", "ui_test01", NULL};
    redirect_stderr();
    optind = 1;
    test_assert(ui_parse(7, argv20) == EXIT_SUCCESS);
    unredirect_stderr();
 
    // Test index.
-   index = index_read("ui_test00");
-   test_assert(strcmp(index->fname_base, "ui_test00") == 0);
+   index = index_read("ui_test01");
+   test_assert(strcmp(index->fname_base, "ui_test01") == 0);
    test_assert_critical(index != NULL);
    test_assert(index->sym != NULL);
    test_assert(index->txt != NULL);
@@ -197,7 +203,9 @@ test_ui_parse
    }
    test_assert(bwt_size(q) == 1);
    test_assert(bwt_depth(q) == 25);
-   test_assert(strcmp(txt_pos_to_str(sar_get(bwt_start(q), index->sar), index->txt), "one:1:+") == 0);
+   char * str = txt_pos_to_str(sar_get(bwt_start(q), index->sar), index->txt);
+   test_assert(strcmp(str, "one:1:+") == 0);
+   free(str);
    free(q);
 
    q = bwt_new_query(index->bwt);
@@ -206,7 +214,9 @@ test_ui_parse
    }
    test_assert(bwt_size(q) == 1);
    test_assert(bwt_depth(q) == 25);
-   test_assert(strcmp(txt_pos_to_str(sar_get(bwt_start(q), index->sar), index->txt), "two:1:+") == 0);
+   str = txt_pos_to_str(sar_get(bwt_start(q), index->sar), index->txt);
+   test_assert(strcmp(str, "two:1:+") == 0);
+   free(str);
    free(q);
 
    // Test annotation.
@@ -351,6 +361,12 @@ test_ui_parse
    test_assert(ui_parse(4, argv34) == EXIT_SUCCESS);
    unredirect_stderr();
 
+   char * argv342[] = {"./mapper", "index", "view", "ui_test01", NULL};
+   redirect_stderr();
+   optind = 1;
+   test_assert(ui_parse(4, argv342) == EXIT_SUCCESS);
+   unredirect_stderr();
+
    char * argv35[] = {"./mapper", "index", "view", "fake-index-file", NULL};
    redirect_stderr();
    optind = 1;
@@ -413,6 +429,8 @@ test_ui_parse
    test_assert(ui_parse(8, argv43) == EXIT_FAILURE);
    unredirect_stderr();
    test_assert_stderr(OPT_OUTPUT_REPEAT);
+
+   free(buffer);
 }
 
 

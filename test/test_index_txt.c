@@ -594,10 +594,22 @@ test_txt_pos_to_str
 
    test_assert(txt_pos_to_str(-1,txt) == NULL);
    test_assert(txt_pos_to_str(0,NULL) == NULL);
-   test_assert(strcmp(txt_pos_to_str(9,txt), "seq0:10:+") == 0);
-   test_assert(strcmp(txt_pos_to_str(12,txt), "seq1:2:+") == 0);
-   test_assert(strcmp(txt_pos_to_str(27,txt), "seq1:15:-") == 0);
-   test_assert(strcmp(txt_pos_to_str(52,txt), "seq0:1:-") == 0);
+   char * str;
+   str = txt_pos_to_str(9,txt);
+   test_assert(strcmp(str, "seq0:10:+") == 0);
+   free(str);
+
+   str = txt_pos_to_str(12,txt);
+   test_assert(strcmp(str, "seq1:2:+") == 0);
+   free(str);
+
+   str = txt_pos_to_str(27,txt);
+   test_assert(strcmp(str, "seq1:15:-") == 0);
+   free(str);
+
+   str = txt_pos_to_str(52,txt);
+   test_assert(strcmp(str, "seq0:1:-") == 0);
+   free(str);
 
    txt_free(txt);
    sym_free(sym);
@@ -735,7 +747,9 @@ test_txt_file
    test_assert(txt_seq_start(99,txt) == 5049);
    test_assert(txt_seq_start(100,txt) == -1);
 
-   test_assert(strcmp(txt_pos_to_str(0,txt), "seq0:1:+") == 0);
+   char * str = txt_pos_to_str(0,txt);
+   test_assert(strcmp(str, "seq0:1:+") == 0);
+   free(str);
 
    txt_free(txt);
    sym_free(sym);

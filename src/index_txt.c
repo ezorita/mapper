@@ -90,8 +90,10 @@ txt_free
 {
    if (txt != NULL) {
       if (txt->mmap_ptr == NULL) {
-         for (int64_t i = 0; i < txt->seq_cnt; i++) {
-            free(txt->seq_name[i]);
+         if (txt->seq_name != NULL) {
+            for (int64_t i = 0; i < txt->seq_cnt; i++) {
+               free(txt->seq_name[i]);
+            }
          }
          free(txt->seq_len);
          free(txt->seq_beg);
@@ -165,8 +167,10 @@ txt_append
       while (new_mem_size < txt->txt_len + tlen) {
          new_mem_size *= 2;
       }      
-      txt->text = realloc(txt->text, new_mem_size * sizeof(uint8_t));
-      error_test_mem(txt->text);
+      uint8_t * new_text = realloc(txt->text, new_mem_size * sizeof(uint8_t));
+      error_test_mem(new_text);
+
+      txt->text = new_text;
       txt->mem_txt = new_mem_size;
    }
 
@@ -198,8 +202,11 @@ txt_append_wildcard
    // Realloc text structure if necessary.
    if (txt->txt_len >= txt->mem_txt) {
       size_t new_mem_size = txt->mem_txt + 1;
-      txt->text = realloc(txt->text, new_mem_size * sizeof(uint8_t));
-      error_test_mem(txt->text);
+
+      uint8_t * new_text = realloc(txt->text, new_mem_size * sizeof(uint8_t));
+      error_test_mem(new_text);
+
+      txt->text = new_text;
       txt->mem_txt = new_mem_size;
    }
 
@@ -233,29 +240,22 @@ txt_commit_seq
       error_test_msg(strcmp(seqname, txt->seq_name[i]) == 0, "duplicate sequence name.");
    }
 
-   // Realloc structure if necessary.
-   if (txt->txt_len >= txt->mem_txt) {
-      size_t new_mem_size = txt->mem_txt + 1;
-
-      txt->text = realloc(txt->text, new_mem_size * sizeof(uint8_t));
-      error_test_mem(txt->text);
-
-      txt->mem_txt = new_mem_size;
-   }
-
    if (txt->seq_cnt >= txt->mem_seq) {
       size_t new_mem_size = 2*txt->mem_seq;
 
-      txt->seq_beg  = realloc(txt->seq_beg , new_mem_size * sizeof(uint64_t));
-      error_test_mem(txt->seq_beg);
+      int64_t * new_beg = realloc(txt->seq_beg , new_mem_size * sizeof(uint64_t));
+      error_test_mem(new_beg);
+      txt->seq_beg  = new_beg;
 
-      txt->seq_len  = realloc(txt->seq_len , new_mem_size * sizeof(uint64_t));
-      error_test_mem(txt->seq_len);
+      int64_t * new_len = realloc(txt->seq_len , new_mem_size * sizeof(uint64_t));
+      error_test_mem(new_len);
+      txt->seq_len  = new_len;
 
-      txt->seq_name = realloc(txt->seq_name, new_mem_size * sizeof(char *));
-      error_test_mem(txt->seq_name);
+      char  ** new_name = realloc(txt->seq_name, new_mem_size * sizeof(char *));
+      error_test_mem(new_name);
+      txt->seq_name = new_name;
 
-      txt->mem_seq = new_mem_size;
+      txt->mem_seq  = new_mem_size;
    }
 
    // Get current sequence beginning and length.
@@ -296,8 +296,10 @@ txt_commit_rc
    // Realloc structure if necessary.
    if (2*txt->txt_len >= txt->mem_txt) {
       size_t new_mem_size = 2*(txt->mem_txt + 1);
-      txt->text = realloc(txt->text, new_mem_size * sizeof(uint8_t));
-      error_test_mem(txt->text);
+      uint8_t * new_text = realloc(txt->text, new_mem_size * sizeof(uint8_t));
+      error_test_mem(new_text);
+
+      txt->text = new_text;
       txt->mem_txt = new_mem_size;
    }
    
@@ -516,10 +518,14 @@ txt_str_to_pos
   txt_t  * txt
 )
 {
+   // Declare variables.
+   char * pos_str = NULL;
+
+   // Check arguments.
    error_test_msg(str == NULL, "argument 'str' is NULL.");
    error_test_msg(txt == NULL, "argument 'txt' is NULL.");
 
-   char * pos_str = strdup(str);
+   pos_str = strdup(str);
    error_test_def(pos_str == NULL);
 
    // Tokenize string.
@@ -562,6 +568,7 @@ txt_str_to_pos
    return pos;
 
  failure_return:
+   free(pos_str);
    return -1;
 }
 

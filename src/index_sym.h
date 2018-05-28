@@ -34,6 +34,7 @@ int        sym_set_complement (char ** complement, sym_t  * sym);
 char       sym_character      (uint8_t s, sym_t * sym);
 int32_t    sym_complement     (uint8_t s, sym_t * sym);
 int32_t    sym_index          (char c, sym_t * sym);
+int32_t  * sym_str_index      (char * str, sym_t * sym);
 int        sym_is_canonical   (char c, sym_t * sym);
 
 // Helper functions.

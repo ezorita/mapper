@@ -30,7 +30,9 @@ test_index_build
    }
    test_assert(bwt_size(q) == 1);
    test_assert(bwt_depth(q) == 25);
-   test_assert(strcmp(txt_pos_to_str(sar_get(bwt_start(q), index->sar), index->txt), "one:1:+") == 0);
+   char * str = txt_pos_to_str(sar_get(bwt_start(q), index->sar), index->txt);
+   test_assert(strcmp(str, "one:1:+") == 0);
+   free(str);
    free(q);
 
    q = bwt_new_query(index->bwt);
@@ -39,7 +41,9 @@ test_index_build
    }
    test_assert(bwt_size(q) == 1);
    test_assert(bwt_depth(q) == 25);
-   test_assert(strcmp(txt_pos_to_str(sar_get(bwt_start(q), index->sar), index->txt), "two:1:+") == 0);
+   str = txt_pos_to_str(sar_get(bwt_start(q), index->sar), index->txt);
+   test_assert(strcmp(str, "two:1:+") == 0);
+   free(str);
    free(q);
 
    index_free(index);
@@ -130,7 +134,9 @@ test_index_read
    }
    test_assert(bwt_size(q) == 1);
    test_assert(bwt_depth(q) == 25);
-   test_assert(strcmp(txt_pos_to_str(sar_get(bwt_start(q), index->sar), index->txt), "one:1:+") == 0);
+   char * str = txt_pos_to_str(sar_get(bwt_start(q), index->sar), index->txt);
+   test_assert(strcmp(str, "one:1:+") == 0);
+   free(str);
    free(q);
 
    q = bwt_new_query(index->bwt);
@@ -139,7 +145,9 @@ test_index_read
    }
    test_assert(bwt_size(q) == 1);
    test_assert(bwt_depth(q) == 25);
-   test_assert(strcmp(txt_pos_to_str(sar_get(bwt_start(q), index->sar), index->txt), "two:1:+") == 0);
+   str = txt_pos_to_str(sar_get(bwt_start(q), index->sar), index->txt);
+   test_assert(strcmp(str, "two:1:+") == 0);
+   free(str);
    free(q);
 
    // Test annotation.
