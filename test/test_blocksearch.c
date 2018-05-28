@@ -168,18 +168,10 @@ test_blocksearch_trail_rec
    test_assert_critical(pstree != NULL);
 
    // Prepare query.
-   bwtquery_t ** qarray = malloc((strlen(five)+1)*sizeof(bwtquery_t *));
-   test_assert_critical(qarray != NULL);
-   qarray[0] = bwt_new_query(index->bwt);
-   test_assert_critical(qarray[0] != NULL);
-
    int32_t * query32 = sym_str_index(five, index->sym);
    test_assert_critical(query32 != NULL);
    for (int i = 0; i < strlen(five); i++) {
       query8[i] = (uint8_t)query32[i];
-      qarray[i+1] = bwt_new_query(index->bwt);
-      test_assert_critical(qarray[i+1] != NULL);
-      bwt_query(query8[i], BWT_QUERY_SUFFIX, qarray[i], qarray[i+1]);
    }
 
    // Invalid arguments.
@@ -211,7 +203,6 @@ test_blocksearch_trail_rec
    test_assert_critical(query32 != NULL);
    for (int i = 0; i < strlen(three); i++) {
       query8[i] = (uint8_t)query32[i];
-      bwt_query(query8[i], BWT_QUERY_SUFFIX, qarray[i], qarray[i+1]);
    }
 
    test_assert(blocksearch_trail_rec(query8, 0, 24, 2, 15, index->bwt, pstree) == 0);
@@ -231,7 +222,6 @@ test_blocksearch_trail_rec
    test_assert_critical(query32 != NULL);
    for (int i = 0; i < strlen(seven); i++) {
       query8[i] = (uint8_t)query32[i];
-      bwt_query(query8[i], BWT_QUERY_SUFFIX, qarray[i], qarray[i+1]);
    }
 
    test_assert(blocksearch_trail_rec(query8, 0, 24, 2, 0, index->bwt, pstree) == 0);
@@ -251,7 +241,6 @@ test_blocksearch_trail_rec
    test_assert_critical(query32 != NULL);
    for (int i = 0; i < strlen(one); i++) {
       query8[i] = (uint8_t)query32[i];
-      bwt_query(query8[i], BWT_QUERY_SUFFIX, qarray[i], qarray[i+1]);
    }
 
    test_assert(blocksearch_trail_rec(query8, 0, 24, 2, 0, index->bwt, pstree) == 0);
@@ -263,7 +252,6 @@ test_blocksearch_trail_rec
    test_assert_critical(query32 != NULL);
    for (int i = 0; i < strlen(none); i++) {
       query8[i] = (uint8_t)query32[i];
-      bwt_query(query8[i], BWT_QUERY_SUFFIX, qarray[i], qarray[i+1]);
    }
 
    test_assert(blocksearch_trail_rec(query8, 0, 24, 2, 0, index->bwt, pstree) == 0);
@@ -271,10 +259,6 @@ test_blocksearch_trail_rec
    free(query32);
 
    // Free memory.   
-   for (int i = 0; i < strlen(five)+1; i++) {
-      free(qarray[i]);
-   }
-   free(qarray);
    free(query8);
    free_stack_tree(pstree);
    index_free(index);
