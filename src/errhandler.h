@@ -10,7 +10,7 @@
 
 #define error_test_mem(x) do { \
    if ((x) == NULL) { \
-      warning("memory error", __FILE__, __func__, __LINE__);     \
+      warning("memory error.", __FILE__, __func__, __LINE__);     \
       errno = 1; \
       goto failure_return; \
    }} while (0)
