@@ -160,7 +160,7 @@ test_mem_sym_str_index
    // Set alloc failure rate to 0.1.
    set_alloc_failure_rate_to(0.1);
    for (int i = 0; i < 100; i++) {
-      int32_t * s = sym_str_index(text, sym);
+      uint8_t * s = sym_str_index(text, sym);
       free(s);   
    }
    reset_alloc();
@@ -168,7 +168,7 @@ test_mem_sym_str_index
    // Set alloc countdown 0->10.
    for (int i = 0; i <= 100; i++) {
       set_alloc_failure_countdown_to(i);
-      int32_t * s = sym_str_index(text, sym);
+      uint8_t * s = sym_str_index(text, sym);
       free(s);   
    }
    reset_alloc();
