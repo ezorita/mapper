@@ -3,44 +3,40 @@
 // Define data structures.
 
 struct gstack_t {
-   size_t   elm_size;
-   size_t   num_elm;
-   size_t   max_elm;
-   void   * ptr;
-};
+   size_t    num_elm;
+   size_t    max_elm;
+   void      (*elm_free)(void *);
+   void   ** elm;
 
+};
 
 // Interface functions source.
 
 gstack_t *
 gstack_new
 (
-  size_t elm_size,
-  size_t max_elm
+  size_t   max_elm,
+  void     (*elm_free)(void *)
 )
 {
    // Declare variables.
    gstack_t * gstack  = NULL;
-   void     * buffer = NULL;
 
    // Check arguments.
-   error_test_msg(elm_size == 0, "argument 'elm_size' must be greater than 0.");
    error_test_msg(max_elm == 0, "argument 'max_elm' must be greater than 0.");
 
    // Alloc gstack and set defaults.
    gstack = malloc(sizeof(gstack_t));
    error_test_mem(gstack);
 
-   gstack->elm_size = elm_size;
    gstack->num_elm  = 0;
    gstack->max_elm  = max_elm;
-   gstack->ptr      = NULL;
+   gstack->elm_free = elm_free;
+   gstack->elm      = NULL;
 
    // Alloc buffer and set in gstack.
-   buffer = malloc(max_elm * elm_size);
-   error_test_mem(buffer);
-
-   gstack->ptr = buffer;
+   gstack->elm = malloc(max_elm * sizeof(void *));
+   error_test_mem(gstack->elm);
 
    return gstack;
    
@@ -56,8 +52,11 @@ gstack_free
 )
 {
    if (gstack != NULL) {
-      if (gstack->ptr != NULL) {
-         free(gstack->ptr);
+      if (gstack->elm != NULL) {
+	 if (gstack->elm_free != NULL) {
+	    gstack_clear(gstack);
+	 }
+         free(gstack->elm);
       }
       free(gstack);
    }
@@ -79,21 +78,7 @@ gstack_pop
       return NULL;
    }
    
-   // Declare variables.
-   void * elm = NULL;
-
-   // Make a copy of the last element.   
-   elm = malloc(gstack->elm_size);
-   error_test_msg_errno(elm == NULL, "memory error.", GSTACK_ERRNO_MEMORY);
-
-   void * elm_src = (void *)(((uint8_t *)gstack->ptr) + gstack->elm_size * --gstack->num_elm);
-   memcpy(elm, elm_src, gstack->elm_size);
-
-   return elm;
-
- failure_return:
-   free(elm);
-   return NULL;
+   return gstack->elm[--gstack->num_elm];
 }
 
 void *
@@ -112,7 +97,7 @@ gstack_get
    error_test_msg(idx >= gstack->num_elm, "index out of bounds.");
 
    // Get item pointer and return.
-   return (void *)(((uint8_t *)gstack->ptr) + gstack->elm_size * idx);
+   return gstack->elm[idx];
 
  failure_return:
    return NULL;
@@ -132,18 +117,15 @@ gstack_push
    // Check gstack current size.
    if (gstack->num_elm >= gstack->max_elm) {
       size_t new_size   = gstack->max_elm * 2;
-      void * new_buffer = realloc(gstack->ptr, new_size*gstack->elm_size);
+      void * new_buffer = realloc(gstack->elm, new_size*sizeof(void *));
       error_test_mem(new_buffer);
 
-      gstack->ptr     = new_buffer;
+      gstack->elm     = new_buffer;
       gstack->max_elm = new_size;
    }
 
    // Add element to gstack.
-   void * dst_ptr = (void *)(((uint8_t *)gstack->ptr) + gstack->elm_size * gstack->num_elm);
-   memcpy(dst_ptr, elm_ptr, gstack->elm_size);
-   gstack->num_elm++;
-
+   gstack->elm[gstack->num_elm++] = elm_ptr;
    return 0;
 
  failure_return:
@@ -153,7 +135,7 @@ gstack_push
 int
 gstack_push_array
 (
-  void      * base_ptr,
+  void     ** base_ptr,
   size_t      elm_cnt,
   gstack_t  * gstack
 )
@@ -170,16 +152,15 @@ gstack_push_array
       while (gstack->num_elm + elm_cnt >= new_size) {
          new_size *= 2;
       }
-      void * new_buffer = realloc(gstack->ptr, new_size*gstack->elm_size);
+      void * new_buffer = realloc(gstack->elm, new_size*sizeof(void *));
       error_test_mem(new_buffer);
 
-      gstack->ptr     = new_buffer;
+      gstack->elm     = new_buffer;
       gstack->max_elm = new_size;
    }
 
    // Add element to gstack.
-   void * dst_ptr = (void *)(((uint8_t *)gstack->ptr) + gstack->elm_size * gstack->num_elm);
-   memcpy(dst_ptr, base_ptr, elm_cnt * gstack->elm_size);
+   memcpy(gstack->elm + gstack->num_elm, base_ptr, elm_cnt * sizeof(void *));
    gstack->num_elm += elm_cnt;
 
    return 0;
@@ -194,14 +175,16 @@ gstack_popr
   gstack_t  * gstack
 )
 /*
-** Removes top element without returning it.
+** Removes and frees top element without returning it.
 */
 {
    // Check arguments.
    error_test_msg(gstack == NULL, "argument 'gstack' is NULL.");
-   
-   if (gstack->num_elm > 0)
-      gstack->num_elm--;
+
+   // Free and remove top element.
+   if (gstack->num_elm > 0) {
+      gstack->elm_free(gstack->elm[--gstack->num_elm]);
+   }
 
    return 0;
    
@@ -220,7 +203,13 @@ gstack_clear
 {
    // Check arguments.
    error_test_msg(gstack == NULL, "argument 'gstack' is NULL.");
+
+   // Free remaining elements.
+   for (int i = 0; i < gstack->num_elm; i++) {
+      gstack->elm_free(gstack->elm[i]);
+   }
    
+   // Reset num elements.
    gstack->num_elm = 0;
 
    return 0;
@@ -254,20 +243,6 @@ gstack_max_elm
    error_test_msg(gstack == NULL, "argument 'gstack' is NULL.");
    
    return (int64_t)gstack->max_elm;
-
- failure_return:
-   return -1;
-}
-
-int64_t
-gstack_elm_size
-(
-  gstack_t  * gstack
-)
-{
-   error_test_msg(gstack == NULL, "argument 'gstack' is NULL.");
-   
-   return (int64_t)gstack->elm_size;
 
  failure_return:
    return -1;
