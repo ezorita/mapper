@@ -45,6 +45,65 @@ test_seqread_new
 }
 
 void
+test_seqread_stack
+(void)
+{
+   char * tag     = "sequence_name";
+   char * seq0    = "ATCGANTANTAGCGN";
+   char * seq1    = "ACGTACJFDKACGGAACTGT";
+   char * qscore0 = "012391923823893";
+   char * qscore1 = "19239194385439334402";
+
+   sym_t * sym = sym_new_dna();
+   test_assert_critical(sym != NULL);
+   gstack_t * stack = seqread_stack(1);
+   test_assert_critical(stack != NULL);
+
+   seqread_t * read = seqread_new(tag, seq0, qscore0, sym);
+   test_assert_critical(read != NULL);
+   test_assert(gstack_push(read, stack) == 0);
+   test_assert(gstack_num_elm(stack) == 1);
+
+   read = seqread_new(tag, seq1, qscore1, sym);
+   test_assert_critical(read != NULL);
+   test_assert(gstack_push(read, stack) == 0);
+   test_assert(gstack_num_elm(stack) == 2);
+
+   redirect_stderr();
+   test_assert(seqread_get(10, stack) == NULL);
+   test_assert(seqread_get(0, NULL) == NULL);   
+   unredirect_stderr();
+   
+   read = seqread_get(0, stack);
+   test_assert_critical(read != NULL);
+   char * s = seqread_seq(read);
+   test_assert(s != NULL);
+   test_assert(strcmp(seq0, s) == 0);
+
+   read = seqread_pop(stack);
+   test_assert_critical(read != NULL);
+   test_assert(gstack_num_elm(stack) == 1);
+   s = seqread_seq(read);
+   test_assert(s != NULL);
+   test_assert(strcmp(seq1, s) == 0);
+   seqread_free(read);
+
+   read = seqread_pop(stack);
+   test_assert_critical(read != NULL);
+   test_assert(gstack_num_elm(stack) == 0);
+   s = seqread_seq(read);
+   test_assert(s != NULL);
+   test_assert(strcmp(seq0, s) == 0);
+   seqread_free(read);
+
+   read = seqread_pop(stack);
+   test_assert(read == NULL);
+
+   gstack_free(stack);
+   sym_free(sym);
+}
+
+void
 test_seqread_helpers
 (void)
 {
@@ -68,6 +127,8 @@ test_seqread_helpers
 
 const test_case_t test_cases_seqread[] = {
    {"seqread/seqread_new",         test_seqread_new},
+   {"seqread/seqread_stack",       test_seqread_stack},
    {"seqread/seqread_helpers",     test_seqread_helpers},
+
    {NULL, NULL}, // Sentinel. //
 };
