@@ -12,7 +12,7 @@ test_mem_gstack_new
    // Set alloc failure rate to 0.1.
    set_alloc_failure_rate_to(0.1);
    for (int i = 0; i < 100; i++) {
-      gstack = gstack_new(10,100);
+      gstack = gstack_new(100, NULL);
       gstack_free(gstack);
    }
    reset_alloc();
@@ -20,7 +20,7 @@ test_mem_gstack_new
    // Set alloc countdown 0->10.
    for (int i = 0; i <= 200; i++) {
       set_alloc_failure_countdown_to(i);
-      gstack = gstack_new(10,100);
+      gstack = gstack_new(100, NULL);
       gstack_free(gstack);
    }
    reset_alloc();
@@ -36,22 +36,32 @@ test_mem_gstack_push
    gstack_t * gstack = NULL;
    
    // Create a gstack.
-   gstack = gstack_new(sizeof(int64_t), 1);
+   gstack = gstack_new(1, free);
    test_assert_critical(gstack != NULL);
 
-   int64_t value = 1;
+   int64_t * value;
 
    // Set alloc failure rate to 0.1.
-   set_alloc_failure_rate_to(0.1);
    for (int i = 0; i < 1000; i++) {
-      gstack_push(&value, gstack);
+      reset_alloc();
+      value = malloc(sizeof(int64_t));
+      test_assert_critical(value != NULL);
+      set_alloc_failure_rate_to(0.1);
+      if (gstack_push(value, gstack) == -1) {
+	 free(value);
+      }
    }
    reset_alloc();
 
    // Set alloc countdown 0->10.
    for (int i = 0; i <= 200; i++) {
+      reset_alloc();
+      value = malloc(sizeof(int64_t));
+      test_assert_critical(value != NULL);
       set_alloc_failure_countdown_to(i);
-      gstack_push(&value, gstack);
+      if (gstack_push(value, gstack) == -1) {
+	 free(value);
+      }
    }
    reset_alloc();
 
@@ -68,27 +78,38 @@ test_mem_gstack_push_array
    gstack_t * gstack = NULL;
    
    // Create a gstack.
-   gstack = gstack_new(sizeof(int64_t), 1);
+   gstack = gstack_new(1, free);
    test_assert_critical(gstack != NULL);
 
-   int64_t value[10] = {1,2,3,5,8,13,21,34,55,89};
+   int64_t ** values = malloc(10*sizeof(int64_t*));
+   test_assert_critical(values != NULL);
 
    // Set alloc failure rate to 0.1.
-   set_alloc_failure_rate_to(0.1);
-   for (int i = 0; i < 1000; i++) {
-      gstack_push_array(value, 10, gstack);
+   for (int i = 0; i < 100; i++) {
+      reset_alloc();
+      for (int i = 0 ; i < 10; i++) {
+	 values[i] = malloc(sizeof(int64_t));
+	 test_assert_critical(values[i] != NULL);
+      }
+      set_alloc_failure_rate_to(0.1);
+      gstack_push_array((void **)values, 10, gstack);
    }
    reset_alloc();
 
    // Set alloc countdown 0->10.
    for (int i = 0; i <= 200; i++) {
+      reset_alloc();
+      for (int i = 0 ; i < 10; i++) {
+	 values[i] = malloc(sizeof(int64_t));
+	 test_assert_critical(values[i] != NULL);
+      }
       set_alloc_failure_countdown_to(i);
-      gstack_push_array(value, 10, gstack);
+      gstack_push_array((void **)values, 10, gstack);
    }
    reset_alloc();
 
    gstack_free(gstack);
-
+   free(values);
    unredirect_stderr();
 }
 
@@ -100,12 +121,13 @@ test_mem_gstack_pop
    gstack_t * gstack = NULL;
    
    // Create a gstack.
-   gstack = gstack_new(sizeof(int64_t), 1);
+   gstack = gstack_new(1, free);
    test_assert_critical(gstack != NULL);
 
-   int64_t value[10] = {1,2,3,5,8,13,21,34,55,89};
-   for (int i = 0; i < 90; i++) {
-      gstack_push_array(value, 10, gstack);
+   for (int i = 0; i < 900; i++) {
+      int64_t * value = malloc(sizeof(int64_t));
+      test_assert_critical(value != NULL);
+      gstack_push(value, gstack);	 
    }
 
    // Set alloc failure rate to 0.1.
@@ -116,10 +138,11 @@ test_mem_gstack_pop
    }
    reset_alloc();
 
-   for (int i = 0; i < 15; i++) {
-      gstack_push_array(value, 10, gstack);
+   for (int i = 0; i < 150; i++) {
+      int64_t * value = malloc(sizeof(int64_t));
+      test_assert_critical(value != NULL);
+      gstack_push(value, gstack);	 
    }
-
 
    // Set alloc countdown 0->10.
    for (int i = 0; i <= 200; i++) {
@@ -142,14 +165,15 @@ test_mem_gstack_get
    gstack_t * gstack = NULL;
    
    // Create a gstack.
-   gstack = gstack_new(sizeof(int64_t), 1);
+   gstack = gstack_new(1, free);
    test_assert_critical(gstack != NULL);
 
-   int64_t value[10] = {1,2,3,5,8,13,21,34,55,89};
-   for (int i = 0; i < 90; i++) {
-      gstack_push_array(value, 10, gstack);
+   for (int i = 0; i < 900; i++) {
+      int64_t * value = malloc(sizeof(int64_t));
+      test_assert_critical(value != NULL);
+      gstack_push(value, gstack);	 
    }
-
+ 
    // Set alloc failure rate to 0.1.
    set_alloc_failure_rate_to(0.1);
    for (int i = 0; i < 1000; i++) {
@@ -176,16 +200,17 @@ test_mem_gstack_popr
    redirect_stderr();
    gstack_t * gstack = NULL;
    
-   // Create a gstack.
-   gstack = gstack_new(sizeof(int64_t), 1);
+  // Create a gstack.
+   gstack = gstack_new(1, free);
    test_assert_critical(gstack != NULL);
 
-   int64_t value[10] = {1,2,3,5,8,13,21,34,55,89};
-   for (int i = 0; i < 90; i++) {
-      gstack_push_array(value, 10, gstack);
+   for (int i = 0; i < 1200; i++) {
+      int64_t * value = malloc(sizeof(int64_t));
+      test_assert_critical(value != NULL);
+      gstack_push(value, gstack);	 
    }
 
-   // Set alloc failure rate to 0.1.
+    // Set alloc failure rate to 0.1.
    set_alloc_failure_rate_to(0.1);
    for (int i = 0; i < 1000; i++) {
       gstack_popr(gstack);
@@ -212,24 +237,30 @@ test_mem_gstack_clear
    gstack_t * gstack = NULL;
    
    // Create a gstack.
-   gstack = gstack_new(sizeof(int64_t), 1);
+   gstack = gstack_new(1, free);
    test_assert_critical(gstack != NULL);
 
-   int64_t value[10] = {1,2,3,5,8,13,21,34,55,89};
-   for (int i = 0; i < 90; i++) {
-      gstack_push_array(value, 10, gstack);
+   // fill stack
+   for (int i = 0; i < 900; i++) {
+      int64_t * value = malloc(sizeof(int64_t));
+      test_assert_critical(value != NULL);
+      gstack_push(value, gstack);	 
    }
 
-   // Set alloc failure rate to 0.1.
+    // Set alloc failure rate to 0.1.
    set_alloc_failure_rate_to(0.1);
    for (int i = 0; i < 100; i++) {
       gstack_clear(gstack);
    }
    reset_alloc();
 
-   for (int i = 0; i < 90; i++) {
-      gstack_push_array(value, 10, gstack);
+   //refill
+   for (int i = 0; i < 900; i++) {
+      int64_t * value = malloc(sizeof(int64_t));
+      test_assert_critical(value != NULL);
+      gstack_push(value, gstack);	 
    }
+
    // Set alloc countdown 0->10.
    for (int i = 0; i <= 200; i++) {
       set_alloc_failure_countdown_to(i);

@@ -9,27 +9,19 @@ test_gstack_new
    gstack_t * gstack = NULL;
    
    // Invalid parameters.
-   test_assert(gstack_new(1, 0x7FFFFFFFFFFFFFFF) == NULL);
-   test_assert(gstack_new(0, 10) == NULL);
-   test_assert(gstack_new(10, 0) == NULL);
+   test_assert(gstack_new(0x0FFFFFFFFFFFFFFF, free) == NULL);
 
    // Create some gstacks.
-   gstack = gstack_new(10,100);
+   gstack = gstack_new(10,free);
    test_assert(gstack != NULL);
    gstack_free(gstack);
-   gstack = gstack_new(100,10);
+   gstack = gstack_new(100,free);
    test_assert(gstack != NULL);
    gstack_free(gstack);
-   gstack = gstack_new(1000,10);
+   gstack = gstack_new(1000,free);
    test_assert(gstack != NULL);
    gstack_free(gstack);
-   gstack = gstack_new(10,1000);
-   test_assert(gstack != NULL);
-   gstack_free(gstack);
-   gstack = gstack_new(10000,1);
-   test_assert(gstack != NULL);
-   gstack_free(gstack);
-   gstack = gstack_new(1,10000);
+   gstack = gstack_new(10000,free);
    test_assert(gstack != NULL);
    gstack_free(gstack);
 
@@ -44,25 +36,41 @@ test_gstack_push
    gstack_t * gstack = NULL;
    
    // Create a gstack.
-   gstack = gstack_new(sizeof(int64_t), 1);
+   gstack = gstack_new(1, free);
    test_assert_critical(gstack != NULL);
-
-   int64_t value = 10;   
-
+   
+   int64_t * value = NULL;
+   
    // Invalid parameters.
-   test_assert(gstack_push(&value, NULL) == -1);
    test_assert(gstack_push(NULL, gstack) == -1);
    
    // Fill gstack.
-   test_assert(gstack_push(&value, gstack) == 0);
-   value = 49;
-   test_assert(gstack_push(&value, gstack) == 0);
-   value = 193;
-   test_assert(gstack_push(&value, gstack) == 0);
-   value = 257;
-   test_assert(gstack_push(&value, gstack) == 0);
-   value = 3324;
-   test_assert(gstack_push(&value, gstack) == 0);
+   value = malloc(sizeof(int64_t));
+   test_assert_critical(value != NULL);
+   test_assert(gstack_push(value, NULL) == -1);
+   
+   *value = 1;
+   test_assert(gstack_push(value, gstack) == 0);
+   
+   value = malloc(sizeof(int64_t));
+   test_assert_critical(value != NULL);
+   *value = 49;
+   test_assert(gstack_push(value, gstack) == 0);
+   
+   value = malloc(sizeof(int64_t));
+   test_assert_critical(value != NULL);
+   *value = 193;
+   test_assert(gstack_push(value, gstack) == 0);
+   
+   value = malloc(sizeof(int64_t));
+   test_assert_critical(value != NULL);
+   *value = 257;
+   test_assert(gstack_push(value, gstack) == 0);
+   
+   value = malloc(sizeof(int64_t));
+   test_assert_critical(value != NULL);
+   *value = 3324;
+   test_assert(gstack_push(value, gstack) == 0);
 
    gstack_free(gstack);
    unredirect_stderr();
@@ -76,18 +84,26 @@ test_gstack_push_array
    gstack_t * gstack = NULL;
    
    // Create a gstack.
-   gstack = gstack_new(sizeof(int64_t), 1);
+   gstack = gstack_new(1, free);
    test_assert_critical(gstack != NULL);
 
-   int64_t value[10] = {1,2,3,5,8,13,21,34,55,89};
+   int64_t fibo[13] = {1,2,3,5,8,13,21,34,55,89,144,233,377};
 
+   int64_t ** values = malloc(sizeof(void *)*13);
+   test_assert_critical(values != NULL);
+   for (int i = 0; i < 13; i++) {
+      values[i] = malloc(sizeof(int64_t));
+      test_assert_critical(values[i] != NULL);
+      *values[i] = fibo[i];
+   }
+   
    // Invalid parameters.
-   test_assert(gstack_push_array(value, 1, NULL) == -1);
+   test_assert(gstack_push_array((void **)values, 1, NULL) == -1);
    test_assert(gstack_push_array(NULL, 1, gstack) == -1);
-   test_assert(gstack_push_array(value, 0, gstack) == 0);
+   test_assert(gstack_push_array((void **)values, 0, gstack) == 0);
    
    // Fill gstack.
-   test_assert(gstack_push_array(value, 10, gstack) == 0);
+   test_assert(gstack_push_array((void **)values, 10, gstack) == 0);
 
    // Check values.
    int64_t * get_val;
@@ -108,22 +124,23 @@ test_gstack_push_array
    test_assert(*get_val == 89);
 
    // Fill further.
-   test_assert(gstack_push_array(value + 5, 3, gstack) == 0);
+   test_assert(gstack_push_array((void **)values + 10, 3, gstack) == 0);
 
    // Check values.
    get_val = gstack_get(10, gstack);
    test_assert_critical(get_val != NULL);
-   test_assert(*get_val == 13);
+   test_assert(*get_val == 144);
 
    get_val = gstack_get(11, gstack);
    test_assert_critical(get_val != NULL);
-   test_assert(*get_val == 21);
+   test_assert(*get_val == 233);
 
    get_val = gstack_get(12, gstack);
    test_assert_critical(get_val != NULL);
-   test_assert(*get_val == 34);
+   test_assert(*get_val == 377);
 
    gstack_free(gstack);
+   free(values);
    unredirect_stderr();
 }
 
@@ -136,28 +153,40 @@ test_gstack_pop
    gstack_t * gstack = NULL;
    
    // Create a gstack.
-   gstack = gstack_new(sizeof(int64_t), 100);
+   gstack = gstack_new(100, free);
    test_assert_critical(gstack != NULL);
 
    // Invalid parameters.
    test_assert(gstack_pop(NULL) == NULL);
-   test_assert(errno != GSTACK_ERRNO_MEMORY);
    
    // Pop from empty gstack.
    test_assert(gstack_pop(gstack) == NULL);
-   test_assert(errno != GSTACK_ERRNO_MEMORY);
 
    // Fill gstack.
-   int64_t value = 10;
-   test_assert(gstack_push(&value, gstack) == 0);
-   value = 49;
-   test_assert(gstack_push(&value, gstack) == 0);
-   value = 193;
-   test_assert(gstack_push(&value, gstack) == 0);
-   value = 257;
-   test_assert(gstack_push(&value, gstack) == 0);
-   value = 3324;
-   test_assert(gstack_push(&value, gstack) == 0);
+   int64_t * value = malloc(sizeof(int64_t));
+   test_assert_critical(value != NULL);
+   *value = 10;
+   test_assert(gstack_push(value, gstack) == 0);
+   
+   value = malloc(sizeof(int64_t));
+   test_assert_critical(value != NULL);
+   *value = 49;
+   test_assert(gstack_push(value, gstack) == 0);
+   
+   value = malloc(sizeof(int64_t));
+   test_assert_critical(value != NULL);
+   *value = 193;
+   test_assert(gstack_push(value, gstack) == 0);
+   
+   value = malloc(sizeof(int64_t));
+   test_assert_critical(value != NULL);
+   *value = 257;
+   test_assert(gstack_push(value, gstack) == 0);
+   
+   value = malloc(sizeof(int64_t));
+   test_assert_critical(value != NULL);
+   *value = 3324;
+   test_assert(gstack_push(value, gstack) == 0);
 
    // Test pop.
    int64_t * pop_val;
@@ -201,24 +230,38 @@ test_gstack_get
    gstack_t * gstack = NULL;
    
    // Create a gstack.
-   gstack = gstack_new(sizeof(int64_t), 100);
+   gstack = gstack_new(100, free);
    test_assert_critical(gstack != NULL);
 
    // Invalid parameters.
    test_assert(gstack_get(0, NULL) == NULL);
    test_assert(gstack_get(0, gstack) == NULL);
-   
+
    // Fill gstack.
-   int64_t value = 10;
-   test_assert(gstack_push(&value, gstack) == 0);
-   value = 49;
-   test_assert(gstack_push(&value, gstack) == 0);
-   value = 193;
-   test_assert(gstack_push(&value, gstack) == 0);
-   value = 257;
-   test_assert(gstack_push(&value, gstack) == 0);
-   value = 3324;
-   test_assert(gstack_push(&value, gstack) == 0);
+   int64_t * value = malloc(sizeof(int64_t));
+   test_assert_critical(value != NULL);
+   *value = 10;
+   test_assert(gstack_push(value, gstack) == 0);
+   
+   value = malloc(sizeof(int64_t));
+   test_assert_critical(value != NULL);
+   *value = 49;
+   test_assert(gstack_push(value, gstack) == 0);
+   
+   value = malloc(sizeof(int64_t));
+   test_assert_critical(value != NULL);
+   *value = 193;
+   test_assert(gstack_push(value, gstack) == 0);
+   
+   value = malloc(sizeof(int64_t));
+   test_assert_critical(value != NULL);
+   *value = 257;
+   test_assert(gstack_push(value, gstack) == 0);
+   
+   value = malloc(sizeof(int64_t));
+   test_assert_critical(value != NULL);
+   *value = 3324;
+   test_assert(gstack_push(value, gstack) == 0);
 
    // Get stack elements.
    int64_t * get_val;
@@ -242,12 +285,6 @@ test_gstack_get
    test_assert_critical(get_val != NULL);
    test_assert(*get_val == 3324);
 
-   // Pop, push and check again.
-   gstack_popr(gstack);
-   value = 132;
-   test_assert(gstack_push(&value, gstack) == 0);
-   test_assert(*get_val != 3324);
-
    gstack_free(gstack);
    unredirect_stderr();
 }
@@ -260,20 +297,34 @@ test_gstack_popr
    gstack_t * gstack = NULL;
    
    // Create a gstack.
-   gstack = gstack_new(sizeof(int64_t), 100);
+   gstack = gstack_new(100, free);
    test_assert_critical(gstack != NULL);
 
    // Fill gstack.
-   int64_t value = 10;
-   test_assert(gstack_push(&value, gstack) == 0);
-   value = 49;
-   test_assert(gstack_push(&value, gstack) == 0);
-   value = 193;
-   test_assert(gstack_push(&value, gstack) == 0);
-   value = 257;
-   test_assert(gstack_push(&value, gstack) == 0);
-   value = 3324;
-   test_assert(gstack_push(&value, gstack) == 0);
+   int64_t * value = malloc(sizeof(int64_t));
+   test_assert_critical(value != NULL);
+   *value = 10;
+   test_assert(gstack_push(value, gstack) == 0);
+   
+   value = malloc(sizeof(int64_t));
+   test_assert_critical(value != NULL);
+   *value = 49;
+   test_assert(gstack_push(value, gstack) == 0);
+   
+   value = malloc(sizeof(int64_t));
+   test_assert_critical(value != NULL);
+   *value = 193;
+   test_assert(gstack_push(value, gstack) == 0);
+   
+   value = malloc(sizeof(int64_t));
+   test_assert_critical(value != NULL);
+   *value = 257;
+   test_assert(gstack_push(value, gstack) == 0);
+   
+   value = malloc(sizeof(int64_t));
+   test_assert_critical(value != NULL);
+   *value = 3324;
+   test_assert(gstack_push(value, gstack) == 0);
 
    // popr
    test_assert(gstack_popr(NULL) == -1);
@@ -303,20 +354,34 @@ test_gstack_clear
    gstack_t * gstack = NULL;
    
    // Create a gstack.
-   gstack = gstack_new(sizeof(int64_t), 100);
+   gstack = gstack_new(100, free);
    test_assert_critical(gstack != NULL);
 
    // Fill gstack.
-   int64_t value = 10;
-   test_assert(gstack_push(&value, gstack) == 0);
-   value = 49;
-   test_assert(gstack_push(&value, gstack) == 0);
-   value = 193;
-   test_assert(gstack_push(&value, gstack) == 0);
-   value = 257;
-   test_assert(gstack_push(&value, gstack) == 0);
-   value = 3324;
-   test_assert(gstack_push(&value, gstack) == 0);
+   int64_t * value = malloc(sizeof(int64_t));
+   test_assert_critical(value != NULL);
+   *value = 10;
+   test_assert(gstack_push(value, gstack) == 0);
+   
+   value = malloc(sizeof(int64_t));
+   test_assert_critical(value != NULL);
+   *value = 49;
+   test_assert(gstack_push(value, gstack) == 0);
+   
+   value = malloc(sizeof(int64_t));
+   test_assert_critical(value != NULL);
+   *value = 193;
+   test_assert(gstack_push(value, gstack) == 0);
+   
+   value = malloc(sizeof(int64_t));
+   test_assert_critical(value != NULL);
+   *value = 257;
+   test_assert(gstack_push(value, gstack) == 0);
+   
+   value = malloc(sizeof(int64_t));
+   test_assert_critical(value != NULL);
+   *value = 3324;
+   test_assert(gstack_push(value, gstack) == 0);
 
    // popr
    test_assert(gstack_clear(NULL) == -1);
@@ -338,55 +403,80 @@ test_gstack_helpers
    gstack_t * gstack = NULL;
    
    // Create a gstack.
-   gstack = gstack_new(sizeof(int64_t), 1);
+   gstack = gstack_new(1, free);
    test_assert_critical(gstack != NULL);
-   test_assert(gstack_elm_size(gstack) == 8);
 
    // Fill gstack.
-   int64_t value = 10;
    test_assert(gstack_num_elm(gstack) == 0);
    test_assert(gstack_max_elm(gstack) == 1);
 
-   test_assert(gstack_push(&value, gstack) == 0);
+   int64_t * value = malloc(sizeof(int64_t));
+   test_assert_critical(value != NULL);
+   *value = 10;
+   test_assert(gstack_push(value, gstack) == 0);
    test_assert(gstack_num_elm(gstack) == 1);
    test_assert(gstack_max_elm(gstack) == 1);
 
-   value = 49;
-   test_assert(gstack_push(&value, gstack) == 0);
+   
+   value = malloc(sizeof(int64_t));
+   test_assert_critical(value != NULL);
+   *value = 49;
+   test_assert(gstack_push(value, gstack) == 0);
    test_assert(gstack_num_elm(gstack) == 2);
    test_assert(gstack_max_elm(gstack) == 2);
-
-   value = 193;
-   test_assert(gstack_push(&value, gstack) == 0);
+   
+   value = malloc(sizeof(int64_t));
+   test_assert_critical(value != NULL);
+   *value = 193;
+   test_assert(gstack_push(value, gstack) == 0);
    test_assert(gstack_num_elm(gstack) == 3);
    test_assert(gstack_max_elm(gstack) == 4);
-
-   value = 257;
-   test_assert(gstack_push(&value, gstack) == 0);
+   
+   value = malloc(sizeof(int64_t));
+   test_assert_critical(value != NULL);
+   *value = 257;
+   test_assert(gstack_push(value, gstack) == 0);
    test_assert(gstack_num_elm(gstack) == 4);
    test_assert(gstack_max_elm(gstack) == 4);
-
-   value = 3324;
-   test_assert(gstack_push(&value, gstack) == 0);
+   
+   value = malloc(sizeof(int64_t));
+   test_assert_critical(value != NULL);
+   *value = 3324;
+   test_assert(gstack_push(value, gstack) == 0);
    test_assert(gstack_num_elm(gstack) == 5);
    test_assert(gstack_max_elm(gstack) == 8);
 
-   value = 24194;
-   test_assert(gstack_push(&value, gstack) == 0);
+   value = malloc(sizeof(int64_t));
+   test_assert_critical(value != NULL);
+   *value = 24194;
+   test_assert(gstack_push(value, gstack) == 0);
    test_assert(gstack_num_elm(gstack) == 6);
    test_assert(gstack_max_elm(gstack) == 8);
 
-   value = 38113;
-   test_assert(gstack_push(&value, gstack) == 0);
+   value = malloc(sizeof(int64_t));
+   test_assert_critical(value != NULL);
+   *value = 38113;
+   test_assert(gstack_push(value, gstack) == 0);
    test_assert(gstack_num_elm(gstack) == 7);
    test_assert(gstack_max_elm(gstack) == 8);
 
-   int64_t array[10] = {1,2,3,5,8,13,21,34,55,89};
-   test_assert(gstack_push_array(array, 10, gstack) == 0);
-   test_assert(gstack_num_elm(gstack) == 17);
+   // Push array.
+   int64_t fibo[13] = {1,2,3,5,8,13,21,34,55,89,144,233,377};
+
+   int64_t ** values = malloc(sizeof(void *)*13);
+   test_assert_critical(values != NULL);
+   for (int i = 0; i < 13; i++) {
+      values[i] = malloc(sizeof(int64_t));
+      test_assert_critical(values[i] != NULL);
+      *values[i] = fibo[i];
+   }
+
+   test_assert(gstack_push_array((void **)values, 13, gstack) == 0);
+   test_assert(gstack_num_elm(gstack) == 20);
    test_assert(gstack_max_elm(gstack) == 32);
 
    gstack_free(gstack);
+   free(values);
    unredirect_stderr();
 }
 
