@@ -66,12 +66,54 @@ seqread_new
    return NULL;
 }
 
+gstack_t *
+seqread_stack
+(
+  size_t max_elm
+)
+{
+   gstack_t * stack = gstack_new(max_elm, seqread_free);
+   error_test(stack == NULL);
+   
+   return stack;
+
+ failure_return:
+   return NULL;
+}
+
+seqread_t *
+seqread_pop
+(
+  gstack_t * stack
+)
+{
+   seqread_t * read = (seqread_t *) gstack_pop(stack);
+   return read;
+}
+
+seqread_t *
+seqread_get
+(
+  size_t     index,
+  gstack_t * stack
+)
+{
+   seqread_t * read = (seqread_t *) gstack_get(index, stack);
+   error_test(read == NULL);
+
+   return read;
+   
+ failure_return:
+   return NULL;
+}
+
 void
 seqread_free
 (
-  seqread_t * read
+  void * ptr
 )
 {
+   seqread_t * read = (seqread_t *) ptr;
    if (read != NULL) {
       free(read->tag);
       free(read->seq);
