@@ -57,6 +57,9 @@ void   reset_alloc (void);
 char * caught_in_stderr (void);
 void   redirect_stderr (void);
 void   unredirect_stderr (void);
+char * caught_in_stdout (void);
+void   redirect_stdout (void);
+void   unredirect_stdout (void);
 
 
 // Functions that must be defined here but that should not be used //
