@@ -1,6 +1,8 @@
+#define _POSIX_C_SOURCE 200809L
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <sys/types.h>
 #include "errhandler.h"
 #include "gstack.h"
 #include "seqread.h"
