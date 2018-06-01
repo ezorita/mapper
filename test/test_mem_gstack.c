@@ -92,7 +92,11 @@ test_mem_gstack_push_array
 	 test_assert_critical(values[i] != NULL);
       }
       set_alloc_failure_rate_to(0.1);
-      gstack_push_array((void **)values, 10, gstack);
+      if (gstack_push_array((void **)values, 10, gstack) == -1) {
+	 for (int i = 0 ; i < 10; i++) {
+	    free(values[i]);
+	 }
+      }
    }
    reset_alloc();
 
@@ -104,7 +108,11 @@ test_mem_gstack_push_array
 	 test_assert_critical(values[i] != NULL);
       }
       set_alloc_failure_countdown_to(i);
-      gstack_push_array((void **)values, 10, gstack);
+      if (gstack_push_array((void **)values, 10, gstack) == -1) {
+	 for (int i = 0 ; i < 10; i++) {
+	    free(values[i]);
+	 }
+      }
    }
    reset_alloc();
 
