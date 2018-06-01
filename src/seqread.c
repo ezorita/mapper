@@ -129,8 +129,8 @@ seqread_parse_fastq
    error_test_msg(lines == NULL, "argument 'lines' is NULL.");
 
    // Alloc seqread_t.
-   read = seqread_new(lines[0], lines[1], lines[3]);
-   error_test(read);
+   read = seqread_new(lines[0]+1, lines[1], lines[3]);
+   error_test(read == NULL);
 
    return read;
    
@@ -145,15 +145,21 @@ seqread_parse_fasta
   char ** lines
 )
 {
-   
-}
+   // Declare variables.
+   seqread_t * read = NULL;
 
-seqread_t *
-seqread_parse_raw
-(
-  char ** lines
-)
-{
+   // Check arguments.
+   error_test_msg(lines == NULL, "argument 'lines' is NULL.");
+
+   // Alloc seqread_t.
+   read = seqread_new(lines[0]+1, lines[1], NULL);
+   error_test(read == NULL);
+
+   return read;
+   
+ failure_return:
+   seqread_free(read);
+   return NULL;
    
 }
 
