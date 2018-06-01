@@ -1,7 +1,6 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include "errhandler.h"
-#include "index_sym.h"
 #include "gstack.h"
 
 #ifndef _SEQREAD_H
@@ -14,7 +13,7 @@ typedef struct seqread_t seqread_t;
 struct seqread_t;
 
 // Interface functions.
-seqread_t     * seqread_new     (char * tag, char * seq, char * qscore, sym_t * sym);
+seqread_t     * seqread_new     (char * tag, char * seq, char * qscore);
 void            seqread_free    (void * ptr);
 gstack_t      * seqread_stack   (size_t max_elm);
 seqread_t     * seqread_pop     (gstack_t * stack);

@@ -7,7 +7,6 @@ struct seqread_t {
    char    * tag;
    char    * seq;
    char    * qscore;
-   uint8_t * sym;
 };
 
 // Interface functions.
@@ -17,8 +16,7 @@ seqread_new
 (
  char  * tag,
  char  * seq,
- char  * qscore,
- sym_t * sym
+ char  * qscore
 )
 {
    // Declare variables.
@@ -26,7 +24,6 @@ seqread_new
 
    // Check arguments.
    error_test_msg(seq == NULL, "argument 'seq' is NULL.");
-   error_test_msg(sym == NULL, "argument 'sym' is NULL.");
    
    // Alloc structure.
    read = malloc(sizeof(seqread_t));
@@ -35,7 +32,6 @@ seqread_new
    read->tag    = NULL;
    read->seq    = NULL;
    read->qscore = NULL;
-   read->sym    = NULL;
    read->seqlen = strlen(seq);
    
    // Duplicate strings
@@ -54,10 +50,6 @@ seqread_new
       read->qscore = strdup(qscore);
       error_test_def(read->qscore == NULL);
    }
-
-   // Compute symbols.
-   read->sym = sym_str_index(seq, sym);
-   error_test(read->sym == NULL);
 
    return read;
 
@@ -118,12 +110,54 @@ seqread_free
       free(read->tag);
       free(read->seq);
       free(read->qscore);
-      free(read->sym);
       free(read);
    }
 
    return;
 }
+
+seqread_t *
+seqread_parse_fastq
+(
+  char ** lines
+)
+{
+   // Declare variables.
+   seqread_t * read = NULL;
+
+   // Check arguments.
+   error_test_msg(lines == NULL, "argument 'lines' is NULL.");
+
+   // Alloc seqread_t.
+   read = seqread_new(lines[0], lines[1], lines[3]);
+   error_test(read);
+
+   return read;
+   
+ failure_return:
+   seqread_free(read);
+   return NULL;
+}
+
+seqread_t *
+seqread_parse_fasta
+(
+  char ** lines
+)
+{
+   
+}
+
+seqread_t *
+seqread_parse_raw
+(
+  char ** lines
+)
+{
+   
+}
+
+// Helper functions.
 
 int64_t
 seqread_len
@@ -176,20 +210,6 @@ seqread_qscore
    error_test_msg(read == NULL, "argument 'read' is NULL.");
    
    return read->qscore;
-   
- failure_return:
-   return NULL;
-}
-
-uint8_t *
-seqread_sym
-(
-  seqread_t * read
-)
-{
-   error_test_msg(read == NULL, "argument 'read' is NULL.");
-   
-   return read->sym;
    
  failure_return:
    return NULL;

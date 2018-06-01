@@ -1,5 +1,6 @@
 #include "unittest.h"
 #include "seqread.h"
+#include "index_sym.h"
 
 void
 test_seqread_new
@@ -18,22 +19,25 @@ test_seqread_new
    seqread_t * read = NULL;
 
    redirect_stderr();
-   test_assert(seqread_new(tag, NULL, qscore0, sym) == NULL);
-   test_assert(seqread_new(tag, seq0, qscore0, NULL) == NULL);
-   test_assert(seqread_new(tag, seq1, qscore0, sym) == NULL);
-   test_assert(seqread_new(tag, seq0, qscore1, sym) == NULL);
+   test_assert(seqread_new(tag, NULL, qscore0) == NULL);
+   test_assert(seqread_new(tag, seq1, qscore0) == NULL);
+   test_assert(seqread_new(tag, seq0, qscore1) == NULL);
 
-   read = seqread_new(tag, seq0, qscore0, sym);
+   read = seqread_new(tag, seq0, qscore0);
    test_assert_critical(read != NULL);
-   test_assert(memcmp(seqread_sym(read), sym0, 15) == 0);
+   uint8_t * syms = sym_str_index(seqread_seq(read), sym);
+   test_assert(memcmp(syms, sym0, 15) == 0);
+   free(syms);
    seqread_free(read);
 
-   read = seqread_new(tag, seq1, qscore1, sym);
+   read = seqread_new(tag, seq1, qscore1);
    test_assert_critical(read != NULL);
-   test_assert(memcmp(seqread_sym(read), sym1, 20) == 0);
+   syms = sym_str_index(seqread_seq(read), sym);
+   test_assert(memcmp(syms, sym1, 20) == 0);
+   free(syms);
    seqread_free(read);
 
-   read = seqread_new(NULL, seq1, NULL, sym);
+   read = seqread_new(NULL, seq1, NULL);
    test_assert_critical(read != NULL);
    test_assert(seqread_tag(read) == NULL);
    test_assert(seqread_qscore(read) == NULL);
@@ -54,17 +58,15 @@ test_seqread_stack
    char * qscore0 = "012391923823893";
    char * qscore1 = "19239194385439334402";
 
-   sym_t * sym = sym_new_dna();
-   test_assert_critical(sym != NULL);
    gstack_t * stack = seqread_stack(1);
    test_assert_critical(stack != NULL);
 
-   seqread_t * read = seqread_new(tag, seq0, qscore0, sym);
+   seqread_t * read = seqread_new(tag, seq0, qscore0);
    test_assert_critical(read != NULL);
    test_assert(gstack_push(read, stack) == 0);
    test_assert(gstack_num_elm(stack) == 1);
 
-   read = seqread_new(tag, seq1, qscore1, sym);
+   read = seqread_new(tag, seq1, qscore1);
    test_assert_critical(read != NULL);
    test_assert(gstack_push(read, stack) == 0);
    test_assert(gstack_num_elm(stack) == 2);
@@ -100,7 +102,6 @@ test_seqread_stack
    test_assert(read == NULL);
 
    gstack_free(stack);
-   sym_free(sym);
 }
 
 void
@@ -113,13 +114,15 @@ test_seqread_helpers
    uint8_t sym1[20] = {0,1,2,3,0,1,4,4,4,4,0,1,2,2,0,0,1,3,2,3};
 
    sym_t * sym = sym_new_dna();
-   seqread_t * read = seqread_new(tag, seq1, qscore1, sym);
+   seqread_t * read = seqread_new(tag, seq1, qscore1);
    test_assert_critical(read != NULL);
    test_assert(seqread_len(read) == 20);
    test_assert(strcmp(seqread_tag(read), tag) == 0);
    test_assert(strcmp(seqread_seq(read), seq1) == 0);
    test_assert(strcmp(seqread_qscore(read), qscore1) == 0);
-   test_assert(memcmp(seqread_sym(read), sym1,20) == 0);
+   uint8_t * syms = sym_str_index(seqread_seq(read), sym);
+   test_assert(memcmp(syms, sym1, 20) == 0);
+   free(syms);
    seqread_free(read);
    sym_free(sym);
 }

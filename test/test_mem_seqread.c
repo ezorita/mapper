@@ -9,15 +9,13 @@ test_mem_seqread_new
    char * seq0    = "ATCGANTANTAGCGN";
    char * qscore0 = "012391923823893";
 
-   sym_t * sym = sym_new_dna();
-
    seqread_t * read = NULL;
 
    redirect_stderr();
    // Set alloc failure rate to 0.1.
    set_alloc_failure_rate_to(0.1);
    for (int i = 0; i < 1000; i++) {
-      read = seqread_new(tag, seq0, qscore0, sym);
+      read = seqread_new(tag, seq0, qscore0);
       seqread_free(read);
    }
    reset_alloc();
@@ -25,21 +23,17 @@ test_mem_seqread_new
    // Set alloc countdown 0->10.
    for (int i = 0; i <= 200; i++) {
       set_alloc_failure_countdown_to(i);
-      read = seqread_new(tag, seq0, qscore0, sym);
+      read = seqread_new(tag, seq0, qscore0);
       seqread_free(read);
    }
    reset_alloc();
    unredirect_stderr();
-   sym_free(sym);
 }
 
 void
 test_mem_seqread_stack
 (void)
 {
-   sym_t * sym = sym_new_dna();
-   test_assert_critical(sym != NULL);
-
    redirect_stderr();
    // Set alloc failure rate to 0.1.
    set_alloc_failure_rate_to(0.1);
@@ -58,7 +52,6 @@ test_mem_seqread_stack
    reset_alloc();
 
    unredirect_stderr();
-   sym_free(sym);
 }
 
 void
@@ -71,18 +64,15 @@ test_mem_seqread_stack_pop
    char * qscore0 = "012391923823893";
    char * qscore1 = "19239194385439334402";
 
-   sym_t * sym = sym_new_dna();
-   test_assert_critical(sym != NULL);
-   
    gstack_t * stack = seqread_stack(1);
    test_assert_critical(stack != NULL);
 
    for (int i = 0; i < 50; i++) {
-      seqread_t * read = seqread_new(tag, seq0, qscore0, sym);
+      seqread_t * read = seqread_new(tag, seq0, qscore0);
       test_assert_critical(read != NULL);
       test_assert(gstack_push(read, stack) == 0);
 
-      read = seqread_new(tag, seq1, qscore1, sym);
+      read = seqread_new(tag, seq1, qscore1);
       test_assert_critical(read != NULL);
       test_assert(gstack_push(read, stack) == 0);
    }
@@ -106,7 +96,6 @@ test_mem_seqread_stack_pop
 
    unredirect_stderr();
    gstack_free(stack);
-   sym_free(sym);
 }
 
 
