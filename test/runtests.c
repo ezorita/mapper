@@ -20,6 +20,7 @@ main(
    extern test_case_t test_cases_blocksearch[];
    extern test_case_t test_cases_gstack[];
    extern test_case_t test_cases_seqread[];
+   extern test_case_t test_cases_io[];
 
    // Memory tests.
    extern test_case_t test_mem_index_sym[];
@@ -32,6 +33,7 @@ main(
    extern test_case_t test_mem_blocksearch[];
    extern test_case_t test_mem_gstack[];
    extern test_case_t test_mem_seqread[];
+   extern test_case_t test_mem_io[];
 
    const test_case_t *test_case_list[] = {
       test_cases_index_sym,
@@ -44,6 +46,7 @@ main(
       test_cases_blocksearch,
       test_cases_gstack,
       test_cases_seqread,
+      test_cases_io,
       test_mem_index_sym,
       test_mem_index_txt,
       test_mem_index_sar,
@@ -54,6 +57,7 @@ main(
       test_mem_blocksearch,
       test_mem_gstack,
       test_mem_seqread,
+      test_mem_io,
       NULL, // Sentinel. //
    };
 
