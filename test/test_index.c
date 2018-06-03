@@ -5,6 +5,7 @@ void
 test_index_build
 (void)
 {
+   redirect_stderr();
    test_assert(index_build("fakefile.fasta", "test_base") == NULL);
    test_assert(index_build(NULL, "test_base") == NULL);
    test_assert(index_build("examples/repeats.fa", NULL) == NULL);
@@ -29,7 +30,9 @@ test_index_build
    }
    test_assert(bwt_size(q) == 1);
    test_assert(bwt_depth(q) == 25);
-   test_assert(strcmp(txt_pos_to_str(sar_get(bwt_start(q), index->sar), index->txt), "one:1:+") == 0);
+   char * str = txt_pos_to_str(sar_get(bwt_start(q), index->sar), index->txt);
+   test_assert(strcmp(str, "one:1:+") == 0);
+   free(str);
    free(q);
 
    q = bwt_new_query(index->bwt);
@@ -38,16 +41,20 @@ test_index_build
    }
    test_assert(bwt_size(q) == 1);
    test_assert(bwt_depth(q) == 25);
-   test_assert(strcmp(txt_pos_to_str(sar_get(bwt_start(q), index->sar), index->txt), "two:1:+") == 0);
+   str = txt_pos_to_str(sar_get(bwt_start(q), index->sar), index->txt);
+   test_assert(strcmp(str, "two:1:+") == 0);
+   free(str);
    free(q);
 
    index_free(index);
+   unredirect_stderr();
 }
 
 void
 test_index_ann_new
 (void)
 {
+   redirect_stderr();
    index_t * index = index_build("examples/repeats.fa", "test_base01");
    test_assert_critical(index != NULL);
 
@@ -82,6 +89,7 @@ test_index_ann_new
    free(lci);
 
    index_free(index);
+   unredirect_stderr();
 }
 
 
@@ -89,8 +97,16 @@ void
 test_index_read
 (void)
 {
+   redirect_stderr();
    index_t * index = index_build("examples/repeats.fa", "test_base02");
    test_assert_critical(index != NULL);
+   test_assert(index->sym != NULL);
+   test_assert(index->txt != NULL);
+   test_assert(index->sar != NULL);
+   test_assert(index->bwt != NULL);
+   test_assert(index->ann == NULL);
+   test_assert(index->ann_cnt == 0);
+
 
    redirect_stderr();
    index_ann_new(25, 1, 1, index);
@@ -118,7 +134,9 @@ test_index_read
    }
    test_assert(bwt_size(q) == 1);
    test_assert(bwt_depth(q) == 25);
-   test_assert(strcmp(txt_pos_to_str(sar_get(bwt_start(q), index->sar), index->txt), "one:1:+") == 0);
+   char * str = txt_pos_to_str(sar_get(bwt_start(q), index->sar), index->txt);
+   test_assert(strcmp(str, "one:1:+") == 0);
+   free(str);
    free(q);
 
    q = bwt_new_query(index->bwt);
@@ -127,7 +145,9 @@ test_index_read
    }
    test_assert(bwt_size(q) == 1);
    test_assert(bwt_depth(q) == 25);
-   test_assert(strcmp(txt_pos_to_str(sar_get(bwt_start(q), index->sar), index->txt), "two:1:+") == 0);
+   str = txt_pos_to_str(sar_get(bwt_start(q), index->sar), index->txt);
+   test_assert(strcmp(str, "two:1:+") == 0);
+   free(str);
    free(q);
 
    // Test annotation.
@@ -156,6 +176,8 @@ test_index_read
    free(lci);
 
    index_free(index);
+
+   unredirect_stderr();
 }
 
 

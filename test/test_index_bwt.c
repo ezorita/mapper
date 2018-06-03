@@ -27,8 +27,10 @@ test_bwt_build
    test_assert(sar_get_range(0,32,sa_buf,sar) == 0);
    test_assert(memcmp(sa_buf, sa_ref, 32*sizeof(int64_t)) == 0);
 
+   redirect_stderr();
    test_assert(bwt_build(NULL, sar) == NULL);
    test_assert(bwt_build(txt, NULL) == NULL);
+   unredirect_stderr();
 
    bwt_t * bwt = bwt_build(txt, sar);
    test_assert_critical(bwt != NULL);
@@ -320,8 +322,11 @@ test_bwt_new_query
    bwt_t * bwt = bwt_build(txt, sar);
    test_assert_critical(bwt != NULL);
 
+   redirect_stderr();
    bwtquery_t * q = bwt_new_query(NULL);
+   unredirect_stderr();
    test_assert(q == NULL);
+
    
    q = bwt_new_query(bwt);   
    test_assert_critical(q != NULL);
@@ -357,7 +362,9 @@ test_bwt_dup_query
    bwt_t * bwt = bwt_build(txt, sar);
    test_assert_critical(bwt != NULL);
 
+   redirect_stderr();
    bwtquery_t * q = bwt_new_query(NULL);
+   unredirect_stderr();
    test_assert(q == NULL);
    
    q = bwt_new_query(bwt);   
@@ -366,7 +373,9 @@ test_bwt_dup_query
    test_assert(bwt_size(q) == 32);
    test_assert(bwt_depth(q) == 0);
 
+   redirect_stderr();
    bwtquery_t * q2 = bwt_dup_query(NULL);
+   unredirect_stderr();
    test_assert(q2 == NULL);
 
    q2 = bwt_dup_query(q);
@@ -418,9 +427,11 @@ test_bwt_new_vec
    bwt_t * bwt = bwt_build(txt, sar);
    test_assert_critical(bwt != NULL);
 
+   redirect_stderr();
    bwtquery_t ** qv = bwt_new_vec(NULL);
+   unredirect_stderr();
    test_assert(qv == NULL);
-   
+
    qv = bwt_new_vec(bwt);
    test_assert_critical(qv != NULL);
    test_assert(bwt_start(qv[0]) == 0);
@@ -521,6 +532,7 @@ test_bwt_dup_vec
    test_assert(bwt_depth(qv2[3]) == 1);
    test_assert(bwt_size(qv2[4]) == 0);
 
+   bwt_free_vec(qv2);
    bwt_free_vec(qv);
    bwt_free(bwt);
    sar_free(sar);
@@ -552,6 +564,7 @@ test_bwt_query
    bwtquery_t * q = bwt_new_query(bwt);
    test_assert_critical(q != NULL);
 
+   redirect_stderr();
    test_assert(bwt_query(-1, BWT_QUERY_SUFFIX, q, q) == -1);
    test_assert(bwt_query(sym_count(sym), BWT_QUERY_SUFFIX, q, q) == -1);
    test_assert(bwt_query(sym_index('A',sym), 3498, q, q) == -1);
@@ -560,7 +573,7 @@ test_bwt_query
    test_assert(bwt_start(q) == 0);
    test_assert(bwt_size(q) == 32);
    test_assert(bwt_depth(q) == 0);
-
+   unredirect_stderr();
 
    bwt_query(sym_index('A',sym), BWT_QUERY_SUFFIX, q, q);
    test_assert(bwt_start(q) == 2);
@@ -652,6 +665,7 @@ test_bwt_query_all
    bwtquery_t ** q0 = bwt_new_vec(bwt);
    test_assert_critical(q0 != NULL);
 
+   redirect_stderr();
    test_assert(bwt_query_all(1023, q0[0], q0) == -1);
    test_assert(bwt_query_all(-1, q0[0], q0) == -1);
    test_assert(bwt_query_all(BWT_QUERY_SUFFIX, NULL, q0) == -1);
@@ -659,7 +673,10 @@ test_bwt_query_all
    free(q0[2]);
    q0[2] = NULL;
    test_assert(bwt_query_all(BWT_QUERY_SUFFIX, q0[0], q0) == -1);
+   unredirect_stderr();
+
    bwt_free_vec(q0);
+   
 
    q0 = bwt_new_vec(bwt);
    test_assert_critical(q0 != NULL);
@@ -745,14 +762,17 @@ test_bwt_prefix
    test_assert(bwt_size(q) == 32);
    test_assert(bwt_depth(q) == 0);
    
+   redirect_stderr();
    test_assert(bwt_prefix(sym_index('A',sym), NULL, q) == -1);
    test_assert(bwt_prefix(sym_index('A',sym), q, NULL) == -1);
    test_assert(bwt_prefix(sym_index('A',sym), q, NULL) == -1);
    test_assert(bwt_prefix(-1, q, q) == -1);
    test_assert(bwt_prefix(sym_count(sym), q, q) == -1);
+   unredirect_stderr();
    test_assert(bwt_start(q) == 0);
    test_assert(bwt_size(q) == 32);
    test_assert(bwt_depth(q) == 0);
+
 
    test_assert(bwt_prefix(sym_index('a',sym), q, q) == 0);
    test_assert(bwt_start(q) == 2);
@@ -810,12 +830,14 @@ test_bwt_prefix_all
    bwtquery_t ** qv = bwt_new_vec(bwt);
    test_assert_critical(qv != NULL);
 
+   redirect_stderr();
    test_assert(bwt_prefix_all(NULL, NULL) == -1);
    test_assert(bwt_prefix_all(NULL, qv) == -1);
    test_assert(bwt_prefix_all(qv[0], NULL) == -1);
    free(qv[1]);
    qv[1] = NULL;
    test_assert(bwt_prefix_all(qv[0], qv) == -1);
+   unredirect_stderr();
    
    bwt_free_vec(qv);
 
@@ -870,8 +892,11 @@ test_bwt_get_text
    bwt_t * bwt = bwt_build(txt, sar);
    test_assert_critical(bwt != NULL);
 
+   redirect_stderr();
    test_assert(bwt_get_text(NULL) == NULL);
+   unredirect_stderr();
    test_assert(bwt_get_text(bwt) == txt);
+
 
    bwt_free(bwt);
    sar_free(sar);
@@ -903,7 +928,9 @@ test_bwt_get_bwt
    bwtquery_t * q = bwt_new_query(bwt);
    test_assert_critical(q != NULL);
 
+   redirect_stderr();
    test_assert(bwt_get_bwt(NULL) == NULL);
+   unredirect_stderr();
    test_assert(bwt_get_bwt(q) == bwt);
 
    free(q);
@@ -938,9 +965,11 @@ test_bwt_helpers
    bwtquery_t * q = bwt_new_query(bwt);
    test_assert_critical(q != NULL);
    
+   redirect_stderr();
    test_assert(bwt_start(NULL) == -1);
    test_assert(bwt_size(NULL) == -1);
    test_assert(bwt_depth(NULL) == -1);
+   unredirect_stderr();
    test_assert(bwt_start(q) == 0);
    test_assert(bwt_size(q) == 32);
    test_assert(bwt_depth(q) == 0);

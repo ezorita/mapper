@@ -5,8 +5,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/mman.h>
-
-
+#include "errhandler.h"
 #include "index_sar.h"
 
 #ifndef _INDEX_BWT_H

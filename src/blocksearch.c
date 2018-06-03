@@ -4,7 +4,7 @@
 ** Block-search functions
 */
 
-void
+int
 blocksc_trail
 (
  uint8_t     * query,
@@ -31,7 +31,16 @@ blocksc_trail
 //       tau    = floor(tau_max/2)
 //     Then extend right up to tau_max.
 {
-   if (trail >= slen) return;
+   error_test_msg(query == NULL, "argument 'query' is NULL.");
+   error_test_msg(qarray == NULL, "argument 'qarray' is NULL.");
+   error_test_msg(tree == NULL, "argument 'tree' is NULL.");
+   error_test_msg(slen < 1,"argument 'slen' must be greater than 0.");
+   error_test_msg(tau < 0,"argument 'tau' must be positive.");
+   error_test_msg(trail < 0,"argument 'trail' must be positive.");
+
+   if (trail >= slen) {
+      return 0;
+   }
 
    // Index info.
    bwt_t * bwt = bwt_get_bwt(qarray[slen]);
@@ -52,7 +61,9 @@ blocksc_trail
 
    // Return if num(N) > tau or tau == 0 and not in last strand.
    tau -= n_cnt;
-   if (tau < 0 || (tau == 0 && !last_fragment)) return;
+   if (tau < 0 || (tau == 0 && !last_fragment)) {
+      return 0;
+   }
 
    // Split block.
    int pos_r = slen/2 + (last_fragment ? slen%2 : 0);
@@ -60,7 +71,7 @@ blocksc_trail
 
    // Recursive call on left block, don't compute if current data is valid (trail).
    if (trail < pos_r) {
-      blocksearch_trail_rec(query, 0, pos_r-1, tau_l+1, trail, bwt, tree->next_l);
+      error_test(blocksearch_trail_rec(query, 0, pos_r-1, tau_l+1, trail, bwt, tree->next_l) == -1);
       // Remove out-of-boundary hits (lexicographically bigger than query).
       int64_t max_sa_pos = bwt_start(qarray[pos_r]) + bwt_size(qarray[pos_r]);
       int i = 0;
@@ -77,7 +88,7 @@ blocksc_trail
    // Extend left block to the right.
    for (int i = 0; i < tree->next_l->stack->pos; i++) {
       spath_t p = tree->next_l->stack->path[i];
-      scsearch_fw(p, query, pos_r, slen-1, tau, p.score, 0, 1, &(tree->stack));
+      error_test(scsearch_fw(p, query, pos_r, slen-1, tau, p.score, 0, 1, &(tree->stack)) == -1);
    }
 
    // Add num(N) mismatches to hits.
@@ -85,11 +96,14 @@ blocksc_trail
       for (int i = 0; i < tree->stack->pos; i++)
          tree->stack->path[i].score += n_cnt;
 
-   return;
+   return 0;
+
+ failure_return:
+   return -1;
 }
 
 
-void
+int
 blocksearch_trail_rec
 (
  uint8_t   * query,
@@ -101,6 +115,19 @@ blocksearch_trail_rec
  pstree_t  * tree
 )
 {
+   // Declare variables.
+   bwtquery_t * q = NULL;
+
+   // Check arguments.
+   error_test_msg(query == NULL, "argument 'query' is NULL.");
+   error_test_msg(tree == NULL, "argument 'tree' is NULL.");
+   error_test_msg(bwt == NULL, "argument 'bwt' is NULL.");
+   error_test_msg(pos < 0, "argument 'pos' must be positive.");
+   error_test_msg(pos > end, "invalid arguments (pos > end).");
+   error_test_msg(end < 0, "argument 'end' must be positive.");
+   error_test_msg(blocks < 0,"argument 'blocks' must be positive.");
+   error_test_msg(trail < 0,"argument 'trail' must be positive.");
+
    // Reset hits. (Free bwtquery first)
    for (int i = 0; i < tree->stack->pos; i++) {
       free(tree->stack->path[i].bwtq);
@@ -109,9 +136,11 @@ blocksearch_trail_rec
 
    // Compute single block and return.
    if (blocks == 1) {
-      spath_t empty = {.bwtq = bwt_new_query(bwt), .score = 0};
-      seqsearch_bw(empty, query, end, pos, 0, 0, 0, &(tree->stack));
-      return;
+      q = bwt_new_query(bwt);
+      spath_t empty = {.bwtq = q, .score = 0};
+      error_test(seqsearch_bw(empty, query, end, pos, 0, 0, 0, &(tree->stack)) == -1);
+      free(q);
+      return 0;
    }
 
    // Split block.
@@ -125,22 +154,26 @@ blocksearch_trail_rec
 
    // Recursive call on left block, don't compute if current data is valid (trail).
    if (trail < pos_r)
-      blocksearch_trail_rec(query, pos, end_l, blk_l, trail, bwt, tree->next_l);
+      error_test(blocksearch_trail_rec(query, pos, end_l, blk_l, trail, bwt, tree->next_l) == -1);
    // Extend left block to the right.
    for (int i = 0; i < tree->next_l->stack->pos; i++) {
       spath_t p = tree->next_l->stack->path[i];
-      seqsearch_fw(p, query, pos_r, end, blocks-1, p.score, 0, &(tree->stack));
+      error_test(seqsearch_fw(p, query, pos_r, end, blocks-1, p.score, 0, &(tree->stack)) == -1);
    }
 
    // Recursive call on right block.
-   blocksearch_trail_rec(query, pos_r, end, blk_r, trail, bwt, tree->next_r);
+   error_test(blocksearch_trail_rec(query, pos_r, end, blk_r, trail, bwt, tree->next_r) == -1);
    // Extend right block to the left.
    for (int i = 0; i < tree->next_r->stack->pos; i++) {
       spath_t p = tree->next_r->stack->path[i];
-      seqsearch_bw(p, query, end_l, pos, blocks-1, p.score, blk_l, &(tree->stack));
+      error_test(seqsearch_bw(p, query, end_l, pos, blocks-1, p.score, blk_l, &(tree->stack)) == -1);
    }
 
-   return;
+   return 0;
+
+ failure_return:
+   free(q);
+   return -1;
 }
 
 
@@ -164,9 +197,10 @@ seqsearch_bw
    bwtquery_t  * q   = path.bwtq;
    bwt_t       * bwt = bwt_get_bwt(q);
    bwtquery_t ** qv  = bwt_new_vec(bwt);
+   error_test(qv == NULL);
 
    // Extend sequence.
-   bwt_query_all(BWT_QUERY_PREFIX, q, qv);
+   error_test(bwt_query_all(BWT_QUERY_PREFIX, q, qv) == -1);
 
    // Iterate over nt.
    int num_symb = sym_count(txt_get_symbols(bwt_get_text(bwt)));
@@ -188,24 +222,28 @@ seqsearch_bw
       // Dash if max tau is reached.
       if (s == tau) {
          if (s - score_ref >= score_diff) {
-            seqdash_bw(p, query, pos-1, end, hits);
+            error_test(seqdash_bw(p, query, pos-1, end, hits) == -1);
          }
       }
       // If depth is reached.
       else if (pos == end) {
          // Check score difference and store hit.
          if (s - score_ref >= score_diff) {
-            path_push(p, hits);
+            error_test(path_push(p, hits) == -1);
          }
       } else {
          // Recursive call.
-         seqsearch_bw(p, query, pos-1, end, tau, score_ref, score_diff, hits);
+         error_test(seqsearch_bw(p, query, pos-1, end, tau, score_ref, score_diff, hits) == -1);
       }
    }
 
    bwt_free_vec(qv);
 
    return 0;
+
+ failure_return:
+   bwt_free_vec(qv);
+   return -1;
 }
 
 
@@ -225,9 +263,10 @@ seqsearch_fw
    bwtquery_t  * q   = path.bwtq;
    bwt_t       * bwt = bwt_get_bwt(q);
    bwtquery_t ** qv  = bwt_new_vec(bwt);
+   error_test(qv == NULL);
 
    // Extend sequence.
-   bwt_query_all(BWT_QUERY_SUFFIX, q, qv);
+   error_test(bwt_query_all(BWT_QUERY_SUFFIX, q, qv) == -1);
 
    // Iterate over nt.
    int num_symb = sym_count(txt_get_symbols(bwt_get_text(bwt)));
@@ -249,22 +288,26 @@ seqsearch_fw
       // Dash if max tau is reached.
       if (s == tau) {
          if (s - score_ref >= score_diff)
-            seqdash_fw(p, query, pos+1, end, hits);
+            error_test(seqdash_fw(p, query, pos+1, end, hits) == -1);
       }
       // If depth is reached.
       else if (pos == end) {
          // Check score difference and store hit.
          if (s - score_ref >= score_diff)
-            path_push(p, hits);
+            error_test(path_push(p, hits) == -1);
       } else {
          // Recursive call.
-         seqsearch_fw(p, query, pos+1, end, tau, score_ref, score_diff, hits);
+         error_test(seqsearch_fw(p, query, pos+1, end, tau, score_ref, score_diff, hits) == -1);
       }
    }
 
    bwt_free_vec(qv);
 
    return 0;
+
+ failure_return:
+   bwt_free_vec(qv);
+   return -1;
 }
 
 
@@ -285,9 +328,10 @@ scsearch_fw
    bwtquery_t  * q   = path.bwtq;
    bwt_t       * bwt = bwt_get_bwt(q);
    bwtquery_t ** qv  = bwt_new_vec(bwt);
+   error_test(qv == NULL);
 
    // Extend sequence.
-   bwt_query_all(BWT_QUERY_SUFFIX, q, qv);
+   error_test(bwt_query_all(BWT_QUERY_SUFFIX, q, qv) == -1);
 
    // Iterate over nt.
    int num_symb = sym_count(txt_get_symbols(bwt_get_text(bwt)));
@@ -310,23 +354,27 @@ scsearch_fw
       // Dash if max tau is reached.
       if (s == tau) {
          if (s - score_ref >= score_diff)
-            seqdash_fw(p, query, pos+1, end, hits);
+            error_test(seqdash_fw(p, query, pos+1, end, hits) == -1);
       }
       // If depth is reached.
       else if (pos == end) {
          // Check score difference and store hit.
          if (s - score_ref >= score_diff)
-            path_push(p, hits);
+            error_test(path_push(p, hits) == -1);
       } else {
          // Recursive call.
          int bnd = boundary && (nt == query[pos]);
-         scsearch_fw(p, query, pos+1, end, tau, score_ref, score_diff, bnd, hits);
+         error_test(scsearch_fw(p, query, pos+1, end, tau, score_ref, score_diff, bnd, hits) == -1);
       }
    }
 
    bwt_free_vec(qv);
 
    return 0;
+
+ failure_return:
+   bwt_free_vec(qv);
+   return -1;
 }
 
 
@@ -342,12 +390,13 @@ seqdash_fw
 {
    bwtquery_t  * q   = path.bwtq;
    bwt_t       * bwt = bwt_get_bwt(q);
+   bwtquery_t ** qv  = NULL;
 
    // Dash until the end of the search region.
    for (int d = pos; d <= end; d++) {
       // Do not allow any mismatch. If sequence does not exist, return.
       if (__builtin_expect(query[d] != UNKNOWN_BASE,1)) {
-         bwt_query(query[d], BWT_QUERY_SUFFIX, q, q);
+         error_test(bwt_query(query[d], BWT_QUERY_SUFFIX, q, q) == -1);
          if (bwt_size(q) < 1)
             return 0;
       } 
@@ -357,8 +406,10 @@ seqdash_fw
          aln_bit_set(&path, d);
 
          // Extend all branches.
-         bwtquery_t ** qv  = bwt_new_vec(bwt);
-         bwt_query_all(BWT_QUERY_SUFFIX, q, qv);
+         qv = bwt_new_vec(bwt);
+         error_test(qv == NULL);
+         
+         error_test(bwt_query_all(BWT_QUERY_SUFFIX, q, qv) == -1);
 
          // Follow branches.
          int num_symb = sym_count(txt_get_symbols(bwt_get_text(bwt)));
@@ -366,18 +417,23 @@ seqdash_fw
             if (bwt_size(qv[i]) < 1)
                continue;
             path.bwtq = qv[i];
-            seqdash_fw(path, query, d+1, end, hits);
+            error_test(seqdash_fw(path, query, d+1, end, hits) == -1);
          }
          
          // Free query vector.
          bwt_free_vec(qv);
+         qv = NULL;
          return 0;
       }
    }
    // Sequence found, push to hit stack.
    path.bwtq = q;
-   path_push(path, hits);
+   error_test(path_push(path, hits) == -1);
    return 0;
+   
+ failure_return:
+   bwt_free_vec(qv);
+   return -1;
 }
 
 
@@ -393,12 +449,13 @@ seqdash_bw
 {
    bwtquery_t  * q   = path.bwtq;
    bwt_t       * bwt = bwt_get_bwt(q);
+   bwtquery_t ** qv  = NULL;
 
    // Dash until the end of the search region.
    for (int d = pos; d >= end; d--) {
       // Do not allow any mismatch. If sequence does not exist, return.
       if (__builtin_expect(query[d] != UNKNOWN_BASE,1)) {
-         bwt_query(query[d], BWT_QUERY_PREFIX, q, q);
+         error_test(bwt_query(query[d], BWT_QUERY_PREFIX, q, q) == -1);
          if (bwt_size(q) < 1)
             return 0;
       }
@@ -408,8 +465,10 @@ seqdash_bw
          aln_bit_set(&path, d);
 
          // Extend all branches.
-         bwtquery_t ** qv  = bwt_new_vec(bwt);
-         bwt_query_all(BWT_QUERY_PREFIX, q, qv);
+         qv  = bwt_new_vec(bwt);
+         error_test(qv == NULL);
+         
+         error_test(bwt_query_all(BWT_QUERY_PREFIX, q, qv) == -1);
 
          // Follow branches.
          int num_symb = sym_count(txt_get_symbols(bwt_get_text(bwt)));
@@ -417,18 +476,23 @@ seqdash_bw
             if (bwt_size(qv[i]) < 1)
                continue;
             path.bwtq = qv[i];
-            seqdash_bw(path, query, d-1, end, hits);
+            error_test(seqdash_bw(path, query, d-1, end, hits) == -1);
          }
          
          // Free query vector.
          bwt_free_vec(qv);
+         qv = NULL;
          return 0;
       }
    }
    // Sequence found, push to hit stack.
    path.bwtq = q;
-   path_push(path, hits);
+   error_test(path_push(path, hits) == -1);
    return 0;
+
+ failure_return:
+   bwt_free_vec(qv);
+   return -1;
 }
 
 
@@ -446,12 +510,15 @@ pathstack_new
    if (n_elem < 1) n_elem = 1;
    // Alloc structure.
    pathstack_t * stack = malloc(sizeof(pathstack_t) + n_elem * sizeof(spath_t));
-   if (stack == NULL)
-      return NULL;
+   error_test_mem(stack);
    // Empty stack.
    stack->pos = 0;
    stack->size = n_elem;
    return stack;
+
+ failure_return:
+   free(stack);
+   return NULL;
 }
 
 
@@ -461,7 +528,13 @@ alloc_stack_tree
  int tau
 )
 {
-   return alloc_stack_tree_rec(tau+1);
+   pstree_t * pst = alloc_stack_tree_rec(tau+1);
+   error_test(pst == NULL);
+
+   return pst;
+
+ failure_return:
+   return NULL;
 }
 
 
@@ -471,21 +544,38 @@ alloc_stack_tree_rec
  int        block
 )
 {
-   // End of tree, return null.
-   if (block == 0) return NULL;
    // Alloc stack for this node.
    pstree_t * node = calloc(1,sizeof(pstree_t));
+   error_test_mem(node);
+   node->stack = NULL;
+
    node->stack = pathstack_new(PATHSTACK_DEF_SIZE);
+   error_test(node->stack == NULL);
+
    // Build tree with recursive calls.
    if (block > 1) {
-      node->next_l = alloc_stack_tree_rec((block >> 1) + (block & 1));
-      node->next_r = alloc_stack_tree_rec(block >> 1);
+      if ((block >> 1) + (block & 1) > 0) {
+         node->next_l = alloc_stack_tree_rec((block >> 1) + (block & 1));
+         error_test(node->next_l == NULL);
+      } else {
+         node->next_l = NULL;
+      }
+
+      if (block >> 1 > 0) {
+         node->next_r = alloc_stack_tree_rec(block >> 1);
+         error_test(node->next_r == NULL);
+      } else {
+         node->next_r = NULL;
+      }
    } else {
       node->next_l = node->next_r = NULL;
    }
    return node;
-}
 
+ failure_return:
+   free_stack_tree(node);
+   return NULL;
+}
 
 void
 free_stack_tree
@@ -493,8 +583,12 @@ free_stack_tree
  pstree_t * tree
 )
 {
-   for (int i = 0; i < tree->stack->pos; i++) {
-      free(tree->stack->path[i].bwtq);
+   if (tree == NULL)
+      return;
+   if (tree->stack != NULL) {
+      for (int i = 0; i < tree->stack->pos; i++) {
+            free(tree->stack->path[i].bwtq);
+      }
    }
    free(tree->stack);
    if (tree->next_l != NULL) free_stack_tree(tree->next_l);
@@ -515,14 +609,18 @@ path_push
    if (stack->pos >= stack->size) {
       size_t newsize = stack->size * 2;
       *pstack = stack = realloc(stack, sizeof(pathstack_t) + newsize * sizeof(spath_t));
-      if (stack == NULL) return -1;
+      error_test_mem(stack);
       stack->size = newsize;
    }
    // Store element.
    stack->path[stack->pos] = p;
    stack->path[stack->pos].bwtq = bwt_dup_query(p.bwtq);
+   error_test(stack->path[stack->pos].bwtq == NULL);
    stack->pos++;
    return 0;
+
+ failure_return:
+   return -1;
 }
 
 

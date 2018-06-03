@@ -86,6 +86,7 @@ test_ann_build
    test_assert_critical(sar != NULL);
    unredirect_stderr();
 
+   free(text);
    ann_free(ann);
    bwt_free(bwt);
    sar_free(sar);

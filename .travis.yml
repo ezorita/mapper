@@ -9,8 +9,9 @@ branches:
 
 before_install:
   - sudo pip install -U cpp-coveralls
+  - sudo apt-get install valgrind
 
-script: make && cd test && make test
+script: make && cd test && make test-full
 
 after_success:
   - coveralls --verbose --gcov-options '\-lp' -r .. -E '.*test|.*divsufsort'

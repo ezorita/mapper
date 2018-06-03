@@ -4,7 +4,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/mman.h>
-
+#include "errhandler.h"
 #include "index_txt.h"
 #include "divsufsort.h"
 

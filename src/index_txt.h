@@ -7,7 +7,9 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/mman.h>
+#include "errhandler.h"
 #include "index_sym.h"
+
 
 #ifndef _INDEX_TXT_H
 #define _INDEX_TXT_H
@@ -43,6 +45,7 @@ int        txt_commit_rc       (txt_t * txt);
 int64_t    txt_length          (txt_t * txt);
 sym_t    * txt_get_symbols     (txt_t * txt);
 int64_t    txt_wildcard_count  (txt_t * txt);
+int        txt_has_rc          (txt_t * txt);
 
 // Sequence helper functions.
 int64_t    txt_seq_count       (txt_t * txt);
