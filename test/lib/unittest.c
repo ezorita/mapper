@@ -1,7 +1,7 @@
 #include "unittest.h"
 
 //     Constants     //
-#define UTEST_BUFFER_SIZE 1024
+#define UTEST_BUFFER_SIZE 1024*10
 #define MAX_N_ERROR_MSG 20
 
 // Private functions // 
@@ -22,6 +22,9 @@ static int    N_ERROR_MSG = 0;
 static int    ORIG_STDERR_DESCRIPTOR = -1;
 static char * STDERR_BUFFER = NULL;
 static int    STDERR_OFF = 0;
+static int    ORIG_STDOUT_DESCRIPTOR = -1;
+static char * STDOUT_BUFFER = NULL;
+static int    STDOUT_OFF = 0;
 static int    TEST_CASE_FAILED = 0;
 
 static int    SHOWALL = 0;
@@ -93,12 +96,14 @@ run_test
    // Initialize variable, empty buffers... //
    test_case_init();
    unredirect_stderr();
+   unredirect_stdout();
 
    //  -- Run the test -- //
    (*fixture)();
    
    // -- Clean -- //
    unredirect_stderr();
+   unredirect_stdout();
    test_case_clean();
 
    return NULL;
@@ -159,6 +164,19 @@ test_case_init
       exit(EXIT_FAILURE);
    }
 
+   ORIG_STDOUT_DESCRIPTOR = dup(STDOUT_FILENO);
+   if (ORIG_STDOUT_DESCRIPTOR == -1) {
+      fprintf(stderr, "unittest error (%s:%d)\n", __FILE__, __LINE__);
+      exit(EXIT_FAILURE);
+   }
+
+   STDOUT_BUFFER = calloc(UTEST_BUFFER_SIZE, sizeof(char));
+   if (STDOUT_BUFFER == NULL) {
+      fprintf(stderr, "unittest error (%s:%d)\n", __FILE__, __LINE__);
+      exit(EXIT_FAILURE);
+   }
+
+
 }
 
 
@@ -168,8 +186,9 @@ test_case_clean
 {
 
    free(STDERR_BUFFER);
+   free(STDOUT_BUFFER);
    STDERR_BUFFER = NULL;
-
+   STDOUT_BUFFER = NULL;
 }
    
 
@@ -221,6 +240,56 @@ unredirect_stderr
    }
    STDERR_OFF = 0;
 }
+
+void
+redirect_stdout
+(void)
+{
+   if (STDOUT_OFF) return;
+   // Flush stderr, redirect to /dev/null and set buffer.
+   fflush(stdout);
+   int temp = open("/dev/null", O_WRONLY);
+   if (temp == -1) {
+      fprintf(stderr, "unittest error: %s:%d\n", __FILE__, __LINE__);
+      exit(EXIT_FAILURE);
+   }
+   if (dup2(temp, STDOUT_FILENO) == -1) {
+      fprintf(stderr, "unittest error: %s:%d\n", __FILE__, __LINE__);
+      exit(EXIT_FAILURE);
+   }
+   memset(STDOUT_BUFFER, '\0', UTEST_BUFFER_SIZE * sizeof(char));
+   if (setvbuf(stdout, STDOUT_BUFFER, _IOFBF, UTEST_BUFFER_SIZE) != 0) {
+      fprintf(stderr, "unittest error: %s:%d\n", __FILE__, __LINE__);
+      exit(EXIT_FAILURE);
+   }
+   if (close(temp) == -1) {
+      fprintf(stderr, "unittest error: %s:%d\n", __FILE__, __LINE__);
+      exit(EXIT_FAILURE);
+   }
+   fprintf(stdout, "$");
+   fflush(stdout);
+   STDOUT_OFF = 1;
+}
+
+
+void
+unredirect_stdout
+(void)
+{
+   if (!STDOUT_OFF) return;
+   fflush(stdout);
+   if (dup2(ORIG_STDOUT_DESCRIPTOR, STDOUT_FILENO) == -1) {
+      // Could not restore stdout. No need to give an error
+      // message because it will not appear.
+      exit(EXIT_FAILURE);
+   }
+   if (setvbuf(stdout, NULL, _IONBF, 0) != 0) {
+      fprintf(stderr, "unittest error: %s:%d\n", __FILE__, __LINE__);
+      exit(EXIT_FAILURE);
+   }
+   STDOUT_OFF = 0;
+}
+
 
 
 void
@@ -318,6 +387,12 @@ caught_in_stderr
    return STDERR_BUFFER;
 }
 
+char *
+caught_in_stdout
+(void)
+{
+   return STDOUT_BUFFER;
+}
 
 
 void
