@@ -187,20 +187,21 @@ seed_next_mem
       else break;	 
    }
 
-   // Free memory.
-   free(syms);
-   free(bwtq_next);
 
    // Return valid seed or NULL if nothing was found.
    if (bwt_depth(bwtq) > 0) {
       seed = seed_new(beg, end, bwtq, read);
       error_test(seed == NULL);
-      return seed;
    } else {
-      free(bwtq);
       errno = SEED_ERRNO_NOT_FOUND;
-      return NULL;
+      free(bwtq);
    }
+
+   // Free memory.
+   free(syms);
+   free(bwtq_next);
+
+   return seed;
    
  failure_return:
    seed_free(seed);
