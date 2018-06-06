@@ -1,7 +1,7 @@
 SRC_DIR= src
 INC_DIR= src
 OBJ_DIR= obj
-OBJECT_FILES= index_bwt.o index_sar.o index_txt.o index_sym.o index_ann.o index.o blocksearch.o errhandler.o user_interface.o mapper.o gstack.o seqread.o io.o divsufsort.o
+OBJECT_FILES= index_bwt.o index_sar.o index_txt.o index_sym.o index_ann.o index.o blocksearch.o errhandler.o user_interface.o mapper.o gstack.o seqread.o io.o seed.o divsufsort.o
 SOURCE_FILES= main.c 
 HEADER_FILES= version.h
 OTHER_FILES = Makefile
