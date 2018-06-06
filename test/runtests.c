@@ -36,6 +36,7 @@ main(
    extern test_case_t test_mem_gstack[];
    extern test_case_t test_mem_seqread[];
    extern test_case_t test_mem_io[];
+   extern test_case_t test_mem_seed[];
 
    const test_case_t *test_case_list[] = {
       test_cases_index_sym,
@@ -62,6 +63,7 @@ main(
       test_mem_gstack,
       test_mem_seqread,
       test_mem_io,
+      test_mem_seed,
       NULL, // Sentinel. //
    };
 
