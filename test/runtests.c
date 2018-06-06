@@ -22,6 +22,7 @@ main(
    extern test_case_t test_cases_seqread[];
    extern test_case_t test_cases_io[];
    extern test_case_t test_cases_mapper[];
+   extern test_case_t test_cases_seed[];
 
    // Memory tests.
    extern test_case_t test_mem_index_sym[];
@@ -49,6 +50,7 @@ main(
       test_cases_seqread,
       test_cases_io,
       test_cases_mapper,
+      test_cases_seed,
       test_mem_index_sym,
       test_mem_index_txt,
       test_mem_index_sar,
