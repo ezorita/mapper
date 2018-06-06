@@ -20,15 +20,15 @@ seed_new
  seqread_t  * read
 )
 {
+   // Declare variables.
+   seed_t * seed = NULL;
+
    // Check arguments.
    error_test_msg(beg < 0, "argument 'beg' must be positive.");
    error_test_msg(end < 0, "argument 'end' must be positive.");
    error_test_msg(end < beg, "argument 'end' must greater than 'beg'.");
    error_test_msg(bwtq == NULL, "argument 'bwtq' is NULL.");
    error_test_msg(read == NULL, "argument 'read' is NULL.");
-
-   // Declare variables.
-   seed_t * seed = NULL;
 
    // Alloc memory.
    seed = malloc(sizeof(seed_t));
@@ -123,7 +123,6 @@ seed_next_mem
    uint8_t    * syms = NULL;
    
    // Check arguments.
-   error_test_msg(last_mem == NULL, "argument 'last_mem' is NULL.");
    error_test_msg(read == NULL, "argument 'read' is NULL.");
    error_test_msg(index == NULL, "argument 'index' is NULL.");
    
@@ -135,6 +134,7 @@ seed_next_mem
 
    // Return NULL at end of sequence.
    if (center >= seqread_len(read)) {
+      errno = SEED_ERRNO_END;
       return NULL;
    }
    
@@ -161,7 +161,14 @@ seed_next_mem
 	 beg--;
       }
       // Otherwise break search.
-      else break;
+      else {
+	 // Move center, this only happens when we query a symbol
+	 // that is not present in the index.
+	 if (beg == center && beg < seqread_len(read)) {
+	    center++;
+	    beg++;
+	 } else break;
+      }
    }
    // Make beg point to the leftmost queried symbol.
    beg++;
@@ -185,12 +192,15 @@ seed_next_mem
    free(bwtq_next);
 
    // Return valid seed or NULL if nothing was found.
-   if (beg < end) {
+   if (bwt_depth(bwtq) > 0) {
       seed = seed_new(beg, end, bwtq, read);
       error_test(seed == NULL);
+      return seed;
+   } else {
+      free(bwtq);
+      errno = SEED_ERRNO_NOT_FOUND;
+      return NULL;
    }
-   
-   return seed;
    
  failure_return:
    seed_free(seed);
@@ -223,6 +233,11 @@ seed_mems
    seed_t * seed = NULL;
    while ((seed = seed_next_mem(seed, read, index)) != NULL) {
       error_test(gstack_push(seed, stack) == -1);
+   }
+
+   // Check cause of loop break.
+   if (errno != SEED_ERRNO_END && errno != SEED_ERRNO_NOT_FOUND) {
+      error_throw();
    }
 
    return stack;

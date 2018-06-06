@@ -11,6 +11,8 @@
 #define _SEED_H
 
 #define SEEDSTACK_DEFAULT_SIZE 64
+#define SEED_ERRNO_NOT_FOUND   0x0fcb1001
+#define SEED_ERRNO_END         0x0fcb1002
 
 // Typedef structures.
 typedef struct seed_t seed_t;
