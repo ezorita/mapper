@@ -151,7 +151,7 @@ seed_next_mem
    
    // Extend max to the left, starting from center.
    int beg = center;
-   while (beg >= 0) {
+   while (beg >= 0 && beg < seqread_len(read)) {
       bwt_query(syms[beg], BWT_QUERY_PREFIX, bwtq, bwtq_next);
       // If query succeeded, save to 'bwtq'.
       if (bwt_size(bwtq_next) > 0) {
@@ -184,7 +184,7 @@ seed_next_mem
 	 end++;
       }
       // Otherwise break search.
-      else break;	 
+      else break;
    }
 
 
