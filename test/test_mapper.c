@@ -11,10 +11,10 @@ test_mapper
 
    redirect_stderr();
    redirect_stdout();
-   test_assert(mapper("examples/io_input.fastq", index) == 0);
+   test_assert(mapper("examples/seed_query.fa", index) == 0);
    unredirect_stdout();
    unredirect_stderr();
-   test_assert(strcmp("ATGCGTACGTCGTATCA\nGTATCGACTACGAGCTA\nAGTCGANTATACNTACG\nACGTACATGTATGACAC\nNNNNNNNNACGTACGCC\nNNNNNNLLYYYYJDFLS\n", caught_in_stdout()));
+   test_assert(strcmp("tag:q1, mems:2\ntag:q2, mems:2\ntag:q3, mems:1\ntag:q4, mems:5\n", caught_in_stdout()) == 0);
 
    index_free(index);
    
