@@ -2,6 +2,7 @@
 #include "errhandler.h"
 #include "index.h"
 #include "io.h"
+#include "seed.h"
 
 #ifndef _MAPPER_H
 #define _MAPPER_H

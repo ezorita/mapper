@@ -32,7 +32,17 @@ mapper
       // Iterate over sequences.
       for (int i = 0; i < gstack_num_elm(rstack); i++) {
 	 seqread_t * read = seqread_get(i, rstack);
-	 fprintf(stdout, "%s\n", seqread_seq(read));
+	 gstack_t * mems = seed_mems(read, index);
+	 fprintf(stdout, "tag:%s, mems:%ld\n", seqread_tag(read), gstack_num_elm(mems));
+	 /*
+	 seed_t * s = NULL;
+	 while((s = seed_pop(mems)) != NULL) {
+	    fprintf(stdout, "[MEM] beg: %ld, end: %ld, fp: %ld, sz: %ld\n", \
+		    seed_beg(s), seed_end(s), bwt_start(seed_bwtq(s)), bwt_size(seed_bwtq(s)));
+	    seed_free(s);
+	 }
+	 */
+	 gstack_free(mems);
       }
       
       // Free stack.
