@@ -249,6 +249,115 @@ seed_mems
 }
 
 
+gstack_t **
+seed_ann_dist
+(
+  gstack_t  * seeds,
+  index_t   * index
+)
+/*
+** This function queries the annotation index and classifies the seeds
+** inside an array of stacks by their distance to the closest neighbor.
+**
+** Issue: This function copies the content of the stack to another stack,
+** so using gstack_free on both will produce a double free error.
+**
+** Solution: Transfer the seeds, read the first stack and copy all of its
+** content to the new stacks, then set num_elm to 0 and max_elm to 1, and
+** realloc the old stack.
+*/
+{
+   // Declare variables.
+   gstack_t ** seed_dist = NULL;
+   seed_t    * s         = NULL;
+   int         max_d     = 0;
+   
+   // Check arguments.
+   error_test_msg(seeds == NULL, "argument 'seeds' is NULL.");
+   error_test_msg(index == NULL, "argument 'index' is NULL.");
+
+   // Return the same stack when no info is available.
+   if (gstack_num_elm(seeds) == 0 || index->ann_cnt == 0) {
+      // Create stack array.
+      seed_dist = calloc(sizeof(gstack_t *), 2);
+      error_test_mem(seed_dist);
+      
+      // Initialize stack array.
+      seed_dist[0] = seed_stack(1);
+      error_test(seed_dist[0]);
+
+      // Transfer contents.
+      gstack_transfer_all(seed_dist[0], seeds);
+      
+      return seed_dist;
+   }
+
+   // Find max distance.
+   for (int i = 0; i < index->ann_cnt; i++) {
+      int d = ann_get_dist(index->ann[i]) + 1;
+      if (d > max_d) max_d = d;
+   }
+
+   // Alloc stack arrays.
+   seed_dist = calloc(sizeof(gstack_t *), max_d + 2);
+   error_test_mem(seed_dist);
+      
+   // Initialize stack array.
+   for (int i = 0; i <= max_d; i++) {
+      seed_dist[i] = seed_stack(1);
+      error_test(seed_dist[i] == NULL);
+   }
+
+   // Find fragments with far-neighbors in seeds.
+   while((s = seed_pop(seeds)) != NULL) {
+      // Get bwtq
+      bwtquery_t * bwtq = seed_bwtq(s);
+     
+      // Exact neighbors.
+      if (bwt_size(bwtq) > 1) {
+	 error_test(gstack_push(s, seed_dist[0]) == -1);
+	 continue;
+      }
+
+      // Otherwise, check annotations.
+      int64_t s_dst = 0;
+      int64_t s_len = seed_len(s);
+      // Find locus.
+      int64_t s_loc = sar_get(bwt_start(bwtq), index->sar);
+      // Iterate over all annotations.
+      for (int a = 0; a < index->ann_cnt; a++) {
+	 ann_t * ann      = index->ann[a];
+	 int     ann_kmer = ann_get_kmer(ann);
+	 // Only annotations with k <= seed_length.
+	 if (ann_kmer <= s_len) {
+	    // Check all annotations on overlaping positions.
+	    for (int i = 0; i <= s_len-ann_kmer; i++) {
+	       locinfo_t * loc = ann_query(s_loc+i, ann);
+	       error_test_mem(loc);
+	       s_dst = (loc->dist > s_dst ? loc->dist : s_dst);
+	       free(loc);
+	    }
+	 }
+      }
+
+      // Store seed in stack based on max neighbor distance.
+      error_test(gstack_push(s, seed_dist[s_dst]) == -1);
+      // Delete reference to stored seed (avoids double free in case of error).
+      s = NULL;
+   }
+
+   return seed_dist;
+
+ failure_return:
+   for (int i = 0; i <= max_d; i++) {
+      gstack_free(seed_dist[i]);
+   }
+   free(seed_dist);
+   seed_free(s);
+   return NULL;
+}
+
+
 // Helper function sources.
 
 int64_t
@@ -280,6 +389,22 @@ seed_end
  failure_return:
    return -1;
 }
+
+int64_t
+seed_len
+(
+  seed_t * seed
+)
+{
+   // Check arguments.
+   error_test_msg(seed == NULL, "argument 'seed' is NULL.");
+
+   return seed->end - seed->beg;
+
+ failure_return:
+   return -1;
+}
+
 
 bwtquery_t *
 seed_bwtq
