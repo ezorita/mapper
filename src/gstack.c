@@ -193,6 +193,42 @@ gstack_popr
 }
 
 int
+gstack_transfer_all
+(
+ gstack_t * dst,
+ gstack_t * src
+)
+/*
+** Transfers all the contents of src to dst.
+*/
+{
+   // Declare variables.
+   void ** newelm = NULL;
+   
+   // Check arguments.
+   error_test_msg(dst == NULL, "argument 'dst' is NULL.");
+   error_test_msg(src == NULL, "argument 'src' is NULL.");
+
+   // Copy the contents of src to dst.
+   error_test(gstack_push_array(src->elm, src->num_elm, dst) == -1);
+
+   // Realloc src stack to size 1.
+   newelm = realloc(src->elm, sizeof(void *));
+   error_test_mem(newelm);
+   
+   // Reset src stack.
+   src->elm     = newelm;
+   src->num_elm = 0;
+   src->max_elm = 1;
+
+   return 0;
+
+ failure_return:
+   free(newelm);
+   return -1;
+}
+
+int
 gstack_clear
 (
   gstack_t  * gstack
