@@ -212,13 +212,16 @@ gstack_transfer_all
    // Copy the contents of src to dst.
    error_test(gstack_push_array(src->elm, src->num_elm, dst) == -1);
 
+   // Element ownership has been transferred to dst,
+   // so set num_elm to 0 even if realloc fails.
+   src->num_elm = 0;
+
    // Realloc src stack to size 1.
    newelm = realloc(src->elm, sizeof(void *));
    error_test_mem(newelm);
    
    // Reset src stack.
    src->elm     = newelm;
-   src->num_elm = 0;
    src->max_elm = 1;
 
    return 0;
