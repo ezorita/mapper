@@ -144,6 +144,62 @@ test_gstack_push_array
    unredirect_stderr();
 }
 
+void
+test_gstack_transfer_all
+(void)
+{
+   redirect_stderr();
+   gstack_t * stack_src = NULL;
+   gstack_t * stack_dst = NULL;
+   
+   // Create a gstack.
+   stack_src = gstack_new(1, free);
+   test_assert_critical(stack_src != NULL);
+   stack_dst = gstack_new(1, free);
+   test_assert_critical(stack_dst != NULL);
+
+   int64_t fibo[13] = {1,2,3,5,8,13,21,34,55,89,144,233,377};
+
+   int64_t ** values = malloc(sizeof(void *)*13);
+   test_assert_critical(values != NULL);
+   for (int i = 0; i < 13; i++) {
+      values[i] = malloc(sizeof(int64_t));
+      test_assert_critical(values[i] != NULL);
+      *values[i] = fibo[i];
+   }
+ 
+   // Fill gstack.
+   test_assert(gstack_push_array((void **)values, 10, stack_src) == 0);
+   test_assert(gstack_push(values[10], stack_dst) == 0);
+
+   // Check contents.
+   test_assert(gstack_num_elm(stack_src) == 10);
+   test_assert(gstack_max_elm(stack_src) == 16);
+   test_assert(gstack_num_elm(stack_dst) == 1);
+   test_assert(gstack_max_elm(stack_dst) == 1);
+
+   // Transfer all.
+   test_assert(gstack_transfer_all(stack_dst, stack_src) == 0);
+
+   // Check final contents.
+   test_assert(gstack_num_elm(stack_dst) == 11);
+   test_assert(*(int64_t *)gstack_get(0, stack_dst) == 144);
+   test_assert(*(int64_t *)gstack_get(1, stack_dst) == 1);
+   test_assert(*(int64_t *)gstack_get(10, stack_dst) == 89);
+   test_assert(gstack_num_elm(stack_src) == 0);
+   test_assert(gstack_max_elm(stack_src) == 1);
+
+   // Push remaining values.
+   test_assert(gstack_push_array((void **)values+11, 2, stack_dst) == 0);
+   test_assert(gstack_num_elm(stack_dst) == 13);
+   test_assert(*(int64_t *)gstack_get(11, stack_dst) == 233);
+   test_assert(*(int64_t *)gstack_get(12, stack_dst) == 377);
+
+   gstack_free(stack_src);
+   gstack_free(stack_dst);
+   free(values);
+}
+
 
 void
 test_gstack_pop
@@ -485,6 +541,7 @@ const test_case_t test_cases_gstack[] = {
    {"gstack/gstack_new",           test_gstack_new},
    {"gstack/gstack_push",          test_gstack_push},
    {"gstack/gstack_push_array",    test_gstack_push_array},
+   {"gstack/gstack_transfer_all",    test_gstack_transfer_all},
    {"gstack/gstack_pop",           test_gstack_pop},
    {"gstack/gstack_get",           test_gstack_get},
    {"gstack/gstack_popr",          test_gstack_popr},
